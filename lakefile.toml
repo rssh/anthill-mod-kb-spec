@@ -1,0 +1,7 @@
+name = "anthill-mod-kb-spec"
+version = "0.1.0"
+defaultTargets = ["AnthillModKbSpec"]
+
+[[lean_lib]]
+name = "AnthillModKbSpec"
+

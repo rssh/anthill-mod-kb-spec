@@ -1,0 +1,418 @@
+\documentclass[11pt]{article}
+\usepackage[a4paper,margin=25mm]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage[T1]{fontenc}
+\usepackage{hyperref}
+\hypersetup{colorlinks=true,linkcolor=blue,urlcolor=blue}
+\newtheorem{theorem}{Theorem}
+\newtheorem{corollary}{Corollary}
+\newcommand{\KB}{\mathit{KB}}
+\newcommand{\Dall}{D_{\mathrm{all}}}
+\newcommand{\naf}{\mathop{\mathrm{not}}}
+\newcommand{\den}[1]{\lbrack\!\lbrack #1\rbrack\!\rbrack_{M,\rho}}
+\title{Soundness of an Untyped Anthill KB Logic}
+\author{}
+\date{}
+\begin{document}
+\maketitle
+
+\section{Objective and result}
+The objective is to prove that the logic preserves truth: a formula derived from
+a knowledge base and local assumptions is true in any admissible model where
+those assumptions hold. The result concerns derivations, independently of how
+a derivation is discovered. No automatic search algorithm or native matcher is
+needed for the logic-soundness theorem.
+
+We define the syntax and inference rules, give their compositional semantics,
+and prove soundness by induction on derivations. Induction principles are
+ordinary KB clauses whose validity is established in the chosen model.
+Negation as failure (NAF) requires independently justified evidence; the
+formalized theorem does not identify arbitrary failed search with negation.
+Existence of a model satisfying these conditions then establishes consistency.
+
+The core theorem is \texttt{Semantics.Model.sound}. For the certified NAF
+provider and inductively interpreted KB, its packaged form is:
+\begin{quote}
+\href{AnthillModKbSpec/InductiveSoundness.lean}{\texttt{InductiveSoundness.declarative\_sound}}
+\end{quote}
+Proof-discovery experiments are described in the separate
+\href{docs/implementation.md}{implementation note}.
+
+\section{Formula syntax and KB clauses}
+The shared syntax is \texttt{Term}, defined in \texttt{Syntax.lean}.
+Writing $G$ for a goal or term and $H$ for a symbol-headed application, its grammar is:
+\[
+\begin{aligned}
+ H ::= {}& f(G_1,\ldots,G_n)\qquad(n\geq 0),\\
+ G ::= {}& v_i \mid c \mid H
+       \mid \operatorname{dictionaryCall}(G,\pi,f,\bar G)\\
+       &\mid \operatorname{equal}(G,G) \mid \top \mid \bot\\
+       &\mid G\land G \mid G\lor G \mid G\Rightarrow G
+        \mid \naf G \mid \forall v_i.G \mid \exists v_i.G.
+\end{aligned}
+\]
+Here $v_i$ ranges over variable names, $c$ over literals, $f$ over symbols, and
+$\pi$ over lists of dictionary field selectors. $H$ denotes an application;
+its use as a predicate or an operation depends on its position and interpretation.
+Data and formulas share this carrier, so application arguments are also $G$s.
+Logical variables and predicate variables use the same variable constructor.
+
+A predicate symbol as a value is a nullary application. The designated ordinary
+symbol \texttt{ho\_apply} represents explicit predicate application. For a
+concrete symbol value $p()$, the calculus relates
+$\operatorname{ho\_apply}(p(),\bar t)$ to the ordinary atom $p(\bar t)$.
+This does not introduce a separate kind of induction goal.
+
+A KB is a set of clauses. The following forms use this same set:
+\begin{center}
+\begin{tabular}{ll}
+\textbf{Form} & \textbf{Clause notation} \\
+Predicate rule & $p(\bar t)\mathbin{:-}G_1,\ldots,G_k$ \\
+Equation rule & $l\mathrel{\Leftrightarrow}r\mathbin{:-}G_1,\ldots,G_k$ \\
+Goal clause (denial) & $\mathbin{:-}G_1,\ldots,G_k$
+\end{tabular}
+\end{center}
+Formally, \texttt{HornClause} has two constructors:
+\[
+ \operatorname{definite}(G_0,[G_1,\ldots,G_k])
+ \qquad\text{or}\qquad
+ \operatorname{goal}([G_1,\ldots,G_k]).
+\]
+The first denotes $(G_1\land\cdots\land G_k)\Rightarrow G_0$; the second has
+$\bot$ as its conclusion. An empty body denotes truth: a definite clause then
+gives a fact or an unconditional equation, while an empty goal clause asserts
+falsity. Free clause variables are implicitly universally quantified together.
+Local assumptions $\Gamma$ instead have fixed free parameters.
+
+Each body goal $G_i$ can be a predicate application, an equation, truth or falsity,
+a conjunction or disjunction, a nested implication, NAF, or a quantified formula.
+Operation expressions in these goals can contain dictionary calls and further
+operation arguments. For example, both of these are clause forms:
+\[
+\begin{aligned}
+ p(x)&\mathbin{:-}\operatorname{equal}(f(x),g(x)),\ q(x),\\
+ h(x)\mathrel{\Leftrightarrow}k(x)
+      &\mathbin{:-}\operatorname{isNat}(x),\ \operatorname{equal}(f(x),g(x)).
+\end{aligned}
+\]
+Thus equations occur in heads and in bodies; they are goals to prove wherever
+they occur in a body. Nested implication introduces local assumptions, quantifiers
+bind their bodies, and NAF requires its separate justified evidence.
+
+The Lean syntax is raw: \texttt{Atom} and \texttt{Formula} are aliases of
+\texttt{Term}, so a definite head $G_0$ and each body goal are arbitrary terms at
+the syntax level. Predicate and equality heads are common forms, rather than
+an enforced head restriction. The model must validate every included clause;
+the individual search fragments impose their own additional grammar restrictions.
+
+A conditional operation equation $l\mathrel{\Leftrightarrow}r\mathbin{:-}\bar C$
+is a definite clause with head $\operatorname{equal}(l,r)$, represented by
+\texttt{HornClause.equation}. Thus predicate and equation rules occupy the same
+KB set. It asserts equality of returned values whenever its condition body holds:
+\[
+ \forall\rho.\;M,\rho\models\bigwedge\bar C\quad\Longrightarrow\quad
+ \lbrack\!\lbrack l\rbrack\!\rbrack_{M,\rho}
+ =\lbrack\!\lbrack r\rbrack\!\rbrack_{M,\rho}.
+\]
+Both sides can contain dictionary calls. The same clause substitution
+instantiates both sides and the body; using the equation requires proving that body.
+Equality goals can also occur in the body of a predicate or equation rule;
+proving them from other equation rules can therefore enable a rule's conclusion.
+
+\section{The derivation rules}
+The judgment
+\[
+ \KB;\Gamma\vdash_N G
+\]
+is implemented by \texttt{Derives} in \texttt{Derivation.lean}. The parameter
+$N$ specifies which NAF evidence is available. With NAF disabled, it is the
+positive calculus. A derivation is a finite tree built from the inference rules;
+its definition does not specify clause-selection order or backtracking.
+
+The calculus has the usual assumption, truth, conjunction, disjunction,
+implication, falsity-elimination, and quantifier rules. In particular,
+\[
+ \frac{\KB;\Gamma,A\vdash_N B}{\KB;\Gamma\vdash_N A\Rightarrow B},
+ \qquad
+ \frac{\KB;\Gamma\vdash_N F[a/x]}{\KB;\Gamma\vdash_N\forall x.F(x)}.
+\]
+In the second rule, $a$ is a fresh eigenparameter, absent from the free variables
+of $\Gamma$ and of the quantified goal. Opening is capture-avoiding.
+
+For clause application, choose one capture-avoiding substitution $\sigma$ for
+both head and body:
+\[
+ \frac{(G_0\mathbin{:-}\bar G)\in\KB\qquad
+       \KB;\Gamma\vdash_N\sigma(\bigwedge\bar G)}
+      {\KB;\Gamma\vdash_N\sigma(G_0)}.
+\]
+The rule does not substitute through $\Gamma$ or any surrounding goal. A goal
+clause similarly derives falsity from its instantiated body. Concrete-symbol
+\texttt{ho\_apply} introduction and elimination preserve the meaning of
+predicate application.
+
+Equality has reflexivity, symmetry, transitivity, and replacement rules.
+Rewriting is an explicit derivation step, \texttt{Derives.equalSubst}:
+\[
+ \frac{\KB;\Gamma\vdash_N\operatorname{equal}(a,b)
+       \qquad\KB;\Gamma\vdash_N F[a/z]}
+      {\KB;\Gamma\vdash_N F[b/z]}.
+\]
+Both instances of the formula template $F$ use checked capture-avoiding
+substitution. The context $\Gamma$ stays fixed. Replacement therefore reaches
+inside operation arguments, dictionary expressions, and scoped goals while
+respecting their binders. To rewrite using
+$a\mathrel{\Leftrightarrow}b\mathbin{:-}\bar C$, first prove the instantiated
+body $\bar C$ and derive the equality by clause application, then apply this
+replacement rule. An oracle-certified equation uses the same two steps in the
+extended KB. A resolver may automate these steps; the derivation records their
+justification. The soundness proof for replacement uses equality of values and
+the substitution lemma.
+
+\texttt{Model.sound} includes these rules. Equations are symmetric; orienting
+them for computation and proving rewriter termination are operational questions.
+The checked example in \texttt{Tests/EquationRules.lean} validates
+$\operatorname{natEqual}(x,x)\Leftrightarrow\mathsf{true}$ under
+$\operatorname{isNat}(x)$, then replaces a Boolean dictionary-call argument.
+
+\section{Compositional models and rigid parameters}
+A model $M$ has a nonempty value carrier $V$, interpretations of literals and
+symbol applications, a truth predicate on values, and value-level logical
+operations. Each logical operation satisfies its usual truth condition. For example,
+\[
+ M,\rho\models A\Rightarrow B
+ \quad\Longleftrightarrow\quad
+ (M,\rho\models A\Rightarrow M,\rho\models B),
+\]
+where $\rho:\mathrm{Variable}\to V$ is an environment. Quantifiers range over
+$V$. Formula constructors also denote values, so formulas used as data retain
+compositional semantics. The model includes the truth law for concrete-symbol
+\texttt{ho\_apply}.
+Its equality operation is true exactly when the operand values are equal;
+having the same truth status alone does not imply equality of values.
+
+Dictionary operation calls have the form
+\texttt{dictionaryCall}$(d,\pi,f,\bar t)$, where $d$ and $\bar t$ are terms,
+$\pi$ is a path through required-model subdictionaries, and $f$ is a field name.
+Selectors use the symbol namespace. Dictionaries form finite trees of callable
+leaves and subdictionaries; interfaces recursively require child interfaces and
+their semantic laws. The checked interpretation is supplied by
+\texttt{Extension.withDictionaryCalls} in \texttt{OperationDictionaries.lean}.
+If lookup at $\pi.f$ accepts an operation entry with symbol $s$ and captures $\bar c$,
+then
+\[
+ \lbrack\!\lbrack\operatorname{dictionaryCall}(d,\pi,f,\bar t)\rbrack\!\rbrack_{M,\rho}
+ =\operatorname{application}_M
+   (s,\bar c\mathbin{+\!+}\lbrack\!\lbrack\bar t\rbrack\!\rbrack_{M,\rho}).
+\]
+This is equality of returned values, allowing calls inside data expressions.
+Invalid accesses denote an explicitly chosen value and supply no NAF evidence.
+Substitution and opening traverse $d$ and every argument; the general soundness
+proof covers these terms without adding inference rules.
+
+\texttt{OrderDictionaries.lean} gives concrete \texttt{natOrd} and
+\texttt{boolOrd} dictionaries in a shared untyped carrier, with $\mathsf{false}<\mathsf{true}$.
+Each contains a WeakOrd child and a required Eq grandchild. The same term calls
+\texttt{weakOrd.compare} through either dictionary. Interface proofs establish
+exact domain membership, lawful equality, and a reflexive, transitive,
+antisymmetric, total non-strict order. Comparison returns an \texttt{Ordering}
+value; all laws are guarded by the instance's domain predicate.
+
+A rigid parameter is a proof-level name, not a new element of $V$.
+Its denotation is $\rho(a)$. The forall rule must work for every value assigned
+to the fresh name:
+\[
+ \forall v\in V.\;M,\rho[a\mapsto v]\models F[a/x]
+ \quad\Longrightarrow\quad M,\rho\models\forall x.F(x).
+\]
+Freshness ensures that changing $\rho(a)$ preserves the truth of $\Gamma$.
+Syntactically distinct rigid names may denote the same value. In a pure Herbrand
+interpretation, an environment assigns them ground terms; they are not added
+to the universe as new constructors.
+
+We write $M\models\KB$ when every clause is true under every environment,
+and $M,\rho\models\Gamma$ when every local assumption holds under $\rho$.
+The formal definition and the quantifier soundness argument are in
+\texttt{Semantics.lean}.
+
+\section{Inductive domains and validity of induction}
+Let $\Sigma$ be a finite family of inductive domains defined by constructor
+rules with finite field lists. The least generated membership relation is
+$\operatorname{Member}_\Sigma(D,t)$ on finite constructor trees $t$.
+Mutual recursion, empty domains, and overlap are permitted. Finitely many
+definitions need not generate finitely many values.
+
+Exact domain realization requires
+\[
+ M\models\operatorname{is}_D(v)
+ \quad\Longleftrightarrow\quad
+ \exists t.\;\operatorname{Member}_\Sigma(D,t)\land\lbrack\!\lbrack t\rbrack\!\rbrack_M=v.
+\]
+Here tree denotation is compositional. Constructor-closure clauses alone are
+weaker: they would allow unsupported domain members. The implementation is
+\texttt{InductiveDomains.Realizes}.
+
+Define $\Dall(x)=\bigvee_{D\in\Sigma}\operatorname{is}_D(x)$. Then
+\[
+ \forall x:\Dall.\,P(x):=\forall x.\,\Dall(x)\Rightarrow P(x).
+\]
+This quantifies over denotations of generated members. Equivalence to raw forall
+requires a proof that those denotations cover the entire semantic carrier.
+
+For Nat, an induction principle can be an ordinary KB clause:
+\[
+\begin{split}
+ \operatorname{apply}(P,x)\mathbin{:-}{}&\operatorname{Nat}(x),\\
+ &\operatorname{apply}(P,\operatorname{zero}),\\
+ &\forall n.\,\operatorname{Nat}(n)\Rightarrow
+   (\operatorname{apply}(P,n)\Rightarrow
+    \operatorname{apply}(P,\operatorname{succ}(n))).
+\end{split}
+\]
+Apply denotes \texttt{ho\_apply}. To validate this clause, fix an arbitrary
+environment and predicate value $P$. The base and step establish the invariant
+on every generated natural by mathematical induction. Exact Nat membership
+then establishes the head at any value satisfying the guard.
+
+This validity proof is separate from using the clause in a derivation. In our
+concrete model it is \texttt{InductionModel.inductionRule\_valid}. Generic
+soundness uses the hypothesis $M\models\KB$, including validity of any induction
+clauses present; it does not assert that arbitrary rules have a model.
+
+\section{NAF evidence and adequacy}
+NAF is its own syntax constructor. Its introduction rule is
+\[
+ \frac{\operatorname{FV}(G)=\varnothing\qquad N(\KB,\Gamma,G)}
+      {\KB;\Gamma\vdash_N\naf G}.
+\]
+It is not justified by the mere absence of a derivation. Evidence is indexed
+by the exact KB and actual local assumptions.
+
+The general soundness theorem requires the failure provider to be adequate:
+for every closed $G$ and every evidence $N(\KB,\Gamma,G)$,
+\[
+ \forall\rho.\;M,\rho\models\Gamma\Rightarrow M,\rho\models\naf G.
+\]
+This is \texttt{Model.FailureAdequate}. The general model requires coherence of
+NAF truth with falsity of its operand. For the certified provider, we additionally
+choose complement NAF:
+\[
+ M,\rho\models\naf G\quad\Longleftrightarrow\quad M,\rho\not\models G.
+\]
+
+The provider built from \texttt{CertifiedRefutation.Refutes} is proved adequate
+under that interpretation. Its certificates establish semantic falsity in the
+same original context. Atomic certificates require justified completion and
+exhaustive coverage; implication refutation requires established antecedent
+truth and consequent falsity. Guarded universal refutation exhibits an actual
+generated member with a false property. Exhaustive counterexample-failure
+certificates can also establish truth of a guarded universal, with separate
+soundness lemmas for those semantic certificates.
+
+These results do not prove that arbitrary unsuccessful SLD search supplies
+adequate evidence. Unsupported, suspended, or truncated searches cannot be
+used as refutation certificates.
+
+\section{Soundness theorem and proof}
+\begin{theorem}[Soundness of the logic]\label{thm:soundness}
+Let $M$ be a compositional model, $M\models\KB$, and let $N$ be adequate for
+$M$ and $\KB$. Then
+\[
+ \KB;\Gamma\vdash_N G
+ \quad\Longrightarrow\quad
+ \forall\rho.\;M,\rho\models\Gamma\Rightarrow M,\rho\models G.
+\]
+\end{theorem}
+
+\begin{proof}[Proof outline]
+Induct on the derivation in \texttt{Derives}.
+The propositional rules follow from the truth laws of their connectives.
+For clause application, compositional evaluation of a capture-avoiding
+substitution agrees with evaluation in the composed environment. Clause validity
+under every environment therefore transfers truth from the instantiated body
+to its instantiated head.
+
+For universal introduction, choose any $v\in V$ and interpret the fresh
+parameter by $v$. Freshness preserves the assumptions, and the opening lemma
+identifies the opened body with the quantified body at $v$. Quantifier
+elimination and the existential rules similarly use substitution and freshness.
+The application rules follow from the model's concrete-symbol application law.
+Equality rules use equality of values and the substitution lemma, including
+replacement inside scoped formulas and operation arguments.
+NAF introduction follows from provider adequacy, which is an independent
+obligation rather than a consequence of failed proof discovery.
+\end{proof}
+
+The general Lean theorem is \texttt{Semantics.Model.sound}. Exact inductive
+realization, KB validity, and complement NAF are packaged in
+\texttt{InductiveSoundness.Interpretation}. With the proved-adequate certified
+provider, the logic theorem is:
+\begin{quote}
+\href{AnthillModKbSpec/InductiveSoundness.lean}{\texttt{InductiveSoundness.declarative\_sound}}
+\end{quote}
+The theorem applies to the declarative logic independently of matching, clause
+selection, backtracking, or execution strategy. Resolution proof translation
+has its own soundness corollary; it is not a prerequisite for the logic theorem.
+
+\begin{corollary}[Consistency]
+If such a model exists, the positive calculus cannot derive falsity from the
+empty local context. For a chosen model and its certified NAF provider, the
+same holds with certified NAF enabled.
+\end{corollary}
+This follows because $M\not\models\bot$. The certified consistency theorem is:
+\begin{quote}
+\texttt{InductiveSoundness.declarative\_consistent}
+\end{quote}
+
+\subsection*{Extension by a sound equation oracle}
+Let $O(\bar C,l,r)$ certify a conditional equation. Its soundness contract is
+\[
+ O(\bar C,l,r)\Longrightarrow
+ \forall\rho.\;M,\rho\models\bigwedge\bar C\Longrightarrow
+ \lbrack\!\lbrack l\rbrack\!\rbrack_{M,\rho}
+ =\lbrack\!\lbrack r\rbrack\!\rbrack_{M,\rho}.
+\]
+Define $\KB_O$ as $\KB$ together with every conditional equation certified by $O$.
+If $M\models\KB$, the contract establishes $M\models\KB_O$. Applying
+Theorem~\ref{thm:soundness} proves soundness over $\KB_O$, provided the NAF
+provider is adequate for this extended KB. Oracle acceptance retains the
+equation's condition: the ordinary clause rule still proves that body.
+Completeness is unnecessary, and a missing answer supplies no negative evidence.
+The general theorem in \texttt{EquationOracle.lean} is:
+\begin{quote}
+\texttt{Model.sound\_with\_equation\_oracle}
+\end{quote}
+The inductive package preserves the same model, exact domain realization, and
+complement NAF; its logic theorem is:
+\begin{quote}
+\texttt{InductiveSoundness.declarative\_sound\_with\_equation\_oracle}
+\end{quote}
+The corresponding consistency result excludes falsity in the empty context.
+The checked oracle examples include a closed Nat computation, an equation used
+in a predicate body, and a nonempty KB containing induction.
+
+\section{A nonempty KB with a model}
+The concrete witness in \texttt{InductionModel.lean} uses a carrier of constructor
+keys paired with propositions, allowing both data and formulas as values.
+It is Herbrand-style rather than a pure ground-term carrier. Nat membership is
+exact and the denotations of different natural numbers are distinct.
+
+The model satisfies Nat membership and induction clauses, followed by recursive
+definitions of reachable and even predicates. The predicate interpretations
+coincide with their least generated relations. In particular, evenness at one
+is false, so this is not a model making every atom true. Model existence and
+consistency are established for these nonempty example KBs, not for arbitrary
+predicate extensions.
+
+\section{Checking the formalization}
+The project uses Lean 4.35.0. Check the logic and model results with:
+\begin{verbatim}
+lake build
+lake env lean Tests/InductiveSoundness.lean
+lake env lean Tests/InductionModel.lean
+\end{verbatim}
+The study currently covers soundness of the declarative calculus with adequate
+NAF, a proved-adequate certified provider, and concrete inductive model witnesses.
+It does not establish completeness or correctness of the production Anthill
+resolver. Explicit negation and open/closed predicate policies remain future work.
+\end{document}

@@ -1,0 +1,30 @@
+-- This module serves as the root of the `AnthillModKbSpec` library.
+-- Import modules here that should be built as part of the library.
+import AnthillModKbSpec.Syntax
+import AnthillModKbSpec.LogicalKb
+import AnthillModKbSpec.Miller
+import AnthillModKbSpec.ClauseInstantiation
+import AnthillModKbSpec.MillerCertificates
+import AnthillModKbSpec.CoreMatcherCertificate
+import AnthillModKbSpec.LeanCoreMatcher
+import AnthillModKbSpec.MillerResolution
+import AnthillModKbSpec.Derivation
+import AnthillModKbSpec.GroundSearch
+import AnthillModKbSpec.VariableSearch
+import AnthillModKbSpec.ScopedSearch
+import AnthillModKbSpec.Semantics
+import AnthillModKbSpec.EquationOracle
+import AnthillModKbSpec.OperationDictionaries
+import AnthillModKbSpec.OrderDictionaries
+import AnthillModKbSpec.BooleanModel
+import AnthillModKbSpec.SearchSoundness
+import AnthillModKbSpec.CompletedGround
+import AnthillModKbSpec.HerbrandModel
+import AnthillModKbSpec.InductiveDomains
+import AnthillModKbSpec.ScopedAtomSemantics
+import AnthillModKbSpec.CertifiedRefutation
+import AnthillModKbSpec.CertifiedScopedSearch
+import AnthillModKbSpec.InductionModel
+import AnthillModKbSpec.UniversalIntroduction
+import AnthillModKbSpec.CounterexampleSearch
+import AnthillModKbSpec.InductiveSoundness
