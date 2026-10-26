@@ -1,4 +1,4 @@
-import AnthillModKbSpec.CounterexampleSearch
+import AnthillModKbSpec.Resolution.CounterexampleSearch
 
 namespace AnthillModKbSpec.Archive.InductionGoals
 

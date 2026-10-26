@@ -1,4 +1,4 @@
-import AnthillModKbSpec.MillerCertificates
+import AnthillModKbSpec.Resolution.MillerCertificates
 
 namespace AnthillModKbSpec.Archive.UnaryMatcher
 

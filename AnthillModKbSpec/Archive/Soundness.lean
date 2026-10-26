@@ -1,5 +1,5 @@
 import AnthillModKbSpec.Archive.InductiveResolution
-import AnthillModKbSpec.InductiveSoundness
+import AnthillModKbSpec.Resolution.InductiveSoundness
 
 namespace AnthillModKbSpec.Archive.ExplicitInduction
 

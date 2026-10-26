@@ -2,7 +2,7 @@
 
 The target is an untyped representation of Anthill sorts as dictionary trees of
 predicates, operations, and required models. Their semantic contract is formalized in
-[`OperationDictionaries.lean`](../AnthillModKbSpec/OperationDictionaries.lean).
+[`OperationDictionaries.lean`](../AnthillModKbSpec/Foundation/OperationDictionaries.lean).
 `Term.dictionaryCall` provides syntax for calling an operation from such a tree.
 
 An extension of a compositional model provides:
@@ -139,7 +139,7 @@ therefore are not automatically implementations of this extension. Explicit
 standalone reference and general indirect-call syntax remain separate future
 extensions; dictionary calls use the stronger value-level contract already.
 
-[`Tests/OperationDictionaries.lean`](../Tests/OperationDictionaries.lean) constructs
+[`Tests/Foundation/OperationDictionaries.lean`](../Tests/Foundation/OperationDictionaries.lean) constructs
 a model and an extension satisfying the contract. It checks distinct references,
 captured arguments, role rejection (including forged tags), lookup behavior,
 value replacement in a larger expression, and recursive interface satisfaction.

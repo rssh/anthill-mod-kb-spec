@@ -4,6 +4,19 @@ The project's objective is soundness of the declarative logic. Start with
 [the overview](../overview_anthill.tex). Matching and proof discovery are described
 separately in [the implementation note](implementation.md).
 
+Source modules are organized as `AnthillModKbSpec/Foundation/` for the generic
+logic and model, `Models/` for concrete witnesses, and `Resolution/` for search
+and admission groundwork (with ground certificates in `Resolution/P0/`).
+Foundation and concrete-model imports are independent of resolution. The
+`Foundation`, `Models`, and `Resolution` aggregate modules can be imported
+separately; declaration namespaces are preserved.
+
+`Foundation.InductiveDomain` provides exact constructor-domain presentations for
+Lean data types. The separate `Deriving.InductiveDomain` metaprogram generates
+these definitions and their proofs for supported first-order inductives; see
+[the deriving guide](inductive-domain-deriving.md). Its tree correspondence is
+separate from interpreting those trees in a logical model.
+
 ## Syntax and inference rules
 
 `Syntax` defines `Term`: variables, data, applications, dictionary operation calls,
@@ -102,7 +115,7 @@ return `Ordering` values, and Bool is ordered `false < true`. See
 Atomic refutation uses `ScopedAtomSemantics` completion and exhaustive instance
 coverage. `GroundSearch`, `VariableSearch`, `ScopedSearch`, `SearchSoundness`,
 and `CompletedGround` supply supporting operational fragments and certificates.
-Raw scoped search failure is not adequate in general; `Tests/ScopedNafBoundary.lean`
+Raw scoped search failure is not adequate in general; `Tests/Resolution/ScopedNafBoundary.lean`
 formalizes that boundary.
 
 `UniversalIntroduction` supplies generalization lemmas. `CounterexampleSearch`

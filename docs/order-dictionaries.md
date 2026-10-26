@@ -1,6 +1,6 @@
 # Ord for Nat and Bool
 
-[`OrderDictionaries.lean`](../AnthillModKbSpec/OrderDictionaries.lean) constructs
+[`OrderDictionaries.lean`](../AnthillModKbSpec/Models/OrderDictionaries.lean) constructs
 two lawful order dictionaries in one untyped model. Nat uses its usual order;
 Bool uses `false < true`.
 
@@ -72,5 +72,5 @@ Run the examples with:
 
 ```sh
 lake build
-lake env lean Tests/OrderDictionaries.lean
+lake env lean Tests/Models/OrderDictionaries.lean
 ```

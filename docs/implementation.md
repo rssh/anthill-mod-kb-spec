@@ -5,6 +5,22 @@ The theorem about `Derives` does not require an automatic search algorithm.
 This note describes separate experiments for discovering derivations and
 checking that proposed resolution steps belong to the logic.
 
+[Decidable core and proof extensions](resolution-state-machine.md) is the proposed
+next design: a terminating core decision procedure, a broader proof language, and
+checked admission of proved statements. Its transition catalogue also records
+proof-search actions that are not yet classified as core operations.
+
+The [implementation roadmap](resolution-implementation-plan.md) tracks the ordered
+work as dependency-linked `anthill-todo` tickets under the `resolution-machine` tag.
+The [S01 contract](lean-admission-contract.md) defines P0, decidable extensions P1,
+and proof strategies P2 (which may return Unknown), using one syntax and state
+machine. It specifies result meanings and the Lean definitions and proofs to implement.
+
+The [S02 admission signature](admission-signature.md) implements typeless data and predicate
+reference ranges over the existing carrier, with checked arity declarations,
+snapshot-indexed evidence, concrete-reference application laws, and model-backed
+examples. Guarded elaboration and machine scope enforcement remain later work.
+
 ## Resolution steps and their justification
 
 `MillerResolution.Proves` records formula-resolution proof trees. Forall opens
@@ -46,7 +62,7 @@ answers are not reflected into `Term`; the partial instantiator rejects cases
 requiring alpha-renaming. Unsupported or undecided output never supplies NAF
 evidence. Candidate-state rollback is not a complete search backtracking engine.
 
-[Tests/LeanCoreMatcher.lean](../Tests/LeanCoreMatcher.lean) executes the native
+[Tests/Resolution/LeanCoreMatcher.lean](../Tests/Resolution/LeanCoreMatcher.lean) executes the native
 solver, emits only proposal data as a safe definition, reconstructs its
 kernel-checked expansion proof, and proves the forall. It also checks forged
 proposals, undeclared rigids, caller-state isolation, and a binary permutation

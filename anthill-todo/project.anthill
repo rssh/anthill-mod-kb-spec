@@ -1,0 +1,25 @@
+-- Project configuration
+--
+-- `tools` is the default acceptance: `anthill-todo add` without `--acceptance`
+-- gives the new item one `ToolPasses(<tool>)` per entry. A tool name is a
+-- free-form LABEL for a check whoever delivers the item must see pass;
+-- anthill-todo neither resolves nor runs it, so any name is accepted.
+
+fact Project(
+  name: "anthill-mod-kb-spec",
+  language: "Lean",
+  build: "lake",
+  tools: ["lake build"])
+
+-- Which store holds these work items, and in which role (proposal 057).
+-- `mirror`: every file here is loaded at startup and the KB answers reads, with
+-- the store as the write-through durability leg. `root: "."` is this directory.
+-- One file per item, under a directory named for the item's status.
+fact anthill.persistence.ExtentBinding(
+  store: anthill.persistence.filesystem.ItemPerFileStore(
+    root: ".",
+    status_field: "last_status_change.status",
+    id_field: "id",
+    ref_field: "workitem"),
+  role: anthill.persistence.ExtentRole.mirror(),
+  covers: [WorkItem[], Feedback[], Tag[], MirrorEntry[], StoreFormat[]])

@@ -1,0 +1,33 @@
+name: Lean Action CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Current logic
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: leanprover/lean-action@v1
+      - name: Check current examples
+        run: |
+          while IFS= read -r -d '' test; do
+            lake env lean "$test" || exit 1
+          done < <(find Tests -path Tests/Archive -prune -o -name '*.lean' -print0)
+
+  archive:
+    name: Archived experiments
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: leanprover/lean-action@v1
+      - name: Build opt-in archive
+        run: lake build AnthillModKbSpec.Archive
+      - name: Check archived examples
+        run: |
+          while IFS= read -r -d '' test; do
+            lake env lean "$test" || exit 1
+          done < <(find Tests/Archive -name '*.lean' -print0)

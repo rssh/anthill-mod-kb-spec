@@ -1,0 +1,15 @@
+-- Generic logic and model contracts; no resolution/profile dependencies.
+import AnthillModKbSpec.Foundation.Syntax
+import AnthillModKbSpec.Foundation.LogicalKb
+import AnthillModKbSpec.Foundation.Substitution
+import AnthillModKbSpec.Foundation.Opening
+import AnthillModKbSpec.Foundation.ClauseInstantiation
+import AnthillModKbSpec.Foundation.Derivation
+import AnthillModKbSpec.Foundation.Semantics
+import AnthillModKbSpec.Foundation.EquationOracle
+import AnthillModKbSpec.Foundation.InductiveDomains
+import AnthillModKbSpec.Foundation.InductiveDomain
+import AnthillModKbSpec.Foundation.OperationDictionaries
+import AnthillModKbSpec.Foundation.UniversalIntroduction
+import AnthillModKbSpec.Foundation.Negation
+import AnthillModKbSpec.Foundation.Established

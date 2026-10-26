@@ -1,6 +1,6 @@
 # Soundness with an equation oracle
 
-[`EquationOracle.lean`](../AnthillModKbSpec/EquationOracle.lean) extends the
+[`EquationOracle.lean`](../AnthillModKbSpec/Foundation/EquationOracle.lean) extends the
 soundness theorem with a positive oracle for conditional equations. The oracle
 can certify equations involving ordinary operations or dictionary calls.
 
@@ -65,7 +65,7 @@ that closedness makes this equality independent of the chosen environment.
 This is a semantic specification; it does not assume decidable equality on the
 entire carrier or provide an executable external solver.
 
-[`Tests/EquationOracle.lean`](../Tests/EquationOracle.lean) checks a computed Nat
+[`Tests/Foundation/EquationOracle.lean`](../Tests/Foundation/EquationOracle.lean) checks a computed Nat
 comparison used to prove an equation in a predicate rule's body, consistency,
 and combination with certified NAF at the extended KB. A conditional-oracle
 example accepts `0 = 1` under the premise `0 = 1` and proves that this cannot
@@ -75,5 +75,5 @@ theorems are also checked with the nonempty inductive KB.
 
 ```sh
 lake build
-lake env lean Tests/EquationOracle.lean
+lake env lean Tests/Foundation/EquationOracle.lean
 ```

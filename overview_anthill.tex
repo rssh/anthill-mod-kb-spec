@@ -33,7 +33,7 @@ Existence of a model satisfying these conditions then establishes consistency.
 The core theorem is \texttt{Semantics.Model.sound}. For the certified NAF
 provider and inductively interpreted KB, its packaged form is:
 \begin{quote}
-\href{AnthillModKbSpec/InductiveSoundness.lean}{\texttt{InductiveSoundness.declarative\_sound}}
+\href{AnthillModKbSpec/Resolution/InductiveSoundness.lean}{\texttt{InductiveSoundness.declarative\_sound}}
 \end{quote}
 Proof-discovery experiments are described in the separate
 \href{docs/implementation.md}{implementation note}.
@@ -171,7 +171,7 @@ the substitution lemma.
 
 \texttt{Model.sound} includes these rules. Equations are symmetric; orienting
 them for computation and proving rewriter termination are operational questions.
-The checked example in \texttt{Tests/EquationRules.lean} validates
+The checked example in \texttt{Tests/Foundation/EquationRules.lean} validates
 $\operatorname{natEqual}(x,x)\Leftrightarrow\mathsf{true}$ under
 $\operatorname{isNat}(x)$, then replaces a Boolean dictionary-call argument.
 
@@ -348,7 +348,7 @@ realization, KB validity, and complement NAF are packaged in
 \texttt{InductiveSoundness.Interpretation}. With the proved-adequate certified
 provider, the logic theorem is:
 \begin{quote}
-\href{AnthillModKbSpec/InductiveSoundness.lean}{\texttt{InductiveSoundness.declarative\_sound}}
+\href{AnthillModKbSpec/Resolution/InductiveSoundness.lean}{\texttt{InductiveSoundness.declarative\_sound}}
 \end{quote}
 The theorem applies to the declarative logic independently of matching, clause
 selection, backtracking, or execution strategy. Resolution proof translation
@@ -408,8 +408,8 @@ predicate extensions.
 The project uses Lean 4.35.0. Check the logic and model results with:
 \begin{verbatim}
 lake build
-lake env lean Tests/InductiveSoundness.lean
-lake env lean Tests/InductionModel.lean
+lake env lean Tests/Resolution/InductiveSoundness.lean
+lake env lean Tests/Models/InductionModel.lean
 \end{verbatim}
 The study currently covers soundness of the declarative calculus with adequate
 NAF, a proved-adequate certified provider, and concrete inductive model witnesses.

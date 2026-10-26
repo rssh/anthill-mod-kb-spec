@@ -72,7 +72,7 @@ and adequate NAF evidence for that extended KB.
 
 ## Checked example
 
-[`Tests/EquationRules.lean`](../Tests/EquationRules.lean) contains a nonempty KB:
+[`Tests/Foundation/EquationRules.lean`](../Tests/Foundation/EquationRules.lean) contains a nonempty KB:
 
 ```text
 natEqual(x,x) <=> true :- isNat(x)
@@ -99,5 +99,5 @@ and the distinction between value equality and truth equivalence.
 
 ```sh
 lake build
-lake env lean Tests/EquationRules.lean
+lake env lean Tests/Foundation/EquationRules.lean
 ```

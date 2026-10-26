@@ -29,7 +29,7 @@ abstraction.
 computed expansion. `Proves.toDerives` translates every step into the original
 calculus, so the resolution rule introduces no new logical axiom. The main
 `InductiveSoundness.sound` and `consistent` now concern this formula-only logic.
-`Tests/MillerResolution.lean` checks the full forall/rigid/matching/induction path,
+`Tests/Archive/MillerResolution.lean` checks the full forall/rigid/matching/induction path,
 with NAF in its base case and a local IH in its scoped step. It also checks the
 D_all form, unsupported matches, preserved rigids, shadowing, and capture refusal.
 There is no separate InductiveProof goal or scheme registry on this route.
@@ -51,7 +51,7 @@ accepts the resulting existing `Expansion` certificate and translates to
 `Derives`. The main soundness theorem is unchanged; it assumes no correctness
 axiom for the proposer or encoding. The handwritten matcher remains available.
 
-`Tests/LeanCoreMatcher.lean` executes the core solver, emits its proposal as a
+`Tests/Resolution/LeanCoreMatcher.lean` executes the core solver, emits its proposal as a
 kernel-checked data definition, reconstructs the expansion proof, and proves the
 Nat forall using NAF in the base case and a scoped IH in the step. The proof's
 axioms are audited against the standard logical axioms. Tests reject forged
@@ -96,7 +96,7 @@ new logic does not accept arbitrary raw failure as negation and does not relax
 the closed-operand gate. `Proves.established` allows an induction-based formula
 proof to support a later certified implication refutation in the same context.
 
-`Tests/InductiveResolution.lean` contains the complete rigid-parameter proof of
+`Tests/Archive/InductiveResolution.lean` contains the complete rigid-parameter proof of
 all-Nat reachability. The zero constructor case uses a clause requiring NAF of
 falsity; the successor case uses its local IH through the recursive clause.
 The example has no legacy generic induction clause. It also checks the D_all
@@ -186,7 +186,7 @@ identifies knowledge bases with the same members. Clause identity is raw syntax,
 without quotienting by alpha-equivalence or logical equivalence. This collection
 type is independent of the derivability relation.
 
-`AnthillModKbSpec/Derivation.lean` defines declarative derivability:
+`AnthillModKbSpec/Foundation/Derivation.lean` defines declarative derivability:
 
 ```text
 Derives hoApplySymbol kb context goal naf   -- KB ; Γ ⊢ G, relative to naf
@@ -221,7 +221,7 @@ There is no default-negation elimination rule equating `not G` with `G → ⊥`.
 `NafFailure` is an interface, not an executable or automatically verified oracle.
 Its name does not certify an arbitrary supplied predicate as correct. The ground
 search fragment below supplies a concrete relation for finite ground programs;
-`Tests/Derivation.lean` also retains narrow fixtures that exercise the interface.
+`Tests/Foundation/Derivation.lean` also retains narrow fixtures that exercise the interface.
 Negating `Derives` directly would not express complete search and would make its
 inductive definition non-positive. Ordinary Horn-model entailment also does not
 by itself justify negation as failure.
@@ -235,7 +235,7 @@ substitutes into an existing sequent. Existential elimination additionally check
 that its witness parameter does not escape into the conclusion. Free KB variables
 are implicitly universally quantified; context variables are fixed parameters.
 
-`AnthillModKbSpec/Substitution.lean` defines free-variable collection and the
+`AnthillModKbSpec/Foundation/Substitution.lean` defines free-variable collection and the
 capture-avoiding `Substitutes` relation. Under a binder it can choose a new binder
 name, provided that name captures no substituted free variable. The binder then
 shadows the corresponding substitution entry. This is relational substitution,
@@ -263,7 +263,7 @@ with the Anthill resolver remains future work. Explicit negation is still a
 later extension; adequacy of the concrete NAF providers remains to be established
 against a chosen closed-world semantics.
 
-`AnthillModKbSpec/Semantics.lean` gives a compositional interpretation of the
+`AnthillModKbSpec/Foundation/Semantics.lean` gives a compositional interpretation of the
 shared term carrier. A `Model` supplies a nonempty value domain, literal and
 application operations, logical operations, and a truth predicate. Formulas
 stored as data also denote values. Quantifiers range over the value domain;
@@ -303,17 +303,17 @@ Finite failure cannot establish falsity in every Horn-clause model: the empty KB
 permits `p` to be true, although empty-program search fails on `p`. A regression
 test proves this counterexample.
 
-`AnthillModKbSpec/BooleanModel.lean` constructs `Model.trueAtoms`, a concrete
+`AnthillModKbSpec/Models/BooleanModel.lean` constructs `Model.trueAtoms`, a concrete
 Boolean model in which all applications hold. It validates every atomic-headed
 definite clause, so it can witness positive consistency without prescribing
 constructor semantics. The induction example proves that its KB has this
 model and therefore cannot derive falsity in the positive calculus. This is a
 consistency witness, not a proof of induction in the intended standard Nat
-model. `Tests/Soundness.lean` also checks semantic substitution, nontrivial
+model. `Tests/Foundation/Soundness.lean` also checks semantic substitution, nontrivial
 quantification, adequate evidence for `not False`, and exclusion of a model for
 an explicitly contradictory KB.
 
-`AnthillModKbSpec/CompletedGround.lean` supplies a closed-world semantics for
+`AnthillModKbSpec/Resolution/P0/CompletedGround.lean` supplies a closed-world semantics for
 finite ground search. `Model.GroundCompleted program context` requires every
 ordinary ground atom to hold exactly when it is a local fact or has a defining
 clause with a true body. `Model.ComplementNAF` makes default negation true exactly
@@ -333,19 +333,19 @@ The proof never turns a missing success certificate, recursion, or a depth
 limit into complete-failure evidence. This is two-valued completion semantics;
 a semantics retaining undefined atoms for all programs is a separate task.
 
-`AnthillModKbSpec/HerbrandModel.lean` builds concrete compositional models from
+`AnthillModKbSpec/Models/HerbrandModel.lean` builds concrete compositional models from
 an interpretation of ground-atom constructor keys. Values pair a constructor
 key with a proposition, allowing formula values in the shared carrier as well.
 Concrete-symbol `ho_apply` is resolved by a terminating operation that removes
 one argument per resolution. This is a model construction, not a resolver for
 unknown predicates, and it does not choose a canonical least or stable model.
-`Tests/CompletedGround.lean` supplies a completed model of `p :- not q`, proves
+`Tests/Resolution/P0/CompletedGround.lean` supplies a completed model of `p :- not q`, proves
 its actual failure provider adequate, derives `p` using NAF, and establishes
 consistency with that provider. It also checks positive recursion and proves
 that the odd negative cycle has no complement-completed model.
 
 There is a distinct obstruction for the current scoped provider.
-`Tests/ScopedNafBoundary.lean` proves that no `Model` can validate all of its
+`Tests/Resolution/ScopedNafBoundary.lean` proves that no `Model` can validate all of its
 failure evidence even for the empty KB. Search fails both on `p` and on
 `p -> q` (because `q` fails under the temporary assumption `p`). Adequacy of
 the first failure makes `p` false by NAF coherence; the model's implication law
@@ -356,7 +356,7 @@ supplies a separate sound counterexample rule for its restricted universals;
 unrestricted hypothetical-failure NAF still requires a restriction or a
 different semantics and corresponding soundness condition.
 
-`AnthillModKbSpec/InductiveDomains.lean` supplies the new domain-guarded
+`AnthillModKbSpec/Foundation/InductiveDomains.lean` supplies the new domain-guarded
 universal layer. `Definitions Domain Symbol` represents the set Sigma of
 constructor rules. Each rule names its result domain, constructor symbol, and
 finite list of argument domains. `Member` is the least inductively generated
@@ -386,7 +386,7 @@ carrier value to be denoted by a generated tree. Under this additional condition
 `forallAll_iff_forall` proves equivalence to raw universal quantification.
 Without it, the all-domain quantifier intentionally ranges only over data.
 
-`AnthillModKbSpec/UniversalIntroduction.lean` connects KB clauses and derived
+`AnthillModKbSpec/Foundation/UniversalIntroduction.lean` connects KB clauses and derived
 implications to these universal goals. `Derives.forallAll_intro` is the derived
 introduction rule: from `Gamma, D_all(x) |- F(x)`, conclude
 `Gamma |- forall x. D_all(x) -> F(x)`, provided x is absent from the free
@@ -406,7 +406,7 @@ formula directly, with the same freshness requirement. Tests cover a stored
 successor clause, a derived implication using two recursive clause applications,
 and rejection of generalization from a fixed local assumption about x.
 
-`AnthillModKbSpec/CounterexampleSearch.lean` adds forall introduction from
+`AnthillModKbSpec/Resolution/CounterexampleSearch.lean` adds forall introduction from
 certified exhaustive failure of a generated counterexample search:
 
 ```text
@@ -439,7 +439,7 @@ of arbitrary raw `ScopedSearch.Fails` proofs. The positive forall conclusion
 does not automatically become a KB-only `Derives` proof, since finite coverage
 and inductive-domain evidence remain external to that calculus.
 
-`Tests/CounterexampleSearch.lean` checks finite coverage with positive KB proofs,
+`Tests/Resolution/CounterexampleSearch.lean` checks finite coverage with positive KB proofs,
 an infinite Nat induction certificate, empty unions, the certified-success
 bridge, rejection of incomplete coverage, and real counterexamples preventing
 false forall certificates. The finite witness model identifies constructor
@@ -471,7 +471,7 @@ interface, not an implemented counterexample finder: connecting body refutations
 to executable search remains separate. It does not replace the existing
 `ScopedSearch` provider or remove the scoped counterexample described above.
 
-`Tests/InductiveDomains.lean` defines Nat and Boolean constructor domains plus
+`Tests/Foundation/InductiveDomains.lean` defines Nat and Boolean constructor domains plus
 an empty domain. It checks an induction proof for their union, exhaustive finite
 coverage, rejection of an incomplete sample, duplicate domains, empty-domain
 behavior, and counterexample refutation. A concrete compositional model realizes
@@ -487,7 +487,7 @@ still assumes a model satisfying the chosen KB. The same witness has a carrier
 value outside every generated domain, demonstrating why coverage cannot be
 omitted from the unrestricted-forall equivalence.
 
-`AnthillModKbSpec/CertifiedRefutation.lean` unifies the sound negative-evidence
+`AnthillModKbSpec/Resolution/CertifiedRefutation.lean` unifies the sound negative-evidence
 routes into `CertifiedRefutation.Refutes model kb context goal`. Ground leaves
 use actual finite-failure certificates in a completed model of the exact KB.
 Guarded-universal leaves use the generated-domain counterexamples above.
@@ -520,14 +520,14 @@ No automatic refutation search is claimed. The scoped-atom bridge below
 handles explicit instance covers with certified body refutations; it does not
 make arbitrary operational body failures sound.
 
-`Tests/CertifiedRefutation.lean` checks a positive atom established through
+`Tests/Resolution/CertifiedRefutation.lean` checks a positive atom established through
 adequate ground NAF, refutation of `p -> q`, recursive and higher-level
 implications, compound negative goals, provider adequacy, and consistency.
 It rejects the empty-KB implication refutation and checks that a temporary
 assumption cannot be reused as root establishment. The inductive-domain tests
 also exercise guarded universals through the unified provider.
 
-`AnthillModKbSpec/ScopedAtomSemantics.lean` supplies per-atom completion in an
+`AnthillModKbSpec/Resolution/ScopedAtomSemantics.lean` supplies per-atom completion in an
 exact scoped context. `Model.ScopedAtomCompleted program context atom` states
 that, under environments satisfying the local assumptions, the atom holds iff
 it is a local atomic assumption or has a true instantiated body. The support
@@ -552,7 +552,7 @@ insufficient: an atomic failure can hide an unsound hypothetical failure in a
 clause body. `Established.ofScopedInstance` supplies positive support without
 passing through legacy scoped NAF.
 
-`Tests/ScopedAtoms.lean` checks a schematic global rule with shared head/body
+`Tests/Resolution/ScopedAtoms.lean` checks a schematic global rule with shared head/body
 variables, a local implication rule, exhaustive local alternatives, actual
 atom-failure adaptation, NAF derivations, and a supported local fact that blocks
 refutation. It checks closed queries in an active rigid scope and retains the
@@ -560,7 +560,7 @@ free-parameter restriction. A hypothetical clause whose body is semantically
 true cannot be certified false, and therefore cannot be used to refute its
 supported atomic head.
 
-`AnthillModKbSpec/CertifiedScopedSearch.lean` provides the coherent certified
+`AnthillModKbSpec/Resolution/CertifiedScopedSearch.lean` provides the coherent certified
 scoped execution path. `CertifiedScopedSearch.Succeeds model program context
 goal` retains positive clause selection, local assumptions, conjunction,
 hypothetical implication, and universal introduction with a fresh rigid
@@ -591,7 +591,7 @@ termination or completeness result is claimed. The guarded-domain success rule
 uses Sigma's model interpretation directly; no general translation of those
 domain proofs into the existing KB-only `Derives` calculus is asserted.
 
-`Tests/CertifiedScopedSearch.lean` checks the empty-KB distinction: atomic NAF
+`Tests/Resolution/CertifiedScopedSearch.lean` checks the empty-KB distinction: atomic NAF
 can succeed under completion while `not (p -> q)` cannot. It checks certified
 NAF in a global clause body, higher-level implication refutation using a newly
 established antecedent, nested local scopes, context restoration, local rule
@@ -602,7 +602,7 @@ The old `ScopedSearch` judgments remain as operational specifications and for
 the unsound-adapter regression. New semantic scoped results should use
 `CertifiedScopedSearch`, not the legacy NAF adapter.
 
-`AnthillModKbSpec/GroundSearch.lean` starts the complete-failure semantics with
+`AnthillModKbSpec/Resolution/P0/GroundSearch.lean` starts the complete-failure semantics with
 finite ground programs. It uses the existing `Term` and `HornClause` types,
 restricting them through `IsData`, `IsAtom`, `IsGoal`, and `IsClause` predicates.
 `Program` stores a finite clause list with a well-formedness proof; `Program.toKb`
@@ -645,7 +645,7 @@ scopes and the remaining soundness connections are separate steps. This
 finite-failure semantics is not well-founded loop completion: both `p :- p` and
 `p :- not p` have neither certificate, as verified in the examples.
 
-`AnthillModKbSpec/VariableSearch.lean` adds first-order clause templates using the
+`AnthillModKbSpec/Resolution/VariableSearch.lean` adds first-order clause templates using the
 same term syntax. `VariableSearch.Program` retains the original variable-bearing
 clauses, for example `p(x) :- q(x)`. `Instance` uses one simultaneous substitution
 for a clause's head and entire body; every use chooses its own substitution.
@@ -693,7 +693,7 @@ successful instances and answers to the original schematic logical KB, using
 the new certified failure relation. These do not yet establish full resolver
 equivalence or model-theoretic soundness.
 
-`AnthillModKbSpec/ScopedSearch.lean` adds universal and nested implication goals
+`AnthillModKbSpec/Resolution/ScopedSearch.lean` adds universal and nested implication goals
 to the first-order search model. Its `Context` explicitly records active rigid
 parameter names and local definite formulas. Runtime variables must refer to those parameters; flexible
 clause variables are instantiated independently, using the same simultaneous
@@ -702,7 +702,7 @@ opens its body, and searches in the extended context. It never proves a
 universal goal merely by trying some generated concrete values. Clause bodies
 and query answers can contain universal goals, including nested binders.
 
-`AnthillModKbSpec/Opening.lean` supplies lawful fresh names for `Nat` and `String`.
+`AnthillModKbSpec/Foundation/Opening.lean` supplies lawful fresh names for `Nat` and `String`.
 Other name types can supply a `FreshNames` instance. The scope avoids active
 parameters, free names in assumptions and the body, and every nested binder.
 `Term.openFree` respects shadowing; `openFree_substitutes` proves that opening
@@ -761,7 +761,7 @@ restriction remain later steps. These results establish certificate disjointness
 and the bridge to `Derives`. The semantic corollaries additionally require a
 model and adequate failure evidence; resolver completeness is not established.
 
-`Tests/Induction.lean` supplies an example KB containing an explicit induction
+`Tests/Archive/Induction.lean` supplies an example KB containing an explicit induction
 principle. It uses constructor terms `zero` and `succ(n)`, a domain predicate
 `Nat(n)`, and a property `reachable(n)`. The KB contains the following clauses,
 where `apply(P, n)` denotes `ho_apply(P, n)`:
@@ -792,7 +792,7 @@ hypothetical successor obligations. Generic induction application is checked
 with `Derives`: `ScopedSearch` currently excludes `ho_apply`, so this example
 does not extend its resolver or claim a higher-order search implementation.
 
-`AnthillModKbSpec/InductionModel.lean` adds a model-theoretic induction example
+`AnthillModKbSpec/Models/InductionModel.lean` adds a model-theoretic induction example
 with an actual nonempty KB. Sigma declares Nat's zero and successor constructors;
 `family` is its complete finite domain catalog. The first KB contains constructor
 membership clauses and this induction clause:
@@ -826,13 +826,13 @@ their least generated relations. In particular, `even_one_false` refutes
 `even(succ(zero))`; this is not an all-atoms-true model.
 
 `sound` and `consistent` apply to this KB with the certified NAF provider.
-`Tests/InductionModel.lean` also checks a generated counterexample to “all Nat
+`Tests/Models/InductionModel.lean` also checks a generated counterexample to “all Nat
 values are even” and derives its NAF through that provider. These are existence
 and soundness results for these concrete definitions. They do not imply model
 existence for arbitrary predicate definitions, adequacy of legacy scoped search
 failure, or an executable higher-order induction resolver.
 
-`AnthillModKbSpec/Miller.lean` is an optional syntactic experiment. A `ho_apply`
+`AnthillModKbSpec/Resolution/Miller.lean` is an optional syntactic experiment. A `ho_apply`
 with a free variable predicate must have pairwise distinct bare bound variables
 as arguments. Bound predicates are treated as rigid for this check and may
 receive compound arguments. The check traverses scopes, nested implications,
@@ -844,25 +844,25 @@ Named argument rows, bounded quantifiers, literal families, name-resolution
 scopes, hash-consing, and other KB storage details are omitted. Lexical variable
 binding here is distinct from Anthill's symbol-table/domain scopes.
 
-`Tests/Syntax.lean` checks the induction-rule shape, scoped terms as arguments,
+`Tests/Resolution/Syntax.lean` checks the induction-rule shape, scoped terms as arguments,
 nested implications, shared binding, optional Miller restrictions, and clause
 translation. These are syntax checks, not proofs of induction's validity.
-`Tests/Derivation.lean` constructs proofs using clause instances, local assumptions,
+`Tests/Foundation/Derivation.lean` constructs proofs using clause instances, local assumptions,
 quantifiers, and `ho_apply`, and checks capture avoidance, shadowing, and freshness.
 It also checks NAF rule application, clause bodies using NAF, the groundness
 gate, and failure evidence indexed by the KB and local context.
-`Tests/GroundSearch.lean` checks concrete success/failure certificates, all-clause
+`Tests/Resolution/P0/GroundSearch.lean` checks concrete success/failure certificates, all-clause
 coverage, local facts, NAF in rule bodies, the bridge to `Derives`, fragment
 restrictions, and the absence of both certificates for positive and negative
 self-recursion.
-`Tests/VariableSearch.lean` checks shared variables, independent clause uses,
+`Tests/Resolution/VariableSearch.lean` checks shared variables, independent clause uses,
 non-ground query answers, clause-local witnesses, NAF binding safety, complete
 generators, rejection of incomplete samples, and variable-query failure.
-`Tests/ScopedSearch.lean` checks universal facts, concrete-fact rejection,
+`Tests/Resolution/ScopedSearch.lean` checks universal facts, concrete-fact rejection,
 quantified clause bodies, nested scopes, shadowing, freshness, parameter escape,
 opaque-parameter NAF, structural failure, and the connection to `Derives`.
 
-`Tests/ImplicationSearch.lean` checks nested hypothetical facts and rules,
+`Tests/Resolution/ImplicationSearch.lean` checks nested hypothetical facts and rules,
 conjunctive and universal premises, both orders of `forall` and implication,
 assumption isolation, NAF in extended contexts, exhaustive local alternatives,
 local rule failure, opaque-hypothesis failure restrictions, hypothetical global
@@ -871,27 +871,27 @@ clause bodies, and the connection to `Derives`.
 Build with `lake build`; check the twenty-one example files using `lake env lean`:
 
 ```sh
-lake env lean Tests/Syntax.lean
-lake env lean Tests/Derivation.lean
-lake env lean Tests/GroundSearch.lean
-lake env lean Tests/VariableSearch.lean
-lake env lean Tests/ScopedSearch.lean
-lake env lean Tests/ImplicationSearch.lean
-lake env lean Tests/Induction.lean
-lake env lean Tests/InductionModel.lean
-lake env lean Tests/UniversalIntroduction.lean
-lake env lean Tests/CounterexampleSearch.lean
-lake env lean Tests/InductiveSoundness.lean
-lake env lean Tests/InductiveResolution.lean
-lake env lean Tests/MillerResolution.lean
-lake env lean Tests/LeanCoreMatcher.lean
-lake env lean Tests/Soundness.lean
-lake env lean Tests/CompletedGround.lean
-lake env lean Tests/ScopedNafBoundary.lean
-lake env lean Tests/InductiveDomains.lean
-lake env lean Tests/CertifiedRefutation.lean
-lake env lean Tests/ScopedAtoms.lean
-lake env lean Tests/CertifiedScopedSearch.lean
+lake env lean Tests/Resolution/Syntax.lean
+lake env lean Tests/Foundation/Derivation.lean
+lake env lean Tests/Resolution/P0/GroundSearch.lean
+lake env lean Tests/Resolution/VariableSearch.lean
+lake env lean Tests/Resolution/ScopedSearch.lean
+lake env lean Tests/Resolution/ImplicationSearch.lean
+lake env lean Tests/Archive/Induction.lean
+lake env lean Tests/Models/InductionModel.lean
+lake env lean Tests/Foundation/UniversalIntroduction.lean
+lake env lean Tests/Resolution/CounterexampleSearch.lean
+lake env lean Tests/Resolution/InductiveSoundness.lean
+lake env lean Tests/Archive/InductiveResolution.lean
+lake env lean Tests/Archive/MillerResolution.lean
+lake env lean Tests/Resolution/LeanCoreMatcher.lean
+lake env lean Tests/Foundation/Soundness.lean
+lake env lean Tests/Resolution/P0/CompletedGround.lean
+lake env lean Tests/Resolution/ScopedNafBoundary.lean
+lake env lean Tests/Foundation/InductiveDomains.lean
+lake env lean Tests/Resolution/CertifiedRefutation.lean
+lake env lean Tests/Resolution/ScopedAtoms.lean
+lake env lean Tests/Resolution/CertifiedScopedSearch.lean
 ```
 
 CI runs all twenty-one example files.
