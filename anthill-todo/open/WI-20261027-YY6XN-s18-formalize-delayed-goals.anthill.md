@@ -23,11 +23,13 @@ Scope: extend the S04 machine with delayed goals as designed in docs/machine-del
 Acceptance:
 - A delay response suspends the focused obligation on declared unbound flexible names; an invalid delay is a contract gap.
 - Woken obligations run before the waking candidate's continuation, each under its own scope; their proofs are recorded under the suspension id and referenced from the tree.
-- On success, references are filled at the end; prove the deferred proofs are coherent and prove their recorded obligations, and that a success has no residual wakeup or constraint.
-- Residual wakeups or constraints at the end flounder as gaps: never success, never exhaustion, never NAF evidence.
+- Wakeups are one store entry per suspension id, attached to every name it waits on. Prove exactly-once wakeup: a commit returns each woken suspension once, removes it from the store (no stale attachment on its other names), and keeps every suspension none of whose names it bound.
+- A suspension outlives the frame that created it; the woken obligation keeps its own scope, and nothing from that scope reaches the caller.
+- On success, references are filled at the end; prove the deferred proofs are coherent and prove their recorded obligations, and that a success has no pending wakeup and no unresolved constraint.
+- Pending wakeups or unresolved constraints at the end flounder as gaps: never success, never exhaustion, never NAF evidence.
 - Extend State.Valid, Store.Scoped, run_success, run_exhausted, and the rollback theorems; existing rule-frame guarantees are unchanged.
-- Specify the constraint slot (dependency sets are the first constraint) without adding a constraint solver.
-- Traces from docs/machine-delay.md: wake on binding, rollback restoring a suspension, two wakeups from one binding, flounder, discarded suspension on failure, invalid delays.
+- Distinguish persistent restrictions from unresolved constraints. Dependency sets are restrictions: checked at every commit, attached after binding, never residual, and never a cause of floundering. Add the slot for unresolved constraints without adding a constraint solver.
+- Traces from docs/machine-delay.md: wake on binding; rollback restoring a suspension; rollback after a deferred proof was already recorded; two wakeups from one binding; a delay on two names woken once by binding one or both; alias-triggered re-delay; a callee's delayed goal woken by the caller's later goal; a resumed goal using its own discharged assumption while the caller cannot; flounder; a suspension discarded on failure; success with dependency sets attached; invalid delays.
 - Update S06 (guards on unbound variables delay; the generated fill/member goal is appended after the body), S08 (encode and check references), and S10 (NAF on a flexible operand delays).
 
 Validation: lake build and focused Lean tests/examples appropriate to the changed definitions and proofs. Documentation-only work is checked against its stated deliverables; a build alone does not establish them.
