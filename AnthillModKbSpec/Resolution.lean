@@ -9,6 +9,7 @@ import AnthillModKbSpec.Resolution.VariableSearch
 import AnthillModKbSpec.Resolution.ScopedSearch
 import AnthillModKbSpec.Resolution.SearchSoundness
 import AnthillModKbSpec.Resolution.AdmissionSignature
+import AnthillModKbSpec.Resolution.Elaboration
 import AnthillModKbSpec.Resolution.ScopedAtomSemantics
 import AnthillModKbSpec.Resolution.CertifiedRefutation
 import AnthillModKbSpec.Resolution.CertifiedScopedSearch

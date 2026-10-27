@@ -27,6 +27,7 @@ Acceptance:
 - The positive fact p(1) defeats a universal negative over a domain containing 1; rigid matching failure cannot establish it.
 - Exhaustive finite-domain absence includes coverage evidence; infinite-domain absence needs a justified symbolic certificate or static NeedsEvidence.
 - Exact KB/context dependencies are checked, including after lemma imports.
+- NAF and absence certificates are snapshot-indexed closed-world evidence. Registering a predicate, adding a domain, or adding a clause invalidates them; lowered formulas stay unchanged.
 - Supply Term proof-tree nodes and known terminating rule-checking procedures through S08 for every enabled NAF route, including its negative-evidence certificate. Prove successful nodes pass checking; Unknown or incomplete absence searches cannot export a completed NAF proof.
 - Logical-not and NAF remain distinct. If contradiction elimination for proved P plus naf-not P is added, prove its semantic soundness explicitly.
 Reuse CertifiedRefutation and CounterexampleSearch; do not claim existing ground-only Derives already admits scoped NAF.

@@ -22,6 +22,7 @@ Current scope: Lean formalization in /Users/rssh/work/oss/anthill-mod-kb-spec on
 Scope: assemble local reconstruction lemmas into the end-to-end theorem for accepted executions/proofs: foundation derivability of the elaborated answer, then semantic soundness via existing Model.sound or InductiveSoundness.declarative_sound.
 Acceptance:
 - Handle contexts, substitutions, scopes, domain/predicate guards, imported lemmas, and operation equations.
+- E(KB) includes the generated signature clauses (`Elaboration.signatureKb`). The model witness must satisfy them, via `models_signatureKb` under `AdmissionSignature.Realizes`, including the exact `D_all` and `Pred_n` interpretations.
 - Prove the composed proof-export/check theorem: successful admitted P2 execution yields a finite proof tree encoded as Term accepted by P1 for the permitted answer instance under the same snapshot/context and NAF provider. Compose the S08-S14 local checker correctness lemmas; impose no automatic P1 discovery requirement on the tree's formulas.
 - Separate any genuinely new semantic certificate rules from reconstruction into unchanged Derives and prove their added obligations.
 - A positive execution proof is not presented as a decision/completeness theorem; negative answers retain their precise adequacy hypotheses.

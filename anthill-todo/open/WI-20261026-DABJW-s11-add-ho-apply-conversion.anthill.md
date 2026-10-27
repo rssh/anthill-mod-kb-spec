@@ -22,6 +22,7 @@ Current scope: Lean formalization in /Users/rssh/work/oss/anthill-mod-kb-spec on
 Scope: implement ho_goal and ho_elim proof commands and checked selection of heads containing ho_apply. Include the user's intended whole-formula match: D_nat(a)->reachable(a) against D_nat(x)->ho_apply(P,x), not only an atomic reachable(a) matcher.
 Acceptance:
 - Match x:=a and P:=the registered unary reachable reference, without assigning rigids or enumerating arbitrary predicates.
+- Discharge P's `Pred_1` guard from its generated fact (`Elaboration.rangeGuard_derives_predicate`), a lookup by symbol. A predicate range supplies no case analysis over the registry. Any per-predicate resolution procedure is selected by lookup on the matched reference symbol; a flexible P is bound only by matching or by resolving its guard against the generated facts.
 - Preserve predicate-range guards and independently bound induction-step variables.
 - Prove the conversion under implication using foundation rules; extend certificates beyond the current UnaryMatch/Expansion coverage without assuming their existing theorem handles compound heads.
 - Direct and indirect calls share a canonical candidate view without rewrite loops.

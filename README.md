@@ -58,6 +58,8 @@ class is in the foundation; its generation metaprogram is imported separately.
 | Packaged logic soundness and consistency | [InductiveSoundness](AnthillModKbSpec/Resolution/InductiveSoundness.lean) |
 | Nonempty KB with valid induction and predicate definitions | [InductionModel](AnthillModKbSpec/Models/InductionModel.lean) |
 | Semantic contract for callable references and operation dictionaries | [OperationDictionaries](AnthillModKbSpec/Foundation/OperationDictionaries.lean) |
+| Guarded quantifier, context, and rule-template elaboration | [Elaboration](AnthillModKbSpec/Resolution/Elaboration.lean), [range and substitution contracts](docs/guarded-elaboration.md) |
+| Generated domain-membership clauses for derivable guards | [MembershipClauses](AnthillModKbSpec/Foundation/MembershipClauses.lean) |
 | Lawful Nat and Bool order dictionaries | [OrderDictionaries](AnthillModKbSpec/Models/OrderDictionaries.lean) |
 | Conditional operation equations and replacement | [Equation rule note](docs/conditional-equations.md), [examples](Tests/Foundation/EquationRules.lean) |
 | Soundness with an equation oracle | [EquationOracle](AnthillModKbSpec/Foundation/EquationOracle.lean), [theorem and examples](docs/equation-oracle.md) |

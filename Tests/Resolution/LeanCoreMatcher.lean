@@ -24,6 +24,7 @@ private def symbolExpr : Symbol → Lean.Expr
   | .reachable => Lean.mkConst ``Symbol.reachable
   | .even => Lean.mkConst ``Symbol.even
   | .hoApply => Lean.mkConst ``Symbol.hoApply
+  | .isPred arity => Lean.mkApp (Lean.mkConst ``Symbol.isPred) (Lean.mkNatLit arity)
 
 -- Run the actual native solver and publish only its raw proposal as a data
 -- definition. All logical facts about it below are reconstructed and checked

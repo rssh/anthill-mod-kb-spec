@@ -39,3 +39,7 @@ Implemented S02 in AnthillModKbSpec/RangeRegistry.lean and imported it from the 
 ### 2026-10-26T18:19:00Z — feedback — codex
 
 Follow-up after the module reorganization: AnthillModKbSpec/RangeRegistry.lean is now AnthillModKbSpec/Resolution/AdmissionSignature.lean; Tests/RangeRegistry.lean is now Tests/Resolution/AdmissionSignature.lean; docs/range-registry.md is now docs/admission-signature.md. Other tests named in the delivery note now live at Tests/Foundation/InductiveDomains.lean, Tests/Foundation/OperationDictionaries.lean, Tests/Models/InductionModel.lean, and Tests/Foundation/UniversalIntroduction.lean. The original delivery note records the paths at delivery time and is preserved.
+### 2026-10-27T13:50:45Z — feedback — claude
+
+Extended by the S03 revision: Signature gains dataSymbol and predicateSymbol, exposed with membershipSymbol as Naming (Signature.naming, SignatureSnapshot.naming). Range gains allData (D_all by name). Realizes additionally requires the exact interpretation of the D_all symbol and of each P_n symbol. The snapshot's role is narrowed: lowered formulas depend only on the naming, and ReusableAt indexes closed-world evidence and plans. The overlapping zero/0 test now checks only data realization, because InductionModel's isPred registers no arity-0 predicate.
+

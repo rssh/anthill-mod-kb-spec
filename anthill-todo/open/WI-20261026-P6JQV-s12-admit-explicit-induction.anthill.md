@@ -24,6 +24,7 @@ Acceptance:
 - Execute or check forall x:Nat reachable(x) by whole-formula induction-head selection.
 - The step uses a fresh n, Nat membership, and local induction hypothesis; scope restoration is demonstrated.
 - Registry membership does not substitute for proving the induction principle valid in the shared model.
+- Lower the induction rule through `elaborateClause?` with P at `.predicate 1`; a D_all range on P is rejected.
 - Repeated selection of induction on its own subgoals cannot evade the selected strategy's termination/admission contract.
 - Base/step dependencies requiring extensions are reported before execution.
 - Result reconstructs the original guarded universal, reusing InductionModel and InductiveSoundness.

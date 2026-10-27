@@ -9,6 +9,7 @@ import AnthillModKbSpec.Foundation.Semantics
 import AnthillModKbSpec.Foundation.EquationOracle
 import AnthillModKbSpec.Foundation.InductiveDomains
 import AnthillModKbSpec.Foundation.InductiveDomain
+import AnthillModKbSpec.Foundation.MembershipClauses
 import AnthillModKbSpec.Foundation.OperationDictionaries
 import AnthillModKbSpec.Foundation.UniversalIntroduction
 import AnthillModKbSpec.Foundation.Negation

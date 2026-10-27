@@ -88,4 +88,12 @@ theorem Substitutes.singleVar {Variable Literal Symbol : Type} [DecidableEq Vari
       Substitutes (Substitution.single name witness) (.var name)
         ((Substitution.single name witness) name))
 
+/-- Substituting a goal list pointwise substitutes its conjunction. -/
+theorem SubstitutesList.conjunction {Variable Literal Symbol : Type} [DecidableEq Variable]
+    {σ : Substitution Variable Literal Symbol} {before after : List (Term Variable Literal Symbol)}
+    (proof : SubstitutesList σ before after) : Substitutes σ (.conjunction before) (.conjunction after) := by
+  induction before generalizing after with
+  | nil => cases proof; exact .truth
+  | cons head tail ih => cases proof with | cons first rest => exact .conj first (ih rest)
+
 end AnthillModKbSpec

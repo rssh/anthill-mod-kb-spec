@@ -8,6 +8,8 @@ open Semantics InductiveDomains
 
 inductive Symbol where
   | zero | succ | isNat | reachable | even | hoApply
+  /-- Membership in the registered predicate references of one arity. -/
+  | isPred (arity : Nat)
   deriving DecidableEq, Repr
 
 inductive Domain where
@@ -49,9 +51,13 @@ theorem natTree_member (n : Nat) : Member sigma .nat (natTree n) := by
           subst i
           exact ih)
 
+/-- The predicate references this model registers, as symbol/arity pairs. -/
+def predicateRegistry : List (Symbol × Nat) := [(.reachable, 1), (.reachable, 2), (.even, 1)]
+
 def ordinaryTruth (symbol : Symbol) (args : List Value) : Prop :=
   match symbol, args with
   | .isNat, [value] => ∃ n, value = natValue n
+  | .isPred arity, [value] => ∃ symbol, (symbol, arity) ∈ predicateRegistry ∧ value = (.app symbol [], False)
   | .reachable, [value] => ∃ n, value = natValue n
   | .even, [value] => ∃ n, value = natValue n ∧ n % 2 = 0
   | _, _ => False
@@ -98,6 +104,27 @@ theorem application_reachable (value : Value) :
 theorem application_even (value : Value) :
     model.holds (model.application .even [value]) ↔ ∃ n, value = natValue n ∧ n % 2 = 0 :=
   atomTruth_ordinary .even (by decide) _
+
+/-- Like data values, symbol references carry false as their proposition. -/
+theorem application_reference (symbol : Symbol) (ordinary : symbol ≠ .hoApply) :
+    model.application symbol [] = (.app symbol [], False) := by
+  apply Prod.ext
+  · rfl
+  · exact propext ((atomTruth_ordinary symbol ordinary []).trans (by cases symbol <;> simp [ordinaryTruth]))
+
+/-- `isPred n` holds exactly on references of symbols registered at arity n. -/
+theorem application_isPred (arity : Nat) (value : Value) :
+    model.holds (model.application (.isPred arity) [value]) ↔
+      ∃ symbol, (symbol, arity) ∈ predicateRegistry ∧ model.application symbol [] = value := by
+  have ordinary : ∀ symbol, (symbol, arity) ∈ predicateRegistry → symbol ≠ .hoApply := by
+    intro symbol member
+    simp only [predicateRegistry, List.mem_cons, List.not_mem_nil, Prod.mk.injEq, or_false] at member
+    rcases member with ⟨rfl, _⟩ | ⟨rfl, _⟩ | ⟨rfl, _⟩ <;> decide
+  refine (atomTruth_ordinary (.isPred arity) Symbol.noConfusion [value]).trans ⟨?_, ?_⟩
+  · rintro ⟨symbol, member, rfl⟩
+    exact ⟨symbol, member, application_reference symbol (ordinary symbol member)⟩
+  · rintro ⟨symbol, member, rfl⟩
+    exact Exists.intro symbol ⟨member, application_reference symbol (ordinary symbol member)⟩
 
 @[simp] theorem application_zero : model.application .zero [] = natValue 0 := by
   apply Prod.ext

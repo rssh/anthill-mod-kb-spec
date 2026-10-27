@@ -1,28 +1,12 @@
 import AnthillModKbSpec.Resolution.CertifiedScopedSearch
+import AnthillModKbSpec.Foundation.MembershipClauses
 
 namespace AnthillModKbSpec.InductiveDomains
 
 open Semantics
 
-/-- A closed syntax representative of a generated constructor value. -/
-def Tree.toTerm (tree : Tree Symbol) : Term Variable Literal Symbol :=
-  match tree with
-  | .node symbol children => .app symbol (children.map Tree.toTerm)
-
 variable {Variable Literal Symbol Value Domain : Type} [DecidableEq Variable]
 variable {hoApplySymbol : Symbol}
-
-theorem Tree.eval_toTerm (tree : Tree Symbol) (model : Model Literal Symbol Value hoApplySymbol)
-    (environment : Environment Variable Value) : model.eval environment tree.toTerm = denote model tree := by
-  refine Tree.rec
-    (motive_1 := fun value => model.eval environment value.toTerm = denote model value)
-    (motive_2 := fun children => children.map (fun child => model.eval environment child.toTerm) =
-      children.map (denote model)) ?_ rfl ?_ tree
-  · intro symbol children ih
-    simpa only [Tree.toTerm, Model.eval, denote, List.map_map, Function.comp_def] using
-      congrArg (model.application symbol) ih
-  · intro head tail ihHead ihTail
-    simp only [List.map_cons, ihHead, ihTail]
 
 /-- Search for a generated witness whose property fails by NAF. The domain
 generator precedes NAF; a fresh rigid parameter is not an enumerated witness. -/

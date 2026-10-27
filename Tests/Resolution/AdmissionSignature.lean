@@ -7,10 +7,26 @@ namespace AdmissionSignatureTests
 
 open AnthillModKbSpec.InductionModel
 
+-- Nat is the only domain, so isNat also names D_all; isPred n names P_n.
 def snapshot : SignatureSnapshot Domain Symbol :=
-  ⟨0, ⟨family, membershipSymbol, [⟨.reachable, 1⟩, ⟨.reachable, 2⟩, ⟨.even, 1⟩]⟩⟩
+  ⟨0, ⟨family, membershipSymbol, .isNat, .isPred, [⟨.reachable, 1⟩, ⟨.reachable, 2⟩, ⟨.even, 1⟩]⟩⟩
 
-theorem realized : AdmissionSignature.Realizes snapshot model := ⟨realizes⟩
+theorem realized : AdmissionSignature.Realizes snapshot model := by
+  refine ⟨realizes, fun value => ?_, fun arity value => ?_⟩
+  · constructor
+    · intro truth
+      obtain ⟨tree, member, same⟩ := (realizes .nat value).mp truth
+      exact ⟨tree, ⟨.nat, by simp [snapshot, family], member⟩, same⟩
+    · rintro ⟨tree, ⟨domain, _, member⟩, same⟩
+      cases domain
+      exact (realizes .nat value).mpr ⟨tree, member, same⟩
+  · show model.holds (model.application (.isPred arity) [value]) ↔ _
+    rw [application_isPred]
+    constructor
+    · rintro ⟨symbol, member, rfl⟩
+      exact ⟨symbol, by simpa [SignatureSnapshot.Registered, snapshot, predicateRegistry] using member, rfl⟩
+    · rintro ⟨symbol, declared, rfl⟩
+      exact ⟨symbol, by simpa [SignatureSnapshot.Registered, snapshot, predicateRegistry] using declared, rfl⟩
 
 -- The witness includes the existing nontrivial KB model and exact Nat domain.
 theorem modelWitness : ∃ witness : Model Unit Symbol Value .hoApply,
@@ -93,9 +109,12 @@ example (environment : Environment String Value) :
 -- Disjointness is not an axiom: zero can be registered as a nullary predicate
 -- (always false) while its reference is also the constructor value Nat zero.
 def overlapping : SignatureSnapshot Domain Symbol :=
-  ⟨0, ⟨family, membershipSymbol, [⟨.zero, 0⟩]⟩⟩
+  ⟨0, ⟨family, membershipSymbol, .isNat, .isPred, [⟨.zero, 0⟩]⟩⟩
 
-example : AdmissionSignature.Realizes overlapping model := ⟨realizes⟩
+-- Its data interpretation is unaffected. Exact P_0 membership would need a model
+-- whose isPred 0 holds on the zero reference; this model registers no arity 0.
+example : InductiveDomains.Realizes model overlapping.signature.data.definitions
+    overlapping.signature.membershipSymbol := realizes
 
 example : overlapping.PredicateMember model 0 (natValue 0) ∧
     (Range.data [.nat]).Contains overlapping model (natValue 0) := by

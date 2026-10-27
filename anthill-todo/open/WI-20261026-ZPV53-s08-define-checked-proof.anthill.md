@@ -28,6 +28,7 @@ Acceptance:
 - Provide Term export for S06-S07 successful proof trees and prove the exported trees pass checking. Manual, external, and P2-produced trees use the same checking rules; unresolved holes, circular references, scope escape, and unsupported NAF evidence cannot be accepted.
 - Classify this route as a P1 decision of supplied-tree validity. Acceptance establishes the requested goal; rejection proves no negation, NAF, or non-derivability of that goal.
 - Imported statements retain context, range, and KB dependencies; local proofs cannot become unconditional global facts.
+- Check guard premises against the generated signature clauses: data and D_all membership through clause steps (or S07's checked membership node), and `Pred_n` guards by fact lookup on the reference symbol.
 - A second operational check admits only facts/rules/primitive contracts preserving the executable profile.
 - Rechecking can turn NeedsEvidence into Ready without invoking unbounded proof discovery at runtime.
 - Checkers and certified primitive computations terminate; forged/stale evidence is rejected.

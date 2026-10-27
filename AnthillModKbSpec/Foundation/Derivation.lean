@@ -154,4 +154,16 @@ theorem Derives.equation {Variable Literal Symbol : Type} [DecidableEq Variable]
     Derives hoApplySymbol kb context (.equal left' right') naf :=
   .clause member (.equal leftInstance rightInstance) bodyInstance proof
 
+/-- A goal list is derived by deriving each of its goals. -/
+theorem Derives.conjunctionIntro {Variable Literal Symbol : Type} [DecidableEq Variable]
+    {hoApplySymbol : Symbol} {kb : LogicalKb Variable Literal Symbol}
+    {context : ProofContext Variable Literal Symbol} {naf : NafFailure Variable Literal Symbol}
+    {goals : List (Term Variable Literal Symbol)}
+    (proofs : ∀ goal ∈ goals, Derives hoApplySymbol kb context goal naf) :
+    Derives hoApplySymbol kb context (.conjunction goals) naf := by
+  induction goals with
+  | nil => exact .truth
+  | cons head tail ih =>
+      exact .conjIntro (proofs head (by simp)) (ih (fun goal member => proofs goal (by simp [member])))
+
 end AnthillModKbSpec

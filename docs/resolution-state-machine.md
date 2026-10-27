@@ -80,8 +80,18 @@ The universal translation already exists as `InductiveDomains.Universal.toTerm`
 and `FiniteFamily.forallAll`. `FiniteFamily.forallAll_satisfies_iff` proves that it
 quantifies over exactly the generated data, assuming exact domain realization.
 `Derives.forallAll_intro` reconstructs the guarded universal using existing
-implication and universal introduction. The existential translation above is a
-design requirement here, not a claim of an existing general elaboration theorem.
+implication and universal introduction. [S03 guarded elaboration](guarded-elaboration.md)
+now implements the recursive universal/existential translation, context and rule
+template guards, exact range semantics, and capture-safe substitution bridges.
+Its executable profile defaults unannotated binders to all declared data domains;
+predicate and unrestricted-carrier binders require explicit range annotations,
+which the formula generator always supplies. `elaborate?` rejects a binder
+applied by `ho_apply` that keeps a data range. Guards are atoms over the
+signature's membership symbols (`D_all`, `D_i.member`, `Pred_n.member`), so
+lowered formulas do not depend on the registry. `E(KB)` includes the clauses
+generated from the signature: constructor membership, `D_all` from each domain,
+and one `Pred_n` fact per registered predicate. They make guards derivable as
+well as true.
 
 The intended soundness composition is:
 
@@ -149,7 +159,10 @@ body:  reachable(zero) and
 ```
 
 The induction step binder n is independent of the target x. The registration
-obligation for P is discharged from checked signature evidence. The exact
+obligation for P is discharged from its generated fact `Pred_1.member(reachable)`,
+a lookup by symbol, not a case analysis over the registry. Predicate-specific
+resolution procedures, if added, are likewise selected by the bound reference's
+symbol. The exact
 encoded clause body must retain that guard if P's implicit universal closure
 has been restricted to P_1. Matching the indirect and direct conclusion requires
 the existing ho_apply interpretation, not plain syntactic identity. This is an
@@ -158,7 +171,11 @@ alone implement it. Any new expansion certificate must justify this whole-formul
 application, including the ho_apply conversion under implication.
 
 Neither a finite list of data domains nor predicate arity guarantees decidable
-execution. Registry changes must trigger admission rechecking where needed.
+execution. Registry changes must trigger admission rechecking where needed. They
+add or remove generated facts, so monotonic derivations from clauses remain
+valid when the registry grows; closed-world evidence (NAF, finite absence, and
+enumeration certificates) and admission plans are snapshot-indexed and rechecked.
+Lowered formulas need no recheck, since they read only the symbol naming.
 
 ### What must be decidable
 

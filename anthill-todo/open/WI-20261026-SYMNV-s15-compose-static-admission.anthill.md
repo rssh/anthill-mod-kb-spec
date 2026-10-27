@@ -24,7 +24,7 @@ Acceptance:
 - Ready plans cannot encounter a missing logical capability under their checked input contracts; NeedsEvidence identifies the originating formula and dependency path before evaluation.
 - Distinguish using existing evidence from discovering it, particularly for NAF and rigid predicate applications.
 - Verify recurrence/stratification/strategy conditions chosen in S01; cycles among true dictionary laws or induction rules are not automatically admitted.
-- Recheck on KB, registry, proof, or primitive-contract changes; reject stale plans.
+- Recheck on KB, registry, proof, or primitive-contract changes; reject stale plans. Lowered formulas need no recheck: they read only the signature naming, and registry changes reach the KB as generated facts.
 - Add a matrix of admitted and proof-required examples spanning every implemented construct.
 - Integrate S08's supplied-Term proof route and S14's complete evaluator contracts as P1 routes alongside embedded P0. Check available rule-checking capabilities without requiring automatic P1 admission of a proof tree's formulas.
 - Prove successful P2 runs export finite Term proof trees accepted by the P1 checker for the same answer instance, snapshot, and context, including the tracked NAF provider. Export records successful choices and does not replay search; exhausted/Unknown runs produce no completed proof tree.

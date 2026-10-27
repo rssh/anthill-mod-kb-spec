@@ -82,6 +82,15 @@ theorem Model.satisfies_equation (environment : Environment Variable Value)
   simp only [Model.Satisfies, HornClause.equation, HornClause.toFormula, Model.eval]
   rw [model.holds_implication, model.holds_equality]
 
+theorem Model.satisfies_conjunction (environment : Environment Variable Value)
+    (terms : List (Term Variable Literal Symbol)) :
+    model.Satisfies environment (.conjunction terms) ↔ ∀ term ∈ terms, model.Satisfies environment term := by
+  induction terms with
+  | nil => simp [Term.conjunction, Model.Satisfies, Model.eval, model.holds_top]
+  | cons head tail ih =>
+      simp only [Term.conjunction, List.foldr_cons, Model.Satisfies, Model.eval, model.holds_conjunction] at ih ⊢
+      simpa using (and_congr (Iff.rfl : model.holds (model.eval environment head) ↔ _) ih)
+
 private theorem congrTwo {A B C : Type} (f : A → B → C) {a a' : A} {b b' : B}
     (left : a = a') (right : b = b') : f a b = f a' b' := by
   cases left; cases right; rfl

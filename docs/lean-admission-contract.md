@@ -315,7 +315,7 @@ row also satisfies the strategy conditions above.
 | Universal assumption | Admitted instance selection/matching | Obtain an instance; preserve captured parameters |
 | Guarded universal goal | Admitted generic rigid proof, certified finite cover, or checked induction strategy | Open/discharge scope, traverse cover, or apply principle |
 | Existential goal | Admitted symbolic witness search, finite traversal, or supplied witness; guard/scope checked | Introduce flexible witness or instantiate candidate; prove body |
-| Quantification over P_n | Reference registry, arity/application contract, and generic or finite-range strategy | Use predicate-valued witnesses/parameters, not D_all guards |
+| Quantification over P_n | Reference registry, arity/application contract, and generic or finite-range strategy | Use predicate-valued witnesses/parameters with the symbolic `Pred_n` guard, discharged by its generated fact; not D_all guards |
 | Concrete ho_apply | Reference/application contract and admitted direct call | Direct goal with saved proof conversion |
 | Flexible predicate head | Admitted reference matching or supplied richer matcher contract | Bind clause predicate parameter and instantiate body |
 | Rigid ho_apply | Admitted evidence/rule use for opaque application | Use evidence without assigning rigid predicate |
@@ -549,7 +549,8 @@ cannot establish Ready. Proof checking and proof discovery are distinct tasks.
 | Existing source | Reuse | Remaining gap |
 | --- | --- | --- |
 | `Syntax`, `LogicalKb`, `Derivation` | Common terms, clauses, contexts, introduction/elimination and equality rules | Admission/signature layer and machine transitions |
-| `AdmissionSignature` (S02) | Data/predicate range contracts, finite arity declarations, snapshot-indexed reference evidence, ho_apply/dictionary compatibility laws | Guarded elaboration, machine scope enforcement, and operational admission; no automatic induction validity |
+| `AdmissionSignature` (S02) | Data/predicate range contracts, finite arity declarations, snapshot-indexed reference evidence, ho_apply/dictionary compatibility laws | Machine scope enforcement and operational admission; no automatic induction validity |
+| `Elaboration` (S03) | Recursive range guards, universal/existential semantics, free-name preservation, capture-safe substitution/opening, context and clause-template contracts, rejection of data ranges at `ho_apply` heads, symbolic guards that read only the signature naming, generated signature clauses (`signatureKb`) deriving every guard ([details](guarded-elaboration.md)) | Admitted quantifier strategies and machine reconstruction |
 | `Substitution`, `Opening` | Capture-avoiding substitution and rigid-name opening proofs | Integrated scope-safe execution and rollback |
 | `ClauseInstantiation.Term.instantiate?_sound` | Validate successful computed instantiation | Current function rejects cases needing alpha-renaming; none is not failure |
 | `GroundSearch.Program`, `Context`, `Succeeds`, `Fails` | P0 finite presentation and evidence judgments | No terminating evaluator, rank checker, or totality theorem |
@@ -557,7 +558,8 @@ cannot establish Ready. Proof checking and proof discovery are distinct tasks.
 | `CompletedGround` | `ground_certificates_sound`, `ground_failure_adequate`, `ground_completed_sound` | Completion is a hypothesis, not generic model existence or search termination |
 | `VariableSearch`, `ScopedSearch` | Instances, answers, freshness, `LocalInstance.toDerives`, `answers_toDerives` | Exhaustive-instance covers are evidence, not a general enumeration algorithm; raw scoped failure is inadequate |
 | `CertifiedRefutation` | `Refutes.sound`, `failureAdequate`, `Refutes.toDerives` | NAF introduction still requires closed operands; semantic certificates are not automatically proofs in unchanged `Derives` |
-| `InductiveDomains`, `UniversalIntroduction` | `Universal.toTerm`, `forallAll_satisfies_iff`, `Derives.forallAll_intro` | General guarded elaboration, predicate ranges, and an admitted quantifier strategy |
+| `InductiveDomains`, `UniversalIntroduction` | `Universal.toTerm`, `forallAll_satisfies_iff`, `Derives.forallAll_intro`; generalized by S03 | An admitted quantifier strategy |
+| `MembershipClauses` | Constructor-membership clauses generated from domain definitions, valid under `Realizes` and deriving every generated member and its guard | Elaborated KBs must include them (through `Elaboration.signatureKb`); values outside generated data stay underivable |
 | `CounterexampleSearch`, `CertifiedScopedSearch` | Finite covers/induction evidence and guarded semantic success | Domain certificates do not generally reconstruct KB-only `Derives` |
 | `MillerCertificates`, `CoreMatcherCertificate`, `MillerResolution` | `UnaryMatch`, `Expansion.toDerives`, `certifiedClause`, `Proves.toDerives` | Unary symbol-valued atomic matching only; no whole-implication-head expansion certificate or complete scheduler |
 | `InductionModel` | `inductionRule_valid`, `induction_rule_applies`, `model_exists` | Registry-guarded whole-formula principle and a statically admitted induction strategy |

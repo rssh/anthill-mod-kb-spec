@@ -26,6 +26,7 @@ Acceptance:
 - Run P2-to-Term-to-P1 round-trip regressions for induction, compound local assumptions, dictionaries, and every enabled NAF route. Check manually supplied and externally supplied example trees with the same checker, including formulas outside P1 discovery, invalid rule applications, stale references, and scope escape (contract R25-R30).
 - Cover the full P0 baseline R01-R06 and distinguish deferred P1 decision routes from implemented ones. A request for a deferred route must yield NeedsEvidence; no completed P1 decision may silently use P2 or return Unknown.
 - Audit theorem assumptions and axioms; document the boundary among soundness, termination, completeness for an admitted profile, and static capability coverage.
+- Document which evidence is snapshot-indexed (closed-world) and which is monotonic in KB and registry growth.
 - State any remaining admitted-profile or certificate limitations explicitly.
 - Summarize formal interfaces and invariants a future implementation must satisfy, without choosing runtime term representation, parser, wire format, crate organization, or production APIs.
 - Preserve the existing soundness/model regression suite; no Rust benchmark or Anthill integration is required.

@@ -22,6 +22,7 @@ Current scope: Lean formalization in /Users/rssh/work/oss/anthill-mod-kb-spec on
 Scope: implement the full ground acyclic P0 baseline specified by docs/lean-admission-contract.md, extending S06's shared machine with nested ground NAF and complete-failure evaluation. Check admission before rule evaluation and emit Ready(plan), NeedsEvidence(obligations with formula/obligation identifiers and reasons), or Invalid. Broader command admission is composed in S15.
 Acceptance:
 - Check the exact P0 data/atom/goal/clause/context restrictions and the entire finite program's dependency graph, including dependencies under nested NAF. Construct and verify a topological rank; cycles yield NeedsEvidence for another route, never semantic falsity.
+- Specify how guard atoms over the signature's membership symbols are admitted. The generated constructor-membership clauses are non-ground and self-recursive, so they fall outside P0 clause search. A ground data guard can instead be decided by a terminating structural membership check that reconstructs through `Member.derives`, and a `Pred_n` guard on a concrete reference by fact lookup. Do not reject guarded inputs merely because the generated clauses are cyclic.
 - Prove check_ready_sound and check_p0_complete for structurally valid acyclic P0 inputs. No speculative proof search is used to classify capabilities.
 - Extend the same Step/run with P0 NAF operand evaluation and exhaustive candidate failure. Prove every completed P0 run returns GroundSearch.Succeeds or GroundSearch.Fails for the original program/context/goal, and prove totality using the checked rank and structural goal measure.
 - Track exact snapshot/context in negative certificates; reconstruct successful proofs with the correct ground NAF provider. Semantic failure adequacy retains the completed-model hypotheses; S16 owns the general P0 completed-model witness.
@@ -29,7 +30,7 @@ Acceptance:
 - Ready is capability/admission evidence, not proof that the goal is true.
 - State and prove the initial no-missing-capability invariant for plans run under their input contracts, and establish the profile's promised termination property.
 - Tests admit ordinary examples and reject unsupported operations with actionable evidence requests before execution.
-- Changes to program/signature/contracts invalidate affected plans.
+- Changes to program/signature/contracts invalidate affected plans. Lowered formulas depend only on the signature naming and are not invalidated.
 - Document completeness/negative-answer limitations precisely; bounded fuel is not a proof of termination or refutation.
 - Cover contract regressions R01-R06: nested NAF, all-candidate failure, success after a failed candidate, positive/negative cycle rejection, and stale context evidence. This ticket is executable without S10; scoped/open NAF remains S10's responsibility.
 

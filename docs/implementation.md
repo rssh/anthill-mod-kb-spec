@@ -19,7 +19,12 @@ machine. It specifies result meanings and the Lean definitions and proofs to imp
 The [S02 admission signature](admission-signature.md) implements typeless data and predicate
 reference ranges over the existing carrier, with checked arity declarations,
 snapshot-indexed evidence, concrete-reference application laws, and model-backed
-examples. Guarded elaboration and machine scope enforcement remain later work.
+examples. [S03 guarded elaboration](guarded-elaboration.md) lowers recursively
+annotated quantifiers, contexts, and rule templates into the existing calculus,
+with exact range semantics and capture-safe substitution proofs. Its guards are
+atoms over the signature's membership symbols, derived from generated signature
+clauses, so lowered formulas do not depend on the predicate registry. Machine scope
+enforcement remains later work.
 
 ## Resolution steps and their justification
 

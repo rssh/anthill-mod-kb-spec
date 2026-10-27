@@ -26,6 +26,7 @@ Acceptance:
 - Local assumptions, existential witnesses, and rigids cannot escape their scopes.
 - Represent success evidence and unsuccessful/incomplete outcomes separately.
 - Define proof-tree construction interfaces for successful commands: rule identity, conclusion, premise trees, explicit instantiations/witnesses, discharged assumptions, and snapshot/context dependencies. S08 supplies the encoding as Term and checker; S04 does not depend on their implementation.
+- Record which evidence is monotonic and which is snapshot-indexed. Derivations from clauses, including the generated signature clauses, stay valid when the KB or registry grows; NAF and finite absence or enumeration evidence is closed-world and snapshot-indexed. Lowered formulas carry no snapshot dependency: they read only the signature naming.
 - Preserve successful choices and all required premise branches so a completed proof can be exported without replaying search. Unknown/exhaustion must not produce a completed proof tree.
 - Include executable or formal traces for conjunction, disjunction, nested implication, and an incompatible shared-answer case.
 This ticket defines the state/evidence foundation, not an unrestricted search scheduler.

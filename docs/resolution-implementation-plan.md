@@ -66,7 +66,7 @@ dependencies are preserved after this scope correction.
 | --- | --- | --- |
 | [S01](../anthill-todo/delivered/WI-20261026-VJVCB-s01-define-the-first.anthill.md) | Specify the Lean admission and operational-semantics contract (delivered) | — |
 | [S02](../anthill-todo/delivered/WI-20261026-3AAXX-s02-specify-data-ranges-and.anthill.md) | Data ranges and arity-indexed predicate-reference registries ([implemented](admission-signature.md), delivered) | S01 |
-| [S03](../anthill-todo/open/WI-20261026-265RZ-s03-elaborate-scoped-data-and.anthill.md) | Formalize guarded quantifier elaboration over the existing Term syntax | S02 |
+| [S03](../anthill-todo/delivered/WI-20261026-265RZ-s03-elaborate-scoped-data-and.anthill.md) | Guarded quantifier elaboration over existing Term, contexts, and rule templates; symbolic guards and generated signature clauses ([implemented](guarded-elaboration.md), delivered and revised) | S02 |
 | [S04](../anthill-todo/open/WI-20261026-53V6D-s04-define-machine-states.anthill.md) | Formalize machine states, continuations, proof evidence, and branch isolation | S01 |
 | [S05](../anthill-todo/open/WI-20261026-GGP59-s05-implement-capture-safe.anthill.md) | Prove scope-safe matching and instantiation for machine transitions | S03, S04 |
 | [S06](../anthill-todo/open/WI-20261026-9CQKX-s06-implement-ordinary-clause.anthill.md) | Formalize ordinary clause selection and positive execution | S05 |
@@ -96,7 +96,7 @@ Generic interfaces for a decision contract do not implement a decision procedure
 | Finite rule saturation | Deferred: no saturation implementation or least-relation decision theorem in S01-S17 |
 | Stratified NAF over finite rules | Deferred: no stratified cyclic evaluator; S07 ground acyclic NAF and S10 scoped certificates do not supply this procedure |
 | Finite guarded quantification | Deferred as a general complete decision procedure; S03 elaboration and S10 finite absence certificates remain in scope |
-| Finite predicate-reference quantification | Deferred as a complete enumeration/decision procedure; S02 reference registration remains in scope |
+| Finite predicate-reference quantification | Deferred as a complete enumeration/decision procedure; S02 reference registration remains in scope. The symbolic `Pred_n` guard and its generated facts give no closure over the registry; such a decision would be snapshot-indexed closed-world evidence |
 | Finite-answer variable queries | Deferred as a complete answer-set procedure; S05-S06 matching and individual successful answers remain in scope |
 | Propositional logical reasoning | Deferred as complete derivability search; S08 proof checking and S09 logical commands remain in scope |
 | Additional certified decision procedure | S08/S15 define contract and composition interfaces; concrete additional procedures require follow-up tickets before enablement |
@@ -130,6 +130,17 @@ No Cargo commands or external implementation work are acceptance prerequisites.
 Key boundaries carried through the sequence:
 
 - Admission decides executable capability, not the truth of the query.
+- KB formulas and their range annotations are generated. Lowering rejects a
+  predicate binder left at a data range; it never infers ranges.
+- Guards are atoms over the signature's membership symbols. The registry and
+  domain rules enter `E(KB)` as generated clauses (`signatureKb`), so lowered
+  formulas depend only on the symbol naming.
+- Snapshots index closed-world evidence (NAF, finite absence and enumeration)
+  and plans. Derivations from clauses and generated facts stay valid as the
+  registry grows.
+- A predicate range supplies no case analysis over registered predicates. A
+  bound reference is resolved by lookup on its symbol, including any future
+  per-predicate resolution procedure.
 - Whole-formula induction matching is explicit; an atomic matcher is insufficient.
 - Predicate-reference matching is distinguished from general lambda unification.
 - Dictionary laws remain guarded proved statements, separate from value evaluation.

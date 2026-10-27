@@ -12,12 +12,25 @@ structure PredicateDeclaration (Symbol : Type) where
   arity : Nat
   deriving DecidableEq, Repr
 
+/-- Membership symbols naming each range: one per data domain, one for the
+union of all generated data (D_all), and one per predicate arity (P_n). Guards
+are atoms over these symbols; the registry contributes KB facts, not guard syntax. -/
+structure Naming (Domain Symbol : Type) where
+  membershipSymbol : Domain → Symbol
+  dataSymbol : Symbol
+  predicateSymbol : Nat → Symbol
+
 /-- Typeless signature over the existing constructor domains and symbol space.
 Neither domain names nor predicate declarations imply disjoint semantic ranges. -/
 structure Signature (Domain Symbol : Type) where
   data : FiniteFamily Domain Symbol
   membershipSymbol : Domain → Symbol
+  dataSymbol : Symbol
+  predicateSymbol : Nat → Symbol
   predicates : List (PredicateDeclaration Symbol)
+
+def Signature.naming (signature : Signature Domain Symbol) : Naming Domain Symbol :=
+  ⟨signature.membershipSymbol, signature.dataSymbol, signature.predicateSymbol⟩
 
 /-- Evidence refers to the entire immutable snapshot, not just its revision.
 Changing declarations with an unchanged revision still changes the snapshot.
@@ -25,6 +38,10 @@ This records signature declarations, not KB facts or a local proof context. -/
 structure SignatureSnapshot (Domain Symbol : Type) where
   revision : Nat
   signature : Signature Domain Symbol
+
+/-- Only the naming, not the registry, domain definitions, or revision. -/
+def SignatureSnapshot.naming (snapshot : SignatureSnapshot Domain Symbol) : Naming Domain Symbol :=
+  snapshot.signature.naming
 
 def SignatureSnapshot.Registered (snapshot : SignatureSnapshot Domain Symbol) (symbol : Symbol)
     (arity : Nat) : Prop :=
@@ -115,9 +132,11 @@ theorem SignatureSnapshot.not_predicateMember (snapshot : SignatureSnapshot Doma
   exact excluded symbol declared same
 
 /-- Range metadata belongs to binders/machine names, not semantic sorts. No
-default range is chosen here; guarded elaboration is S03's responsibility. -/
+default range is chosen here; guarded elaboration is S03's responsibility.
+`allData` is D_all by name: it means every declared domain, without listing them. -/
 inductive Range (Domain : Type) where
   | carrier
+  | allData
   | data (domains : List Domain)
   | predicate (arity : Nat)
 
@@ -125,6 +144,8 @@ def Range.Contains (range : Range Domain) (snapshot : SignatureSnapshot Domain S
     (model : Model Literal Symbol Value hoApplySymbol) (value : Value) : Prop :=
   match range with
   | .carrier => True
+  | .allData => ∃ tree, InUnion snapshot.signature.data.definitions snapshot.signature.data.domains tree ∧
+      denote model tree = value
   | .data domains => ∃ tree, InUnion snapshot.signature.data.definitions domains tree ∧
       denote model tree = value
   | .predicate arity => snapshot.PredicateMember model arity value
@@ -141,12 +162,18 @@ structure NameDeclaration (Variable Domain : Type) where
   role : NameRole
   range : Range Domain
 
-/-- Exact data interpretation is evidence, not a consequence of registration.
-The existing model law supplies concrete-reference application semantics. -/
+/-- Exact interpretation of every membership symbol is evidence, not a
+consequence of registration. P_n membership holds exactly on registered
+references; the existing model law supplies their application semantics. -/
 structure Realizes (snapshot : SignatureSnapshot Domain Symbol)
     (model : Model Literal Symbol Value hoApplySymbol) : Prop where
   data : InductiveDomains.Realizes model snapshot.signature.data.definitions
     snapshot.signature.membershipSymbol
+  allData : ∀ value, model.holds (model.application snapshot.signature.dataSymbol [value]) ↔
+    (Range.allData : Range Domain).Contains snapshot model value
+  predicates : ∀ arity value,
+    model.holds (model.application (snapshot.signature.predicateSymbol arity) [value]) ↔
+      snapshot.PredicateMember model arity value
 
 theorem Realizes.data_iff (valid : Realizes snapshot model) (domains : List Domain)
     (value : Value) :
