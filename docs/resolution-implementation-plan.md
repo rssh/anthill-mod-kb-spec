@@ -39,9 +39,9 @@ represented formulas; it does not require implementing a parser or replacing Ter
 
 ## Milestones
 
-1. **Foundation and baseline formal machine slice (S01–S07).** Specify P0/P1/P2
+1. **Foundation and baseline formal machine slice (S01–S07, S18).** Specify P0/P1/P2
    admission contracts, formalize quantifier ranges and guarded elaboration, define
-   state and matching relations, prove ordinary resolution steps, and define an
+   state, delayed goals, and matching relations, prove ordinary resolution steps, and define an
    P0 admission checker and total evaluator, including nested ground NAF and
    exhaustive failure. State and prove the profile's guarantees.
 2. **Decision and proof command rules (S08–S14).** Formalize the P1 checker for
@@ -69,7 +69,8 @@ dependencies are preserved after this scope correction.
 | [S03](../anthill-todo/delivered/WI-20261026-265RZ-s03-elaborate-scoped-data-and.anthill.md) | Guarded quantifier elaboration over existing Term, contexts, and rule templates; symbolic guards and generated signature clauses ([implemented](guarded-elaboration.md), delivered and revised) | S02 |
 | [S04](../anthill-todo/delivered/WI-20261026-53V6D-s04-define-machine-states.anthill.md) | Machine states, AND/OR continuations with rollback, answer store with scope dependencies, proof trees and evidence classes ([implemented](machine-state.md), delivered) | S01 |
 | [S05](../anthill-todo/open/WI-20261026-GGP59-s05-implement-capture-safe.anthill.md) | Prove scope-safe matching and instantiation for machine transitions | S03, S04 |
-| [S06](../anthill-todo/open/WI-20261026-9CQKX-s06-implement-ordinary-clause.anthill.md) | Formalize ordinary clause selection and positive execution | S05 |
+| [S18](../anthill-todo/open/WI-20261027-YY6XN-s18-formalize-delayed-goals.anthill.md) | Delayed goals: wakeups and constraints in the store, deferred proofs filled at the end, floundering as gaps ([design](machine-delay.md)) | S04 |
+| [S06](../anthill-todo/open/WI-20261026-9CQKX-s06-implement-ordinary-clause.anthill.md) | Formalize ordinary clause selection and positive execution | S05, S18 |
 | [S07](../anthill-todo/open/WI-20261026-NG07C-s07-build-the-initial-static.anthill.md) | Formalize P0 admission, total evaluation, and Ready plans | S06 |
 | [S08](../anthill-todo/open/WI-20261026-ZPV53-s08-define-checked-proof.anthill.md) | Formalize P1 proof-tree checking as Term and proof imports | S03, S07 |
 | [S09](../anthill-todo/open/WI-20261026-WHDHK-s09-implement-left-rule.anthill.md) | Formalize left-rule commands and compound clause-head proof construction | S06, S08 |
@@ -145,6 +146,8 @@ Key boundaries carried through the sequence:
 - Predicate-reference matching is distinguished from general lambda unification.
 - Dictionary laws remain guarded proved statements, separate from value evaluation.
 - Failed candidates and incomplete searches never become unearned negative proofs.
+- Delayed goals wake when a name they wait on is bound; still delayed at the end,
+  they flounder as gaps, never as failure or NAF evidence.
 - Proof validity and admissibility of an imported rule are separate checks.
 - Explicit proofs are trees in the shared logic encoded as Term. P1 checks each
   rule application via a known terminating procedure; the tree's formulas need

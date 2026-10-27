@@ -259,3 +259,6 @@ hold for every command and need no trace.
   part of this state.
 - No termination, fairness, or completeness is claimed. `exhausted` and
   `unknown` carry no negative evidence.
+- There is no delay yet: goal order is fixed by each candidate's premise order.
+  Suspension, waking, and floundering are designed in
+  [delayed goals](machine-delay.md) for S18.

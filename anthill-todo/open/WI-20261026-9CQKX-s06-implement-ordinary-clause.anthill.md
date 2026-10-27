@@ -9,7 +9,7 @@
 
 - acceptance: lake build
 
-- depends_on: WI-20261026-GGP59-s05-implement-capture-safe
+- depends_on: WI-20261026-GGP59-s05-implement-capture-safe, WI-20261027-YY6XN-s18-formalize-delayed-goals
 
 - tags: resolution-machine
 
@@ -33,3 +33,4 @@ Keep arbitrary compound-head search and NAF out of this initial runtime slice. S
 
 Validation: lake build and focused Lean tests/examples appropriate to the changed definitions and proofs. Documentation-only work is checked against its stated deliverables; a build alone does not establish them.
 Design references: docs/resolution-state-machine.md and docs/resolution-implementation-plan.md.
+
