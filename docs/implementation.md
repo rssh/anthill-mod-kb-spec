@@ -23,8 +23,12 @@ examples. [S03 guarded elaboration](guarded-elaboration.md) lowers recursively
 annotated quantifiers, contexts, and rule templates into the existing calculus,
 with exact range semantics and capture-safe substitution proofs. Its guards are
 atoms over the signature's membership symbols, derived from generated signature
-clauses, so lowered formulas do not depend on the predicate registry. Machine scope
-enforcement remains later work.
+clauses, so lowered formulas do not depend on the predicate registry.
+[S04 machine states](machine-state.md) define the shared abstract machine: scoped
+obligations, AND frames and OR choice points with rollback, an answer store whose
+flexible names carry scope dependencies, proof trees recording rule parameters
+for later export, and outcomes that keep success separate from exhaustion and
+unknown results.
 
 ## Resolution steps and their justification
 

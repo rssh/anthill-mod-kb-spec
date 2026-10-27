@@ -67,7 +67,7 @@ dependencies are preserved after this scope correction.
 | [S01](../anthill-todo/delivered/WI-20261026-VJVCB-s01-define-the-first.anthill.md) | Specify the Lean admission and operational-semantics contract (delivered) | — |
 | [S02](../anthill-todo/delivered/WI-20261026-3AAXX-s02-specify-data-ranges-and.anthill.md) | Data ranges and arity-indexed predicate-reference registries ([implemented](admission-signature.md), delivered) | S01 |
 | [S03](../anthill-todo/delivered/WI-20261026-265RZ-s03-elaborate-scoped-data-and.anthill.md) | Guarded quantifier elaboration over existing Term, contexts, and rule templates; symbolic guards and generated signature clauses ([implemented](guarded-elaboration.md), delivered and revised) | S02 |
-| [S04](../anthill-todo/open/WI-20261026-53V6D-s04-define-machine-states.anthill.md) | Formalize machine states, continuations, proof evidence, and branch isolation | S01 |
+| [S04](../anthill-todo/delivered/WI-20261026-53V6D-s04-define-machine-states.anthill.md) | Machine states, AND/OR continuations with rollback, answer store with scope dependencies, proof trees and evidence classes ([implemented](machine-state.md), delivered) | S01 |
 | [S05](../anthill-todo/open/WI-20261026-GGP59-s05-implement-capture-safe.anthill.md) | Prove scope-safe matching and instantiation for machine transitions | S03, S04 |
 | [S06](../anthill-todo/open/WI-20261026-9CQKX-s06-implement-ordinary-clause.anthill.md) | Formalize ordinary clause selection and positive execution | S05 |
 | [S07](../anthill-todo/open/WI-20261026-NG07C-s07-build-the-initial-static.anthill.md) | Formalize P0 admission, total evaluation, and Ready plans | S06 |

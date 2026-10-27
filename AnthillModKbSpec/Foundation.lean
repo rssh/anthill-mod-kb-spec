@@ -5,6 +5,7 @@ import AnthillModKbSpec.Foundation.Substitution
 import AnthillModKbSpec.Foundation.Opening
 import AnthillModKbSpec.Foundation.ClauseInstantiation
 import AnthillModKbSpec.Foundation.Derivation
+import AnthillModKbSpec.Foundation.Monotonicity
 import AnthillModKbSpec.Foundation.Semantics
 import AnthillModKbSpec.Foundation.EquationOracle
 import AnthillModKbSpec.Foundation.InductiveDomains

@@ -60,6 +60,7 @@ class is in the foundation; its generation metaprogram is imported separately.
 | Semantic contract for callable references and operation dictionaries | [OperationDictionaries](AnthillModKbSpec/Foundation/OperationDictionaries.lean) |
 | Guarded quantifier, context, and rule-template elaboration | [Elaboration](AnthillModKbSpec/Resolution/Elaboration.lean), [range and substitution contracts](docs/guarded-elaboration.md) |
 | Generated domain-membership clauses for derivable guards | [MembershipClauses](AnthillModKbSpec/Foundation/MembershipClauses.lean) |
+| Abstract machine states, continuations, and proof evidence | [Machine](AnthillModKbSpec/Resolution/Machine.lean), [state and evidence contracts](docs/machine-state.md) |
 | Lawful Nat and Bool order dictionaries | [OrderDictionaries](AnthillModKbSpec/Models/OrderDictionaries.lean) |
 | Conditional operation equations and replacement | [Equation rule note](docs/conditional-equations.md), [examples](Tests/Foundation/EquationRules.lean) |
 | Soundness with an equation oracle | [EquationOracle](AnthillModKbSpec/Foundation/EquationOracle.lean), [theorem and examples](docs/equation-oracle.md) |

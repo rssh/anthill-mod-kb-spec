@@ -402,6 +402,12 @@ uses a positive witness under complement NAF. Do not conflate the two searches.
 
 ## Machine state and proof obligations
 
+[S04](machine-state.md) implements the obligations, AND/OR continuations with
+rollback, answer store with scope dependencies, and proof-tree representation
+described here. Residual constraints, solver jobs, and checked success evidence
+(S08) are not part of it; concrete commands, matching, and scheduling remain
+later tickets.
+
 An obligation is `KB; Gamma; Scope |- Goal`, together with a proof continuation.
 The machine holds an AND/OR proof tree, metavariables, scope dependencies,
 substitutions, residual constraints, solver jobs, and backtracking alternatives.

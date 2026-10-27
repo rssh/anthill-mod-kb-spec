@@ -454,7 +454,7 @@ from checking the acyclic dependency graph.
 ## Abstract state and command boundary
 
 Use the current `Term` for goals and existing contexts/substitutions for their
-logical content. A future `Machine.State` records:
+logical content. `Machine.State` ([S04](machine-state.md)) records:
 
 - a focused obligation tied to a program/context snapshot;
 - finite pending goal lists and continuation frames;
@@ -468,6 +468,13 @@ proof path. It contains the finite candidate source and rank witness in P0. Ther
 is no live mutable KB behind an admitted snapshot. Any change to program, context,
 registry, or evidence dependencies requires a new admission result. Shared
 substitution changes in later profiles must preserve their checked modes/scopes.
+
+S04 supplies `Machine.State`, `Frame`, and `step`, and the scope-coherence part of
+`Machine.WellScoped` as `State.Valid`, preserved by `step_valid` for any command.
+`run_success` gives a coherent proof tree for the root obligation. Flexible names
+carry dependency sets; `Store.Scoped` and `Store.commit_no_escape` keep an opened
+rigid name out of the answers of names created outside its scope. The property
+of fully resolved answers is S05's.
 
 ### P0 commands
 
@@ -551,7 +558,8 @@ cannot establish Ready. Proof checking and proof discovery are distinct tasks.
 | `Syntax`, `LogicalKb`, `Derivation` | Common terms, clauses, contexts, introduction/elimination and equality rules | Admission/signature layer and machine transitions |
 | `AdmissionSignature` (S02) | Data/predicate range contracts, finite arity declarations, snapshot-indexed reference evidence, ho_apply/dictionary compatibility laws | Machine scope enforcement and operational admission; no automatic induction validity |
 | `Elaboration` (S03) | Recursive range guards, universal/existential semantics, free-name preservation, capture-safe substitution/opening, context and clause-template contracts, rejection of data ranges at `ho_apply` heads, symbolic guards that read only the signature naming, generated signature clauses (`signatureKb`) deriving every guard ([details](guarded-elaboration.md)) | Admitted quantifier strategies and machine reconstruction |
-| `Substitution`, `Opening` | Capture-avoiding substitution and rigid-name opening proofs | Integrated scope-safe execution and rollback |
+| `Machine` (S04) | State, AND frames, OR choice points with rollback, answer store with dependency sets and triangular bindings, commit checks, proof trees with rule parameters and scope coherence, evidence classes, outcomes, logical command contracts; `step_valid`, `run_success`, `Frame.feed_exact`, `Store.commit_no_escape`, `run_exhausted`, `Derives.mono` ([details](machine-state.md)) | Matching and resolved-answer scope property (S05), concrete commands and reconstruction under bindings (S06), P0 termination and failure certificates (S07), Term encoding and checker (S08) |
+| `Substitution`, `Opening` | Capture-avoiding substitution and rigid-name opening proofs | Alpha-renaming instantiation inside machine transitions (S05) |
 | `ClauseInstantiation.Term.instantiate?_sound` | Validate successful computed instantiation | Current function rejects cases needing alpha-renaming; none is not failure |
 | `GroundSearch.Program`, `Context`, `Succeeds`, `Fails` | P0 finite presentation and evidence judgments | No terminating evaluator, rank checker, or totality theorem |
 | `GroundSearch.succeeds_toDerives`, `succeeds_not_fails` | Reconstruction and certificate consistency | No general `Derives` completeness conclusion |

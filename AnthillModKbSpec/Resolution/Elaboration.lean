@@ -410,6 +410,25 @@ def signatureKb (snapshot : SignatureSnapshot Domain Symbol) (names : Nat → Va
     (∃ domain, dataClause snapshot.naming (names 0) domain = clause) ∨
     ∃ declaration ∈ snapshot.signature.predicates, predicateFact snapshot.naming declaration = clause
 
+omit [DecidableEq Variable] in
+/-- Registering more predicates only adds generated facts. With the same domains
+and naming, a grown registry's signature clauses include the old ones, so
+derivations from them stay valid (`Derives.mono`); lowered formulas, which read
+only the naming, are unchanged. -/
+theorem signatureKb_mono {snapshot grown : SignatureSnapshot Domain Symbol}
+    (data : grown.signature.data = snapshot.signature.data) (naming : grown.naming = snapshot.naming)
+    (registered : ∀ declaration ∈ snapshot.signature.predicates, declaration ∈ grown.signature.predicates)
+    (names : Nat → Variable) (clause : HornClause Variable Literal Symbol)
+    (member : clause ∈ signatureKb snapshot names) : clause ∈ signatureKb grown names := by
+  have membership : grown.signature.membershipSymbol = snapshot.signature.membershipSymbol :=
+    congrArg Naming.membershipSymbol naming
+  rcases member with member | ⟨domain, rfl⟩ | ⟨declaration, declared, rfl⟩
+  · left
+    rw [data, membership]
+    exact member
+  · exact Or.inr (Or.inl ⟨domain, by rw [naming]⟩)
+  · exact Or.inr (Or.inr ⟨declaration, registered _ declared, by rw [naming]⟩)
+
 /-- A realizing model satisfies every generated clause. -/
 theorem models_signatureKb (snapshot : SignatureSnapshot Domain Symbol)
     (model : Model Literal Symbol Value hoApplySymbol) (valid : AdmissionSignature.Realizes snapshot model)
