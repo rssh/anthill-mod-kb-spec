@@ -9,7 +9,7 @@
 
 - acceptance: lake build
 
-- depends_on: WI-20261026-GGP59-s05-implement-capture-safe, WI-20261027-YY6XN-s18-formalize-delayed-goals
+- depends_on: WI-20261026-GGP59-s05-implement-capture-safe, WI-20261027-YY6XN-s18-formalize-delayed-goals, WI-20261028-X6W1K-s19-make-declared-free-names-a
 
 - tags: resolution-machine
 

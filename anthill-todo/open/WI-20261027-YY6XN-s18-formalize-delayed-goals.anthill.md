@@ -9,7 +9,7 @@
 
 - acceptance: lake build
 
-- depends_on: WI-20261026-53V6D-s04-define-machine-states
+- depends_on: WI-20261026-53V6D-s04-define-machine-states, WI-20261028-X6W1K-s19-make-declared-free-names-a
 
 - tags: resolution-machine
 
@@ -28,6 +28,7 @@ Acceptance:
 - On success, references are filled at the end; prove the deferred proofs are coherent and prove their recorded obligations, and that a success has no pending wakeup and no unresolved constraint.
 - Pending wakeups or unresolved constraints at the end flounder as gaps: never success, never exhaustion, never NAF evidence.
 - Extend State.Valid, Store.Scoped, run_success, run_exhausted, and the rollback theorems; existing rule-frame guarantees are unchanged.
+- Suspended and woken obligations satisfy S19's declared-names invariant: a suspension's free names are declared in the store that holds it.
 - Distinguish persistent restrictions from unresolved constraints. Dependency sets are restrictions: checked at every commit, attached after binding, never residual, and never a cause of floundering. Add the slot for unresolved constraints without adding a constraint solver.
 - Traces from docs/machine-delay.md: wake on binding; rollback restoring a suspension; rollback after a deferred proof was already recorded; two wakeups from one binding; a delay on two names woken once by binding one or both; alias-triggered re-delay; a callee's delayed goal woken by the caller's later goal; a resumed goal using its own discharged assumption while the caller cannot; flounder; a suspension discarded on failure; success with dependency sets attached; invalid delays.
 - Update S06 (guards on unbound variables delay; the generated fill/member goal is appended after the body), S08 (encode and check references), and S10 (NAF on a flexible operand delays).
