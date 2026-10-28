@@ -209,27 +209,53 @@ def Store.prepare (store : Store Variable Literal Symbol) (obligation : Obligati
     (flexibles rigids : List Variable) : Store Variable Literal Symbol :=
   (store.declare (.flexible obligation.scope.rigids) flexibles).declare .rigid rigids
 
-/-- The prepared store declares every free name of the premises, and every
-rigid name a premise mentions is in that premise's scope: a rigid name of the
-obligation or one the premise opens. A rigid name opened for one premise is
-therefore out of scope in its siblings, and a rigid name that went out of
-scope earlier cannot return through a premise. -/
+/-- `other` is within a set of rigid names: a rigid name among them, or a
+flexible name depending only on them. An answer mentions only names within its
+name's dependencies; a premise mentions only names within its scope. -/
+def Store.Within (store : Store Variable Literal Symbol) (dependencies : List Variable) (other : Variable) : Prop :=
+  (store.info? other = some .rigid ∧ other ∈ dependencies) ∨
+    ∃ own, store.info? other = some (.flexible own) ∧ ∀ rigid ∈ own, rigid ∈ dependencies
+
+/-- Decides `Store.Within`. -/
+def Store.inScope (store : Store Variable Literal Symbol) (rigids : List Variable) (name : Variable) : Bool :=
+  match store.info? name with
+  | some .rigid => decide (name ∈ rigids)
+  | some (.flexible own) => own.all (· ∈ rigids)
+  | none => false
+
+theorem Store.inScope_within {store : Store Variable Literal Symbol} {rigids : List Variable} {name : Variable}
+    (inside : store.inScope rigids name = true) : store.Within rigids name := by
+  unfold Store.inScope at inside
+  split at inside
+  · rename_i rigidEq; exact .inl ⟨rigidEq, by simpa using inside⟩
+  · rename_i own flexibleEq
+    exact .inr ⟨own, flexibleEq, fun rigid member => by simpa using List.all_eq_true.mp inside rigid member⟩
+  · cases inside
+
+/-- Every free name of the premises is within the premise's scope in the
+prepared store: a rigid name of the obligation or one the premise opens, or a
+flexible name depending only on those. In particular it is declared. A rigid
+name opened for one premise is out of scope in its siblings, and a rigid name
+that went out of scope cannot return through a premise, written or through a
+flexible name created in its scope. -/
 def Store.Admits (prepared : Store Variable Literal Symbol) (obligation : Obligation Variable Literal Symbol)
     (premises : List (Premise Variable Literal Symbol)) : Prop :=
-  ∀ premise ∈ premises, ∀ name ∈ premise.freeVars, prepared.info? name ≠ none ∧
-    (prepared.info? name = some .rigid → name ∈ premise.discharge.rigids ++ obligation.scope.rigids)
+  ∀ premise ∈ premises, ∀ name ∈ premise.freeVars,
+    prepared.inScope (premise.discharge.rigids ++ obligation.scope.rigids) name = true
 
 instance (prepared : Store Variable Literal Symbol) (obligation : Obligation Variable Literal Symbol)
     (premises : List (Premise Variable Literal Symbol)) : Decidable (prepared.Admits obligation premises) := by
   unfold Store.Admits; infer_instance
 
 /-- The checks a commit makes before binding: the candidate's new names are
-distinct and undeclared, the obligation's rigid names are declared rigid, and
-the prepared store admits the premises. -/
+distinct and undeclared, the obligation's rigid names are declared rigid, every
+rigid name a premise opens is one of the new names, and the prepared store
+admits the premises. -/
 def Store.Accepts (store : Store Variable Literal Symbol) (obligation : Obligation Variable Literal Symbol)
     (flexibles rigids : List Variable) (premises : List (Premise Variable Literal Symbol)) : Prop :=
   (flexibles ++ rigids).Nodup ∧ (∀ name ∈ flexibles ++ rigids, store.info? name = none) ∧
     (∀ name ∈ obligation.scope.rigids, store.info? name = some .rigid) ∧
+    (∀ premise ∈ premises, ∀ name ∈ premise.discharge.rigids, name ∈ rigids) ∧
     (store.prepare obligation flexibles rigids).Admits obligation premises
 
 instance (store : Store Variable Literal Symbol) (obligation : Obligation Variable Literal Symbol)
@@ -524,12 +550,6 @@ theorem Store.commit_fresh {store next : Store Variable Literal Symbol}
 
 /-! ## Scope invariant -/
 
-/-- `other` may occur in an answer whose name depends on `dependencies`: it is a
-rigid name among them, or a flexible name depending only on them. -/
-def Store.Within (store : Store Variable Literal Symbol) (dependencies : List Variable) (other : Variable) : Prop :=
-  (store.info? other = some .rigid ∧ other ∈ dependencies) ∨
-    ∃ own, store.info? other = some (.flexible own) ∧ ∀ rigid ∈ own, rigid ∈ dependencies
-
 /-- Bindings in commit order, newest first: no name is bound twice, and each
 value mentions neither its own name nor a name bound before it. Resolution,
 oldest first, therefore leaves no bound name. -/
@@ -683,7 +703,7 @@ theorem Store.commit_scoped {store next : Store Variable Literal Symbol} (valid 
     {obligation : Obligation Variable Literal Symbol} {flexibles rigids : List Variable}
     {premises : List (Premise Variable Literal Symbol)} {bindings : List (Variable × Term Variable Literal Symbol)}
     (committed : store.commit obligation flexibles rigids premises bindings = .committed next) : next.Scoped := by
-  obtain ⟨⟨distinct, fresh, declared, _⟩, bound⟩ := Store.commit_checks committed
+  obtain ⟨⟨distinct, fresh, declared, _, _⟩, bound⟩ := Store.commit_checks committed
   exact Store.bindAll_scoped (Store.prepare_scoped valid distinct fresh declared) bound
 
 /-- A candidate whose names pass the commit's checks commits exactly the
@@ -775,7 +795,7 @@ theorem Store.commit_independent {store next : Store Variable Literal Symbol} (v
     (committed : store.commit obligation flexibles rigids premises bindings = .committed next)
     {opened : Variable} (member : opened ∈ rigids) {name : Variable} {dependencies : List Variable}
     (flexible : next.info? name = some (.flexible dependencies)) : opened ∉ dependencies := by
-  obtain ⟨⟨_, fresh, declared, _⟩, bound⟩ := Store.commit_checks committed
+  obtain ⟨⟨_, fresh, declared, _, _⟩, bound⟩ := Store.commit_checks committed
   have undeclared := fresh opened (List.mem_append_right _ member)
   obtain ⟨own, ownEq, contained⟩ := Store.bindAll_flexible_of bound flexible
   intro inside
@@ -790,27 +810,27 @@ theorem Store.commit_independent {store next : Store Variable Literal Symbol} (v
     · rw [valid.dependencies name own ownEq opened dependsOn] at undeclared
       cases undeclared
 
-/-- A rigid name a commit opens never becomes a dependency of a flexible name
-that already existed, so by `Scoped` it never enters that name's answer: the
-opened eigenvariable or existential witness cannot escape its premise. -/
-theorem Store.commit_no_escape {store next : Store Variable Literal Symbol} (valid : store.Scoped)
+/-- A rigid name a commit opens does not occur in a premise that does not open
+it: it is out of that premise's scope. For `existsElim`, the opened existential
+does not mention its eigenvariable. -/
+theorem Store.commit_fresh_premise {store next : Store Variable Literal Symbol}
     {obligation : Obligation Variable Literal Symbol} {flexibles rigids : List Variable}
     {premises : List (Premise Variable Literal Symbol)} {bindings : List (Variable × Term Variable Literal Symbol)}
     (committed : store.commit obligation flexibles rigids premises bindings = .committed next)
-    {opened : Variable} (member : opened ∈ rigids) {name : Variable} {dependencies : List Variable}
-    (existing : store.info? name = some (.flexible dependencies)) :
-    ∃ narrowed, next.info? name = some (.flexible narrowed) ∧ opened ∉ narrowed := by
-  obtain ⟨⟨_, fresh, _, _⟩, bound⟩ := Store.commit_checks committed
-  have present : store.info? name ≠ none := by rw [existing]; exact Option.some_ne_none _
-  have notNew : ∀ names : List Variable, (∀ new ∈ names, store.info? new = none) → name ∉ names :=
-    fun _ allFresh new => present (allFresh name new)
-  have declared : (store.prepare obligation flexibles rigids).info? name = some (.flexible dependencies) := by
-    rw [Store.prepare, Store.info?_declare, Store.info?_declare]
-    simp only [notNew rigids (fun new m => fresh new (List.mem_append_right _ m)),
-      notNew flexibles (fun new m => fresh new (List.mem_append_left _ m)), ite_false]
-    exact existing
-  obtain ⟨narrowed, narrowedEq, _⟩ := Store.bindAll_flexible bound declared
-  exact ⟨narrowed, narrowedEq, Store.commit_independent valid committed member narrowedEq⟩
+    {opened : Variable} (member : opened ∈ rigids) {premise : Premise Variable Literal Symbol}
+    (premiseMember : premise ∈ premises) (outside : opened ∉ premise.discharge.rigids) :
+    opened ∉ premise.freeVars := by
+  obtain ⟨⟨_, fresh, scopeRigid, _, admitted⟩, _⟩ := Store.commit_checks committed
+  intro inside
+  have undeclared := fresh opened (List.mem_append_right _ member)
+  have preparedRigid : (store.prepare obligation flexibles rigids).info? opened = some .rigid := by
+    simp only [Store.prepare, Store.info?_declare, member, ite_true]
+  rcases Store.inScope_within (admitted premise premiseMember opened inside) with
+    ⟨_, inScope⟩ | ⟨_, flexibleEq, _⟩
+  · rcases List.mem_append.mp inScope with opens | old
+    · exact outside opens
+    · rw [scopeRigid opened old] at undeclared; cases undeclared
+  · rw [preparedRigid] at flexibleEq; cases flexibleEq
 
 /-- Only rigid names among a bound name's dependencies occur in its answer. -/
 theorem Store.Scoped.answer_rigid {store : Store Variable Literal Symbol} (valid : store.Scoped)

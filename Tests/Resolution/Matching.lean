@@ -172,8 +172,10 @@ def respond (found : List (Option (Option E))) (more : List E) : Response Nat Na
 
 /-- Identity against the assumptions first. An atom also tries every universal
 assumption with a fresh witness, and every clause freshened for this use; each
-is matched against the store its commit prepares. This is a test driver, not
-the S06 command set. -/
+is matched against the store its commit prepares. New names avoid the read
+binder names (`Store.readBinders`): the commit would accept them, but the
+renamed binder would be an alpha-variant the matcher does not admit. This is a
+test driver, not the S06 command set. -/
 def driver (program : Program) : Command Nat Nat Sym Unit := fun obligation store =>
   let goal := store.resolve obligation.goal
   let scope := obligation.scope
@@ -181,14 +183,14 @@ def driver (program : Program) : Command Nat Nat Sym Unit := fun obligation stor
     candidate (store.unify scope .ha obligation.goal assumption) fun bindings => Expansion.assumption bindings
   let instances := scope.assumptions.filterMap fun
     | .forallVar binder body =>
-        let witness := store.freshFor [binder]
+        let witness := store.freshFor (binder :: store.readBinders obligation)
         some (candidate ((store.prepare obligation [witness] []).unify scope .ha
             (body.instantiate (Substitution.single binder (.var witness))) obligation.goal)
           fun bindings => { Expansion.forallElim binder body (.var witness) with
             flexibles := [witness], bindings := bindings })
     | _ => none
   let clauses := program.map fun (head, body) =>
-    let fresh := store.freshen (HornClause.definite head body).templates
+    let fresh := store.freshen (HornClause.definite head body).templates (store.readBinders obligation)
     candidate ((store.prepare obligation (fresh.map Prod.snd) []).unify scope .ha
         (head.instantiate (Substitution.rename fresh)) obligation.goal)
       fun bindings => Expansion.clause head body fresh bindings
@@ -198,8 +200,8 @@ def driver (program : Program) : Command Nat Nat Sym Unit := fun obligation stor
   | .conj a b => respond identity [.conjIntro a b]
   | .disj a b => respond identity [.disjLeft a, .disjRight b]
   | .imp a b => respond identity [.impIntro a b]
-  | .forallVar x body => respond identity [.forallIntro x body store.freshFor]
-  | .existsVar x body => respond identity [.existsIntro x body store.freshFor]
+  | .forallVar x body => respond identity [.forallIntro x body (store.freshFor (store.readBinders obligation))]
+  | .existsVar x body => respond identity [.existsIntro x body (store.freshFor (store.readBinders obligation))]
   | .equal l r =>
       respond (identity ++ [candidate (store.unify scope .ha l r) fun bindings => { rule := .equalRefl, bindings }]) []
   | _ => .unsupported
@@ -374,6 +376,21 @@ def binderNames := run (reuseBinders []) 100
   (query [] [] (.forallVar 5 (.forallVar 6 (.imp (atom .p [.var 5, .var 6]) (atom .p [.var 5, .var 6])))))
 #guard binderNames.kind = .success
 #guard rulesOf binderNames = some [.forallIntro, .forallIntro, .impIntro, .assumption]
+
+-- Store freshness alone may pick a binder name. For ∃2. (q(2) ∧ ∀1. p(1, 2))
+-- under q(a) and ∀1. p(1, a), the empty store gives witness 1: the opening
+-- renames the inner binder, ∀3. p(3, a) is an alpha-variant of the assumption,
+-- and the matcher reports it unsupported. The driver avoids the read binder
+-- names, picks 3, and the conjunct reads as the assumption itself.
+def keepBindersQuery : State Nat Nat Sym Unit Nat :=
+  query [] [atom .q [k .a], .forallVar 1 (atom .p [.var 1, k .a])]
+    (.existsVar 2 (.conj (atom .q [.var 2]) (.forallVar 1 (atom .p [.var 1, .var 2]))))
+def storeFreshOnly : Command Nat Nat Sym Unit := fun obligation store =>
+  match store.resolve obligation.goal with
+  | .existsVar x body => .candidates [.existsIntro x body store.freshFor]
+  | _ => driver [] obligation store
+#guard (run storeFreshOnly 100 keepBindersQuery).kind = .unknown
+#guard (solve [] keepBindersQuery).kind = .success
 
 -- The nested traces again, with the read inner binder chosen on purpose: the
 -- conjunct ∀5. ∀6. r(5, 6, 1) is opened with 6 as ∀7. r(6, 7, 1), and the

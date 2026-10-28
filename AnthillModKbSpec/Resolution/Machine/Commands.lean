@@ -152,7 +152,7 @@ theorem existsIntro_sound [FreshNames Variable] {binder witness : Variable} {bod
 /-- The context and goal freshness come from the name invariant, as for
 `forallIntro_sound`. The opened existential is a premise, not part of the
 obligation; the commit keeps the eigenvariable out of it, since the premise
-does not open it (`Store.Admits`). -/
+does not open it (`Store.commit_fresh_premise`). -/
 theorem existsElim_sound [FreshNames Variable] {binder eigen : Variable} {body goal : Formula Variable Literal Symbol}
     {store : Store Variable Literal Symbol}
     (declared : (⟨scope, goal⟩ : Obligation Variable Literal Symbol).Declared store)

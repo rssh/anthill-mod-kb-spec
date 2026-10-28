@@ -1001,7 +1001,7 @@ theorem Store.commit_unify {store final : Store Variable Literal Symbol} (valid 
       .unified final bindings) :
     store.commit obligation flexibles rigids premises bindings = .committed final ∧
       final.resolve left = final.resolve right := by
-  have ⟨distinct, fresh, declared, _⟩ := accepted
+  have ⟨distinct, fresh, declared, _, _⟩ := accepted
   have ⟨committed, _, _, same⟩ := Store.unify_sound (Store.prepare_scoped valid distinct fresh declared) computed
   exact ⟨Store.commit_prepared accepted committed, same⟩
 

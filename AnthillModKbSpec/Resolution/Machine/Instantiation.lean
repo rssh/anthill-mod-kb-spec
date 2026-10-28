@@ -354,7 +354,7 @@ theorem Store.commit_refines {store next : Store Variable Literal Symbol}
     {premises : List (Premise Variable Literal Symbol)} {bindings : List (Variable × Term Variable Literal Symbol)}
     (committed : store.commit obligation flexibles rigids premises bindings = .committed next) :
     store.Refines next := by
-  obtain ⟨⟨distinct, fresh, _, _⟩, bound⟩ := Store.commit_checks committed
+  obtain ⟨⟨distinct, fresh, _, _, _⟩, bound⟩ := Store.commit_checks committed
   exact (store.prepare_refines distinct fresh).trans (Store.bindAll_refines bound)
 
 /-- A commit declares its premises' rigid names rigid. -/
@@ -384,6 +384,19 @@ theorem Obligation.Declared.refines {store later : Store Variable Literal Symbol
     (refines : store.Refines later) : obligation.Declared later :=
   declared.mono fun _ present => refines.declared present
 
+/-- A rigid name a commit opens never becomes a dependency of a flexible name
+that already existed, so by `Scoped` it never enters that name's answer: the
+opened eigenvariable or existential witness cannot escape its premise. -/
+theorem Store.commit_no_escape {store next : Store Variable Literal Symbol} (valid : store.Scoped)
+    {obligation : Obligation Variable Literal Symbol} {flexibles rigids : List Variable}
+    {premises : List (Premise Variable Literal Symbol)} {bindings : List (Variable × Term Variable Literal Symbol)}
+    (committed : store.commit obligation flexibles rigids premises bindings = .committed next)
+    {opened : Variable} (member : opened ∈ rigids) {name : Variable} {dependencies : List Variable}
+    (existing : store.info? name = some (.flexible dependencies)) :
+    ∃ narrowed, next.info? name = some (.flexible narrowed) ∧ opened ∉ narrowed := by
+  obtain ⟨narrowed, narrowedEq, _⟩ := (Store.commit_refines committed).flexible name dependencies existing
+  exact ⟨narrowed, narrowedEq, Store.commit_independent valid committed member narrowedEq⟩
+
 /-- A commit keeps the obligation declared and declares every premise
 obligation: the premises' own names are declared in the prepared store, and
 the parent's assumptions were declared before. -/
@@ -393,11 +406,11 @@ theorem Store.commit_declared {store next : Store Variable Literal Symbol}
     (committed : store.commit obligation flexibles rigids premises bindings = .committed next)
     (declared : obligation.Declared store) :
     obligation.Declared next ∧ ∀ premise ∈ premises, (obligation.premise premise).Declared next := by
-  obtain ⟨⟨_, _, _, admitted⟩, bound⟩ := Store.commit_checks committed
+  obtain ⟨⟨_, _, _, _, admitted⟩, bound⟩ := Store.commit_checks committed
   have whole := Store.commit_refines committed
   refine ⟨declared.refines whole, fun premise member name inside => ?_⟩
   rcases Obligation.mem_premise_freeVars.mp inside with own | context
-  · exact (Store.bindAll_refines bound).declared (admitted premise member name own).1
+  · exact (Store.bindAll_refines bound).declared (Store.inScope_within (admitted premise member name own)).declared
   · exact whole.declared (declared name (List.mem_append_right _ context))
 
 theorem Store.Within.mono {store : Store Variable Literal Symbol} {small large : List Variable}
@@ -464,23 +477,6 @@ theorem Store.Scoped.not_mem_answer {store : Store Variable Literal Symbol} (val
   · exact outside inside
   · rw [isRigid] at flexibleEq; cases flexibleEq
 
-/-- A rigid name opened by a commit never occurs in the resolved answer of a
-flexible name that existed before the commit, in the committed store or in any
-store refining it: an eigenvariable or opened witness cannot escape its scope
-through any chain of answers. -/
-theorem Store.commit_no_escape_resolved {store next later : Store Variable Literal Symbol}
-    (valid : store.Scoped) {obligation : Obligation Variable Literal Symbol} {flexibles rigids : List Variable}
-    {premises : List (Premise Variable Literal Symbol)} {bindings : List (Variable × Term Variable Literal Symbol)}
-    (committed : store.commit obligation flexibles rigids premises bindings = .committed next)
-    (refines : next.Refines later) (laterScoped : later.Scoped)
-    {opened : Variable} (member : opened ∈ rigids) {name : Variable} {dependencies : List Variable}
-    (existing : store.info? name = some (.flexible dependencies)) :
-    opened ∉ (later.resolve (.var name)).freeVars := by
-  obtain ⟨narrowed, narrowedEq, outside⟩ := Store.commit_no_escape valid committed member existing
-  obtain ⟨final, finalEq, contained⟩ := refines.flexible name narrowed narrowedEq
-  exact laterScoped.not_mem_answer finalEq (refines.rigid opened (Store.commit_rigid committed member))
-    (fun inside => outside (contained opened inside))
-
 /-- A rigid name absent from a term and from the dependencies of its flexible
 names is absent from its reading: the freshness `Derives` checks for an opened
 name survives reading the obligation through later answers. -/
@@ -538,6 +534,25 @@ private theorem commit_fresh_term {store next later : Store Variable Literal Sym
           rw [finalEq] at flexible; cases flexible
           exact fun inside => Store.commit_independent valid committed member info (contained opened inside)
 
+/-- A rigid name opened by a commit never occurs in the resolved answer of a
+flexible name that existed before the commit, in the committed store or in any
+store refining it: an eigenvariable or opened witness cannot escape its scope
+through any chain of answers. -/
+theorem Store.commit_no_escape_resolved {store next later : Store Variable Literal Symbol}
+    (valid : store.Scoped) {obligation : Obligation Variable Literal Symbol} {flexibles rigids : List Variable}
+    {premises : List (Premise Variable Literal Symbol)} {bindings : List (Variable × Term Variable Literal Symbol)}
+    (committed : store.commit obligation flexibles rigids premises bindings = .committed next)
+    (refines : next.Refines later) (laterScoped : later.Scoped)
+    {opened : Variable} (member : opened ∈ rigids) {name : Variable} {dependencies : List Variable}
+    (existing : store.info? name = some (.flexible dependencies)) :
+    opened ∉ (later.resolve (.var name)).freeVars := by
+  have present : store.info? name ≠ none := by rw [existing]; exact Option.some_ne_none _
+  have undeclared := Store.commit_fresh committed opened (List.mem_append_right _ member)
+  refine commit_fresh_term valid committed refines laterScoped member fun other inside => ?_
+  simp only [Term.freeVars, List.mem_singleton] at inside
+  subst inside
+  exact ⟨fun same => present (same ▸ undeclared), (Store.commit_refines committed).declared present⟩
+
 /-- A rigid name opened by a commit may open a quantifier in every later
 scoped store refining the commit: it is unbound there, and absent from the read
 goal and context of the obligation and of every premise that does not open it
@@ -552,7 +567,7 @@ theorem Store.commit_fresh_resolved {store next later : Store Variable Literal S
     (refines : next.Refines later) (laterScoped : later.Scoped) {opened : Variable} (member : opened ∈ rigids) :
     obligation.FreshUnder later opened ∧
       ∀ premise ∈ premises, opened ∉ premise.discharge.rigids → (obligation.premise premise).FreshUnder later opened := by
-  obtain ⟨⟨_, fresh, scopeRigid, admitted⟩, bound⟩ := Store.commit_checks committed
+  obtain ⟨⟨_, fresh, _, _, admitted⟩, bound⟩ := Store.commit_checks committed
   have undeclared := fresh opened (List.mem_append_right _ member)
   have rigid := refines.rigid opened (Store.commit_rigid committed member)
   have old : ∀ name, store.info? name ≠ none → name ≠ opened ∧ next.info? name ≠ none :=
@@ -569,16 +584,8 @@ theorem Store.commit_fresh_resolved {store next later : Store Variable Literal S
   refine ⟨freshUnder obligation fun name inside => old name (declared name inside),
     fun premise premiseMember outside => freshUnder _ fun name inside => ?_⟩
   rcases Obligation.mem_premise_freeVars.mp inside with own | context
-  · -- The premise names `opened` only if it is in the premise's scope, and the
-    -- obligation's rigid names were declared before the commit.
-    obtain ⟨present, inScope⟩ := admitted premise premiseMember name own
-    refine ⟨fun same => ?_, (Store.bindAll_refines bound).declared present⟩
-    rw [same] at inScope
-    have preparedRigid : (store.prepare obligation flexibles rigids).info? opened = some .rigid := by
-      simp only [Store.prepare, Store.info?_declare, member, ite_true]
-    rcases List.mem_append.mp (inScope preparedRigid) with opens | old
-    · exact outside opens
-    · rw [scopeRigid opened old] at undeclared; cases undeclared
+  · exact ⟨fun same => Store.commit_fresh_premise committed member premiseMember outside (same ▸ own),
+      (Store.bindAll_refines bound).declared (Store.inScope_within (admitted premise premiseMember name own)).declared⟩
   · exact old name (declared name (List.mem_append_right _ context))
 
 end Scope
@@ -615,6 +622,15 @@ theorem Store.freshen_fresh (store : Store Variable Literal Symbol) (templates a
   have outside := freshNames_avoid _ _ name member
   simp only [List.mem_append, not_or] at outside
   exact ⟨lookup_eq_none.mpr outside.2.1, outside.1, outside.2.2⟩
+
+/-- Binder names of the obligation's goal and assumptions as read through the
+store. The commit needs only store freshness, but a command that matches
+syntactically should also avoid these when it picks new names: an opening, or a
+later reading, then renames no binder into an alpha-variant that `Store.unify`
+reports as unsupported. -/
+def Store.readBinders (store : Store Variable Literal Symbol) (obligation : Obligation Variable Literal Symbol) :
+    List Variable :=
+  (store.resolve obligation.goal :: obligation.context.map store.resolve).flatMap Term.binderNames
 
 end Fresh
 

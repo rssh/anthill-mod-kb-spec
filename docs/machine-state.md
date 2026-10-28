@@ -64,7 +64,10 @@ A name the store has not declared is therefore fresh for every obligation the
 store reads (`Obligation.Declared.fresh`). Store freshness replaces S04's check
 against the obligation's free and binder names. Binder names impose nothing,
 because the opening contracts rename a binder that would capture
-([S05](machine-matching.md)). One lemma, `Store.commit_fresh_resolved`, gives
+([S05](machine-matching.md)). That is all the commit needs. A command that
+matches syntactically should still avoid the binder names of what it reads
+(`Store.readBinders`): a renamed binder is an alpha-variant, which the S05
+matcher reports as unsupported. One lemma, `Store.commit_fresh_resolved`, gives
 an opened name its freshness for the read obligation in every later store,
 from the invariant at the commit. The finished tree does not record the store
 of each commit, and in the final store an eigenvariable is itself declared.
@@ -107,7 +110,8 @@ then binds each proposed answer.
 | --- | --- |
 | New names are distinct and undeclared; a binder name of the obligation is allowed | `violated` |
 | The obligation's rigid names are declared rigid | `violated` |
-| Every free name of each premise goal and discharged assumption is declared in the prepared store (old names, the candidate's flexible and rigid names), and every rigid name a premise mentions is in its scope: a rigid name of the obligation or one the premise opens (`Store.Admits`) | `violated` |
+| Every rigid name a premise opens is one of the candidate's new rigid names | `violated` |
+| Every free name of each premise goal and discharged assumption is within the premise's scope in the prepared store: a rigid name of the obligation or one the premise opens, or a flexible name depending only on those (`Store.Admits`, `Store.Within`). In particular it is declared | `violated` |
 | The bound name is a declared, still unbound flexible name | `violated` (a rigid is never assigned; an answer is never rebound) |
 | Every name in the value is a rigid name of this scope or an unbound flexible name | `violated` (the value must be resolved and in scope) |
 | Occurs check: the bound name is not in the value | `rejected` |
@@ -119,13 +123,17 @@ candidate miss. `violated` means the command broke the machine contract; the
 candidate is abandoned and the obligation recorded as a `contract` gap.
 `Store.freshFor` picks a name that passes the freshness check (`Store.freshFor_fresh`).
 
-`Store.Accepts` names these checks before binding. A premise mentions a rigid
-name only within its own scope. A rigid name opened for one premise is
-therefore out of scope in its siblings, which keeps the existential that
-`existsElim` opens free of its eigenvariable. A rigid name that went out of
-scope earlier cannot return through a premise either. A command that leaves a
-name undeclared in a premise, for example a clause body variable it did not
-freshen, is refused at the commit, before the premise is focused.
+`Store.Accepts` names these checks before binding. A premise mentions only
+names within its own scope. A rigid name opened for one premise is therefore
+out of scope in its siblings, which keeps the existential that `existsElim`
+opens free of its eigenvariable (`Store.commit_fresh_premise`). A rigid name
+that went out of scope earlier cannot return through a premise, whether written
+or through a flexible name created in its scope, whose dependencies include it.
+By `Store.Scoped.resolve_within`, the premise's reading stays within its scope
+too. A command that leaves an undeclared or out-of-scope name in a premise is
+refused at the commit, before the premise is focused. A template name left
+unfreshened that collides with a declared name in scope cannot be detected;
+freshening every template name is the command's responsibility.
 
 ### Transitions
 
@@ -286,9 +294,14 @@ outcome is checked by `#guard`.
 | A command whose premise goal or discharged assumption names an undeclared name | Contract gap on the expanded obligation, outcome unknown |
 | An `existsElim` whose existential names its own eigenvariable | Contract gap: a rigid name opened for one premise is out of scope in its siblings |
 | `(∀x. true) ∧ q`, a command whose premise for `q` names the closed eigenvariable | Contract gap on `q`: the name is declared but out of scope |
+| `(∀x. ∃y. y = x) ∧ q`, a command whose premise for `q` names `y` | Contract gap on `q`: `y` depends on the closed `x` |
+| A commit whose premise claims to open a declared rigid parameter | Refused: a premise opens only the candidate's new rigid names |
+| `∃2. (q(2) ∧ ∀1. p(1, 2))` under `q(a)`, `∀1. p(1, a)` | Success: the witness avoids the read binder names, so the conjunct reads as the assumption itself |
 
 The `#guard` checks evaluate compiled code; the kernel cannot reduce the existing
-well-founded `Term.freeVars` and `Term.instantiate?`. The generic theorems above
+well-founded `Term.freeVars` and `Term.instantiate?`. The commit's premise check
+computes `Term.freeVars`, so a concrete commit is evaluated, not proved by
+`decide` or `rfl`. The generic theorems above
 hold for every command and need no trace.
 
 ## Boundaries

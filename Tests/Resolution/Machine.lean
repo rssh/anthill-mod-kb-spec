@@ -91,7 +91,7 @@ def openCandidates (store : Store Nat Nat Sym) (obligation : Obligation Nat Nat 
   obligation.scope.assumptions.filterMap fun
     | .existsVar binder body =>
         if obligation.scope.assumptions.any (instanceOf binder body) then none
-        else some (Expansion.existsElim binder body store.freshFor goal)
+        else some (Expansion.existsElim binder body (store.freshFor (store.readBinders obligation)) goal)
     | _ => none
 
 def equalityCandidates (store : Store Nat Nat Sym) (left right : T) : List (Expansion Nat Nat Sym Absent) :=
@@ -103,7 +103,9 @@ def equalityCandidates (store : Store Nat Nat Sym) (left right : T) : List (Expa
       | none => []
 
 /-- Identity is preferred whenever it applies; otherwise case analysis and
-existential opening come before the goal's introduction rule. -/
+existential opening come before the goal's introduction rule. New names avoid
+the read binder names, so that matching, which is syntactic, never meets a
+renamed binder. -/
 def logical : Command Nat Nat Sym Absent := fun obligation store =>
   let goal := store.resolve obligation.goal
   match identityCandidates store obligation.scope goal with
@@ -115,8 +117,8 @@ def logical : Command Nat Nat Sym Absent := fun obligation store =>
       | .conj a b => .candidates (left ++ [.conjIntro a b])
       | .disj a b => .candidates (left ++ [.disjLeft a, .disjRight b])
       | .imp a b => .candidates (left ++ [.impIntro a b])
-      | .forallVar x body => .candidates [.forallIntro x body store.freshFor]
-      | .existsVar x body => .candidates (left ++ [.existsIntro x body store.freshFor])
+      | .forallVar x body => .candidates [.forallIntro x body (store.freshFor (store.readBinders obligation))]
+      | .existsVar x body => .candidates (left ++ [.existsIntro x body (store.freshFor (store.readBinders obligation))])
       | .equal l r => .candidates (equalityCandidates store l r)
       | .app _ _ => .candidates left
       | _ => .unsupported
@@ -298,6 +300,13 @@ def siblingEscape := run crossBranch 100
 #guard siblingEscape.kind = .success
 #guard siblingEscape.proof?.map (·.store.bindings.isEmpty) = some true
 
+-- The driver avoids binder names when it picks a witness: q(W) ∧ ∀1. p(1, W)
+-- reads as ∀1. p(1, a) after W := a, identical to the assumption. A witness
+-- named 1 would rename the inner binder into an alpha-variant.
+def keepBinders := solve (query [] [atom .q [k .a], .forallVar 1 (atom .p [.var 1, k .a])]
+  (.existsVar 2 (.conj (atom .q [.var 2]) (.forallVar 1 (atom .p [.var 1, .var 2])))))
+#guard keepBinders.kind = .success
+
 -- A name free in the query is one of its rigid parameters: opening ∀x does not
 -- reuse it, so p(1) does not prove p(x).
 def capture := solve (query [] [] (.imp (atom .p [.var 1]) (.forallVar 10 (atom .p [.var 10]))))
@@ -364,6 +373,27 @@ def staleRigid : Command Nat Nat Sym Absent := fun obligation store =>
   | _, _ => logical obligation store
 #guard match run staleRigid 50 (query [] [] (.conj (.forallVar 10 .truth) (k .q))) with
   | .unknown [⟨.contract, obligation⟩] => same obligation.goal (k .q)
+  | _ => false
+
+-- Nor through a flexible name created in the closed scope: inside ∀x the
+-- witness y is bound to x, and a premise of q naming y is refused, though y is
+-- flexible.
+def staleWitness : Command Nat Nat Sym Absent := fun obligation store =>
+  let outOfScope := store.names.find? fun entry =>
+    (match entry.2 with | .flexible _ => true | .rigid => false) && !store.inScope obligation.scope.rigids entry.1
+  match obligation.goal, outOfScope with
+  | .app .q [], some (stale, _) => .candidates [.disjLeft (atom .p [.var stale])]
+  | _, _ => logical obligation store
+#guard match run staleWitness 50
+    (query [] [] (.conj (.forallVar 10 (.existsVar 11 (.equal (.var 11) (.var 10)))) (k .q))) with
+  | .unknown [⟨.contract, obligation⟩] => same obligation.goal (k .q)
+  | _ => false
+
+-- A premise opens only rigid names the candidate declares as new: a commit
+-- whose premise claims to open the declared rigid parameter 7 is refused.
+#guard match (query [] [] (atom .p [.var 7])).store.commit (Obligation.root [] [] (atom .p [.var 7])) [] []
+    [{ discharge := { rigids := [7] }, goal := atom .p [.var 7] }] [] with
+  | .violated => true
   | _ => false
 
 -- So is a rigid name opened for one premise in its siblings: an existsElim

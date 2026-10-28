@@ -55,7 +55,10 @@ binders or bring in binders from answer values, which no check on the
 obligation as written can see. The commit checks only that a new name is new to
 the store (S19). By the [name invariant](machine-state.md#declared-names) that
 makes it fresh for the free names of every obligation the store reads, and
-binder names impose nothing.
+binder names impose nothing for soundness. The matcher, however, is syntactic. A
+command should therefore also avoid the binder names it reads
+(`Store.readBinders`), so that no opening or later reading renames a binder into
+an alpha-variant that `Store.unify` reports as `unsupported`.
 
 ## Freshening a clause use
 
@@ -74,8 +77,9 @@ become free, and no fresh name is captured. `Store.freshen` picks the fresh name
 They are distinct, undeclared, and absent from the templates
 (`Store.freshen_fresh`, `Store.freshen_nodup`), so they pass the commit's
 freshness check. Every template name must be freshened. The commit refuses a
-premise that names an undeclared name, such as a clause body variable left as
-written; this is a contract gap. For local rules, `Derives.instantiateLeading`
+premise naming an undeclared or out-of-scope name as a contract gap, which
+catches a clause body variable left as written in the usual case. A leftover
+template name that happens to equal a declared name in scope cannot be detected. For local rules, `Derives.instantiateLeading`
 gives the instance by universal elimination, `Term.instantiateLeading_captured`
 keeps every captured name free, and `Term.instantiateLeading_freeVars` bounds the
 new free names by the witnesses.
@@ -208,6 +212,7 @@ freshened clauses, each matched against the prepared store.
 | Opening `∀5. ∀6. r(5, 6, 1)` with 6 | `∀7. r(6, 7, 1)`: the inner binder is renamed |
 | `p(0) ∧ ∀5. ∀1. r(5, 1, 0)` under `p(1)` with `r(X, X, Y)`, and its `∃5` and `∀9` variants | Exhausted: after `0 := 1` the conjunct reads as `∀5. ∀6. r(5, 6, 1)`. A driver that opens with the read inner binder uses 6, and the opening renames without capture |
 | `∀5. ∀6. (p(5, 6) → p(5, 6))`, opened with the inner binder 6 | Success: a binder name of the obligation is a new name of the store (S05 refused it) |
+| `∃2. (q(2) ∧ ∀1. p(1, 2))` under `q(a)`, `∀1. p(1, a)` | Success with the driver's witness 3, which avoids the read binder names. With store freshness alone the witness is 1, the inner binder is renamed, and the alpha-variant is unsupported (unknown) |
 | `r(X) :- s(X, Z)` used by a command that freshens only the head | Contract gap on `r(Y)`: the body names the undeclared `Z`. Freshening every template answers `a` |
 | `∀x. ∃y. y = x` / `∃y. ∀x. y = x` | Success / exhausted (a mismatch, not unknown) |
 | `∃y. ∀x. ∃z. (y = z ∧ z = x)` | Exhausted: `y = z` narrows `z`, so `z = x` is refused |

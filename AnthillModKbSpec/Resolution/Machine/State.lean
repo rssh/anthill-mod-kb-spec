@@ -436,7 +436,7 @@ def run (command : Command Variable Literal Symbol Certificate) :
 /-- The query's free names other than its answer names are its rigid parameters. -/
 def rootRigids (flexibles : List Variable) (context : ProofContext Variable Literal Symbol)
     (goal : Formula Variable Literal Symbol) : List Variable :=
-  (goal.freeVars ++ context.flatMap Term.freeVars).filter (fun name => decide (name ∉ flexibles))
+  (Obligation.root [] context goal).freeVars.filter (fun name => decide (name ∉ flexibles))
 
 /-- Start a query. Every free name of the context and goal is declared: the
 `flexibles` as answer names depending on the query's parameters, all others as
@@ -463,7 +463,7 @@ theorem State.init_valid (snapshot : Snapshot) (flexibles : List Variable)
       exact lookup_declared _ _ _ _ member
   · -- Every free name of the query is declared: an answer name flexible, any other rigid.
     intro name member
-    simp only [State.init, Obligation.root, Obligation.freeVars, Obligation.context] at member ⊢
+    simp only [State.init] at member ⊢
     rw [Store.info?, ← Option.isSome_iff_ne_none]
     by_cases rigid : name ∈ rootRigids flexibles context goal
     · exact lookup_isSome_of_mem (List.mem_append_left _ (List.mem_map.mpr ⟨name, rigid, rfl⟩))
