@@ -5,7 +5,7 @@ existing `Term`, `ProofContext`, and `HornClause` representations. It defines on
 abstract machine for every profile: the state, its continuations and choice
 points, the shared answer store, the proof trees built by successful commands,
 and the outcomes of a run. It does not choose clauses, match terms, or decide
-when to stop. Concrete commands supply those choices (S05 matching, S06 positive
+when to stop. Concrete commands supply those choices ([S05 matching](machine-matching.md), S06 positive
 execution, S07 P0 evaluation); the machine checks their names and bindings and
 owns completion and rollback.
 
@@ -122,15 +122,16 @@ candidate is abandoned and the obligation recorded as a `contract` gap.
 | `Store.Scoped`: every answer mentions only rigid names among its name's dependencies, and flexible names whose dependencies are among them | `Store.commit_scoped`, `Store.Scoped.answer_rigid` |
 | A rigid name a commit opens is never a dependency of a flexible name that already existed, so it never enters that name's answer | `Store.commit_no_escape`, `Store.bind_respects_scope` |
 | Only `success` carries a proof; exhaustion is reported only when no state of the run recorded a gap | `Outcome.proof?_eq_some`, `run_exhausted` |
-| Resolution by the committed bindings is a chain of capture-avoiding substitutions | `Store.resolve?_sound` |
+| Resolution by the committed bindings is a chain of capture-avoiding substitutions, renaming a binder on a capture hazard ([S05](machine-matching.md)) | `Store.resolve_sound` |
 
 Local assumptions cannot escape because no transition copies a child's scope
 into its parent: the parent's node is built from the frame's stored obligation.
 Rigid names and opened existential witnesses cannot escape through answers:
 an opened name is fresh, so no existing flexible name depends on it, and
 dependencies only narrow. `Scoped` covers each committed binding and the
-dependencies of the flexible names in it; S05 proves the resulting property of
-fully resolved answers together with its matcher.
+dependencies of the flexible names in it. S05 proves the resulting property of
+fully resolved answers (`Store.Scoped.resolve_answer`,
+`Store.commit_no_escape_resolved`; [details](machine-matching.md)).
 
 ## Proof evidence
 
@@ -155,7 +156,7 @@ that the conclusion and premises do not determine:
 
 Discharged assumptions and rigid names are each premise's `Discharge`.
 `RuleApp.id` gives the rule identity alone. A `CompletedProof` holds the snapshot,
-the root obligation, the tree, and the final store; `answer?` reads a root name
+the root obligation, the tree, and the final store; `answer` reads a root name
 through the bindings. Together these are what S08's Term encoding and checker
 need. Exporting a proof replays no search.
 
@@ -195,8 +196,9 @@ reads only the signature naming.
 Each contract fixes one candidate. Concrete commands decide when to offer which.
 `Expansion.Sound` states the completion contract: derivations of all premises in
 their own scopes give a derivation of the obligation. It is proved for every
-contract below, for candidates without answer bindings; reconstruction under
-committed bindings belongs to S05/S06.
+contract below, for candidates without answer bindings. For obligations read
+through committed answers, S05's `Expansion.SoundUnder` states and proves it
+([read-through contracts](machine-matching.md#read-through-completion-contracts)).
 
 | Contract | Focus | Premises and scope effects | Sound by |
 | --- | --- | --- | --- |
@@ -209,8 +211,13 @@ committed bindings belongs to S05/S06.
 | `impElim a g` | `g` | `a → g`; `a` | `impElim_sound` |
 | `falsityElim` | any `g` | `false` | `falsityElim_sound` |
 | `forallIntro x body e` | `∀x. body` | `body[e/x]` with fresh rigid `e` | `forallIntro_sound`, from `e ∉ Obligation.names` |
-| `existsIntro x body w` | `∃x. body` | `body[w/x]` with fresh flexible `w` depending on the scope's rigid names | `existsIntro_sound`, from `w ∉ Obligation.names` |
-| `existsElim x body e g` | `g` | `∃x. body`; `g` assuming `body[e/x]` with fresh rigid `e` | `existsElim_sound`, with freshness for the opened body |
+| `existsIntro x body w` | `∃x. body` | `body[w/x]` with fresh flexible `w` depending on the scope's rigid names | `existsIntro_sound` |
+| `existsElim x body e g` | `g` | `∃x. body`; `g` assuming `body[e/x]` with fresh rigid `e` | `existsElim_sound`, with `e` fresh for the context, the existential, and `g` |
+
+`body[e/x]` is `Term.instantiate`, which renames an inner binder of `body` that
+would capture `e` ([S05](machine-matching.md)). An opened name therefore needs
+to be fresh only for free names, also when a command opens the goal as read
+through the answers, whose binders the commit does not see.
 
 ## Traces
 
@@ -246,15 +253,14 @@ hold for every command and need no trace.
 
 ## Boundaries
 
-- The machine does not compare terms. Commands resolve goals against the store
-  before matching (`Store.resolve?`); the machine refuses unresolved values and
-  rebinding.
-- `Store.resolve?` refuses capture hazards; `none` asks for alpha-renaming, which
-  S05 provides. It is never failure: the test driver reports such a focus as
-  unsupported.
-- The test driver is not the S05 matcher or the S06 command set. In particular,
-  it does not reconstruct `Derives` for answers; `Expansion.Sound` covers only
-  binding-free candidates.
+- The machine does not compare terms. Commands read goals through the store
+  before matching (`Store.resolve`); the machine refuses unresolved values and
+  rebinding. S05's matcher (`Store.unify`) computes bindings the commit replays.
+- `Store.resolve` renames a binder on a capture hazard (S05); a hazard is never
+  failure.
+- The test driver here is not the S05 matcher or the S06 command set. In
+  particular, it does not reconstruct `Derives` for answers. S05 supplies
+  `Expansion.SoundUnder` for that.
 - Residual constraints, solver jobs, and checked success evidence (S08) are not
   part of this state.
 - No termination, fairness, or completeness is claimed. `exhausted` and

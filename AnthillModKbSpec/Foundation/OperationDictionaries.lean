@@ -41,6 +41,16 @@ theorem lookup_map [DecidableEq Field] (entries : List (Field × Item))
     rcases head with ⟨name, item⟩
     by_cases same : name = field <;> simp [lookup, same, ih]
 
+theorem lookup_eq_none [DecidableEq Field] {entries : List (Field × Item)} {field : Field} :
+    lookup entries field = none ↔ field ∉ entries.map Prod.fst := by
+  induction entries with
+  | nil => simp [lookup]
+  | cons head rest ih =>
+    rcases head with ⟨name, item⟩
+    by_cases same : name = field
+    · simp [lookup, same]
+    · simp [lookup, same, ih, Ne.symm same]
+
 /-- Additional semantic structure over the existing logic model. References are
 explicit values; they are not defined as zero-argument evaluation. This contract
 does not yet add reference/application constructors to `Term`. -/

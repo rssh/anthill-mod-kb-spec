@@ -399,7 +399,7 @@ def State.init (snapshot : Snapshot) (flexibles : List Variable) (context : Proo
 theorem State.init_valid (snapshot : Snapshot) (flexibles : List Variable)
     (context : ProofContext Variable Literal Symbol) (goal : Formula Variable Literal Symbol) :
     (State.init (Certificate := Certificate) snapshot flexibles context goal).Valid := by
-  refine ⟨⟨?_, by simp [State.init]⟩, .nil, rfl, by simp [State.init]⟩
+  refine ⟨⟨?_, by simp [State.init], .nil⟩, .nil, rfl, by simp [State.init]⟩
   intro name dependencies infoEq rigid member
   have found := lookup_mem infoEq
   simp only [State.init, List.mem_append, List.mem_map, Prod.mk.injEq] at found

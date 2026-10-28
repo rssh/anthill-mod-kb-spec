@@ -26,6 +26,7 @@ Acceptance:
 - Preserve predicate-range guards and independently bound induction-step variables.
 - Prove the conversion under implication using foundation rules; extend certificates beyond the current UnaryMatch/Expansion coverage without assuming their existing theorem handles compound heads.
 - Direct and indirect calls share a canonical candidate view without rewrite loops.
+- The S05 matcher reports `ho_apply` against an ordinary application as `unsupported` (docs/machine-matching.md). Admit the conversion here, as a matching step or a separate command, keeping `Store.unify_sound` and the commit-replay property.
 - Emit Term proof-tree nodes for conversion and explicitly supplied whole-formula instantiations. Provide known terminating rule checks through S08 and prove export/check correctness without repeating matcher search.
 - Selecting the principle exposes base and universally quantified step obligations and finishes the original formula exactly once.
 - Unsupported lambda-valued answers are statically classified; distinguish structural reference matching from general higher-order unification.

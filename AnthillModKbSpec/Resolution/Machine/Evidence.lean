@@ -227,9 +227,10 @@ structure CompletedProof (Variable Literal Symbol Certificate Snapshot : Type) w
   tree : ProofTree Variable Literal Symbol Certificate
   store : Store Variable Literal Symbol
 
-def CompletedProof.answer? [DecidableEq Variable] (proof : CompletedProof Variable Literal Symbol Certificate Snapshot)
-    (name : Variable) : Option (Term Variable Literal Symbol) :=
-  proof.store.resolve? (.var name)
+def CompletedProof.answer [DecidableEq Variable] [FreshNames Variable]
+    (proof : CompletedProof Variable Literal Symbol Certificate Snapshot) (name : Variable) :
+    Term Variable Literal Symbol :=
+  proof.store.resolve (.var name)
 
 /-! ## Monotonic and snapshot-indexed evidence
 

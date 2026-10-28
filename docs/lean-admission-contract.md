@@ -473,8 +473,11 @@ S04 supplies `Machine.State`, `Frame`, and `step`, and the scope-coherence part 
 `Machine.WellScoped` as `State.Valid`, preserved by `step_valid` for any command.
 `run_success` gives a coherent proof tree for the root obligation. Flexible names
 carry dependency sets; `Store.Scoped` and `Store.commit_no_escape` keep an opened
-rigid name out of the answers of names created outside its scope. The property
-of fully resolved answers is S05's.
+rigid name out of the answers of names created outside its scope. S05 proves the
+property of fully resolved answers (`Store.Scoped.resolve_answer`,
+`Store.commit_no_escape_resolved`). It adds a matcher whose commit replays it and
+read-through completion contracts (`Expansion.SoundUnder`)
+([details](machine-matching.md)).
 
 ### P0 commands
 
@@ -558,9 +561,11 @@ cannot establish Ready. Proof checking and proof discovery are distinct tasks.
 | `Syntax`, `LogicalKb`, `Derivation` | Common terms, clauses, contexts, introduction/elimination and equality rules | Admission/signature layer and machine transitions |
 | `AdmissionSignature` (S02) | Data/predicate range contracts, finite arity declarations, snapshot-indexed reference evidence, ho_apply/dictionary compatibility laws | Machine scope enforcement and operational admission; no automatic induction validity |
 | `Elaboration` (S03) | Recursive range guards, universal/existential semantics, free-name preservation, capture-safe substitution/opening, context and clause-template contracts, rejection of data ranges at `ho_apply` heads, symbolic guards that read only the signature naming, generated signature clauses (`signatureKb`) deriving every guard ([details](guarded-elaboration.md)) | Admitted quantifier strategies and machine reconstruction |
-| `Machine` (S04) | State, AND frames, OR choice points with rollback, answer store with dependency sets and triangular bindings, commit checks, proof trees with rule parameters and scope coherence, evidence classes, outcomes, logical command contracts; `step_valid`, `run_success`, `Frame.feed_exact`, `Store.commit_no_escape`, `run_exhausted`, `Derives.mono` ([details](machine-state.md)) | Matching and resolved-answer scope property (S05), concrete commands and reconstruction under bindings (S06), P0 termination and failure certificates (S07), Term encoding and checker (S08) |
-| `Substitution`, `Opening` | Capture-avoiding substitution and rigid-name opening proofs | Alpha-renaming instantiation inside machine transitions (S05) |
-| `ClauseInstantiation.Term.instantiate?_sound` | Validate successful computed instantiation | Current function rejects cases needing alpha-renaming; none is not failure |
+| `Machine` (S04) | State, AND frames, OR choice points with rollback, answer store with dependency sets and triangular bindings, commit checks, proof trees with rule parameters and scope coherence, evidence classes, outcomes, logical command contracts; `step_valid`, `run_success`, `Frame.feed_exact`, `Store.commit_no_escape`, `run_exhausted`, `Derives.mono` ([details](machine-state.md)) | Concrete commands and whole-run reconstruction under bindings (S06), P0 termination and failure certificates (S07), Term encoding and checker (S08) |
+| `Machine` matching (S05) | Total `Store.resolve` with alpha-renaming, triangular bindings, store refinement and the scope of resolved answers, clause and local-rule freshening, the matcher with `unified`/`mismatch`/`unsupported`/`violated` outcomes, read-through contracts; `Store.unify_sound`, `Store.commit_unify`, `Store.unify_supported`, `Store.commit_no_escape_resolved`, `Store.commit_fresh_resolved`, `Expansion.clause_soundUnder` ([details](machine-matching.md)) | Matching up to alpha-equivalence, operation evaluation (S14), `ho_apply` conversion (S11); no completeness of the matcher |
+| `Substitution`, `Opening` | Capture-avoiding substitution and rigid-name opening proofs; free names of instances, agreement, and cancellation (S05) | — |
+| `ClauseInstantiation` | `instantiate?_sound` validates a partial computed instance; `Term.instantiate` (S05) renames binders on capture hazards, agrees with `instantiate?` when it succeeds, and composes | — |
+| `Freshening` (S05) | Clause template names, fresh names, renaming with captured names kept, local-rule binder instantiation | — |
 | `GroundSearch.Program`, `Context`, `Succeeds`, `Fails` | P0 finite presentation and evidence judgments | No terminating evaluator, rank checker, or totality theorem |
 | `GroundSearch.succeeds_toDerives`, `succeeds_not_fails` | Reconstruction and certificate consistency | No general `Derives` completeness conclusion |
 | `CompletedGround` | `ground_certificates_sound`, `ground_failure_adequate`, `ground_completed_sound` | Completion is a hypothesis, not generic model existence or search termination |

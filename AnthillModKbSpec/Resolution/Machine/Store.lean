@@ -4,7 +4,7 @@ import AnthillModKbSpec.Foundation.OperationDictionaries
 
 namespace AnthillModKbSpec.Machine
 
-open OperationDictionaries (lookup)
+open OperationDictionaries (lookup lookup_eq_none)
 
 /-- A declared name. Rigid names are fixed parameters: the query's own, universal
 eigenvariables, and witnesses opened from existential assumptions. No transition
@@ -176,6 +176,13 @@ def Store.bindAll (store : Store Variable Literal Symbol) (scope : Scope Variabl
       | .rejected => .rejected
       | .violated => .violated
 
+/-- The store a candidate's bindings are committed against: its flexible names
+declared, depending on the obligation's rigid names, then its premises' rigid
+names. A command matching for a candidate matches against this store. -/
+def Store.prepare (store : Store Variable Literal Symbol) (obligation : Obligation Variable Literal Symbol)
+    (flexibles rigids : List Variable) : Store Variable Literal Symbol :=
+  (store.declare (.flexible obligation.scope.rigids) flexibles).declare .rigid rigids
+
 /-- Commit one candidate for an obligation: check that its new names are fresh
 for the store and the obligation, and that the obligation's rigid names are
 declared; declare the new flexible names depending on the obligation's rigid
@@ -187,17 +194,8 @@ def Store.commit (store : Store Variable Literal Symbol) (obligation : Obligatio
   if (flexibles ++ rigids).Nodup ∧
       (∀ name ∈ flexibles ++ rigids, store.info? name = none ∧ name ∉ obligation.names) ∧
       ∀ name ∈ obligation.scope.rigids, store.info? name = some .rigid then
-    ((store.declare (.flexible obligation.scope.rigids) flexibles).declare .rigid rigids).bindAll
-      obligation.scope bindings
+    (store.prepare obligation flexibles rigids).bindAll obligation.scope bindings
   else .violated
-
-/-- Apply the triangular bindings, oldest first. `none` is a capture hazard the
-executable substitution refuses (alpha-renaming is required), not a failure. -/
-def Store.resolve? (store : Store Variable Literal Symbol) (term : Term Variable Literal Symbol) :
-    Option (Term Variable Literal Symbol) :=
-  store.bindings.foldr
-    (fun binding resolved => resolved.bind (Term.instantiate? (Substitution.single binding.1 binding.2)))
-    (some term)
 
 /-- Resolution by the binding chain, oldest binding applied first. -/
 inductive Resolves : List (Variable × Term Variable Literal Symbol) →
@@ -207,17 +205,37 @@ inductive Resolves : List (Variable × Term Variable Literal Symbol) →
       (newest : Substitutes (Substitution.single name value) middle result) :
       Resolves ((name, value) :: rest) term result
 
-theorem Store.resolve?_sound (store : Store Variable Literal Symbol) {term result : Term Variable Literal Symbol}
-    (computed : store.resolve? term = some result) : Resolves store.bindings term result := by
-  obtain ⟨names, bindings⟩ := store
-  simp only [Store.resolve?] at computed ⊢
-  induction bindings generalizing result with
-  | nil => cases computed; exact .nil
+section Resolution
+
+variable [FreshNames Variable]
+
+/-- Apply bindings, oldest first. A value that a binder would capture renames
+the binder (`Term.instantiate`), so resolution never fails on a capture hazard. -/
+def resolveWith (bindings : List (Variable × Term Variable Literal Symbol))
+    (term : Term Variable Literal Symbol) : Term Variable Literal Symbol :=
+  bindings.foldr (fun binding resolved => resolved.instantiate (Substitution.single binding.1 binding.2)) term
+
+/-- Read a term through the committed answers. Pending goals and the local
+assumptions they captured are stored as written and read this way when focused
+or exported, so a later binding reaches them without rewriting the state. -/
+def Store.resolve (store : Store Variable Literal Symbol) (term : Term Variable Literal Symbol) :
+    Term Variable Literal Symbol :=
+  resolveWith store.bindings term
+
+theorem resolveWith_sound (bindings : List (Variable × Term Variable Literal Symbol))
+    (term : Term Variable Literal Symbol) : Resolves bindings term (resolveWith bindings term) := by
+  induction bindings with
+  | nil => exact .nil
   | cons binding rest ih =>
       obtain ⟨name, value⟩ := binding
-      simp only [List.foldr_cons] at computed
-      obtain ⟨middle, older, newest⟩ := Option.bind_eq_some_iff.mp computed
-      exact .cons (ih older) (Term.instantiate?_sound _ newest)
+      exact .cons ih (Term.instantiate_substitutes _ _)
+
+/-- Resolution by the committed bindings is a chain of capture-avoiding substitutions. -/
+theorem Store.resolve_sound (store : Store Variable Literal Symbol) (term : Term Variable Literal Symbol) :
+    Resolves store.bindings term (store.resolve term) :=
+  resolveWith_sound store.bindings term
+
+end Resolution
 
 /-! ## Association lists -/
 
@@ -290,6 +308,27 @@ theorem Store.info?_declare (store : Store Variable Literal Symbol) (info : Name
   by_cases member : name ∈ names
   · simp only [member, ite_true]; exact lookup_declared _ _ _ _ member
   · simp only [member, ite_false]; exact lookup_undeclared _ _ _ member
+
+/-- Declaring new names leaves every already declared name as it was. -/
+theorem Store.info?_declare_of_ne_none {store : Store Variable Literal Symbol} {info : NameInfo Variable}
+    {names : List Variable} (fresh : ∀ name ∈ names, store.info? name = none) {name : Variable}
+    (present : store.info? name ≠ none) : (store.declare info names).info? name = store.info? name := by
+  rw [Store.info?_declare]
+  split
+  · rename_i member; exact absurd (fresh name member) present
+  · rfl
+
+/-- A candidate's rigid names are still undeclared once its flexible names are. -/
+theorem Store.declare_keeps_fresh {store : Store Variable Literal Symbol} {info : NameInfo Variable}
+    {flexibles rigids : List Variable} (distinct : (flexibles ++ rigids).Nodup)
+    (fresh : ∀ name ∈ flexibles ++ rigids, store.info? name = none) :
+    ∀ name ∈ rigids, (store.declare info flexibles).info? name = none := by
+  intro name member
+  have notFlexible : name ∉ flexibles := fun flexible =>
+    (List.nodup_append.mp distinct).2.2 name flexible name member rfl
+  rw [Store.info?_declare]
+  simp only [notFlexible, ite_false]
+  exact fresh name (List.mem_append_right _ member)
 
 theorem Store.info?_narrow (store : Store Variable Literal Symbol) (targets allowed : List Variable)
     (name : Variable) :
@@ -409,7 +448,7 @@ theorem Store.commit_extends {store next : Store Variable Literal Symbol}
     ∃ added, next.bindings = added ++ store.bindings ∧ ∀ binding ∈ added, binding ∈ bindings := by
   unfold Store.commit at committed
   split at committed
-  · simpa [Store.declare] using Store.bindAll_extends committed
+  · simpa [Store.prepare, Store.declare] using Store.bindAll_extends committed
   · cases committed
 
 /-- Every name a commit opens is fresh for the store and for the obligation's
@@ -432,13 +471,26 @@ def Store.Within (store : Store Variable Literal Symbol) (dependencies : List Va
   (store.info? other = some .rigid ∧ other ∈ dependencies) ∨
     ∃ own, store.info? other = some (.flexible own) ∧ ∀ rigid ∈ own, rigid ∈ dependencies
 
-/-- Every flexible name depends only on declared rigid names, and every committed
-answer mentions only names within its bound name's dependencies. -/
+/-- Bindings in commit order, newest first: no name is bound twice, and each
+value mentions neither its own name nor a name bound before it. Resolution,
+oldest first, therefore leaves no bound name. -/
+inductive Triangular : List (Variable × Term Variable Literal Symbol) → Prop where
+  | nil : Triangular []
+  | cons {name : Variable} {value : Term Variable Literal Symbol}
+      {older : List (Variable × Term Variable Literal Symbol)}
+      (unbound : name ∉ older.map Prod.fst)
+      (resolved : ∀ other ∈ value.freeVars, other ≠ name ∧ other ∉ older.map Prod.fst)
+      (rest : Triangular older) : Triangular ((name, value) :: older)
+
+/-- Every flexible name depends only on declared rigid names, every committed
+answer mentions only names within its bound name's dependencies, and the
+bindings are triangular. -/
 structure Store.Scoped (store : Store Variable Literal Symbol) : Prop where
   dependencies : ∀ name dependencies, store.info? name = some (.flexible dependencies) →
     ∀ rigid ∈ dependencies, store.info? rigid = some .rigid
   answers : ∀ name value, (name, value) ∈ store.bindings → ∃ dependencies,
     store.info? name = some (.flexible dependencies) ∧ ∀ other ∈ value.freeVars, store.Within dependencies other
+  triangular : Triangular store.bindings
 
 theorem Store.Within.declared {store : Store Variable Literal Symbol} {dependencies : List Variable}
     {other : Variable} (within : store.Within dependencies other) : store.info? other ≠ none := by
@@ -465,11 +517,7 @@ theorem Store.declare_scoped {store : Store Variable Literal Symbol} (valid : st
       ∀ rigid ∈ dependencies, store.info? rigid = some .rigid) :
     (store.declare info names).Scoped := by
   have old : ∀ name, store.info? name ≠ none → (store.declare info names).info? name = store.info? name :=
-    fun name present => by
-      rw [Store.info?_declare]
-      split
-      · rename_i member; exact absurd (fresh name member) present
-      · rfl
+    fun _ present => Store.info?_declare_of_ne_none fresh present
   constructor
   · intro name dependencies infoEq rigid member
     rw [Store.info?_declare] at infoEq
@@ -486,11 +534,12 @@ theorem Store.declare_scoped {store : Store Variable Literal Symbol} (valid : st
     have present := (within other free).declared
     simp only [Store.Within, old other present]
     exact within other free
+  · exact valid.triangular
 
 theorem Store.bind_scoped {store next : Store Variable Literal Symbol} (valid : store.Scoped)
     {scope : Scope Variable Literal Symbol} {name : Variable} {value : Term Variable Literal Symbol}
     (committed : store.bind scope name value = .committed next) : next.Scoped := by
-  obtain ⟨dependencies, infoEq, _, outcome⟩ := Store.bind_committed committed
+  obtain ⟨dependencies, infoEq, boundEq, outcome⟩ := Store.bind_committed committed
   rcases outcome with ⟨_, rfl⟩ | ⟨rfl, occurs, checks⟩
   · exact valid
   · have info : ∀ other, ({ (store.narrow value.freeVars dependencies) with
@@ -504,6 +553,14 @@ theorem Store.bind_scoped {store next : Store Variable Literal Symbol} (valid : 
       intro other outside own flexible
       rw [info, flexible]
       simp [narrowInfo, outside]
+    -- The value names only unbound flexible names and rigid names, which are never bound.
+    have valueUnbound : ∀ other ∈ value.freeVars, other ∉ store.bindings.map Prod.fst := by
+      intro other free bound
+      obtain ⟨⟨_, value'⟩, member, rfl⟩ := List.mem_map.mp bound
+      obtain ⟨own, ownEq, _⟩ := valid.answers _ value' member
+      have usable := (checks _ free).1
+      simp only [Store.usable, ownEq, Option.isNone_iff_eq_none] at usable
+      exact lookup_eq_none.mp usable bound
     constructor
     · intro other narrowed infoNarrowed rigid member
       rw [info] at infoNarrowed
@@ -529,15 +586,13 @@ theorem Store.bind_scoped {store next : Store Variable Literal Symbol} (valid : 
             fun rigid member => by simpa using (List.mem_filter.mp member).2⟩
         · cases usable
       · obtain ⟨own, ownEq, within⟩ := valid.answers bound bindingValue member
-        have outside : bound ∉ value.freeVars := by
-          intro free
-          have usable := (checks bound free).1
-          simp only [Store.usable, ownEq, Option.isNone_iff_eq_none] at usable
-          have present := lookup_isSome_of_mem member
-          simp only [Store.binding?] at usable
-          rw [usable] at present
-          cases present
+        have outside : bound ∉ value.freeVars :=
+          fun free => valueUnbound bound free (List.mem_map.mpr ⟨_, member, rfl⟩)
         exact ⟨own, unchanged bound outside own ownEq, fun other free => (within other free).narrow⟩
+    · refine .cons (fun bound => ?_) (fun other free => ⟨fun same => occurs (same ▸ free), fun bound => ?_⟩)
+        valid.triangular
+      · exact lookup_eq_none.mp boundEq bound
+      · exact valueUnbound other free bound
 
 theorem Store.bindAll_scoped {store next : Store Variable Literal Symbol} (valid : store.Scoped)
     {scope : Scope Variable Literal Symbol} {bindings : List (Variable × Term Variable Literal Symbol)}
@@ -553,6 +608,18 @@ theorem Store.bindAll_scoped {store next : Store Variable Literal Symbol} (valid
       · cases committed
       · cases committed
 
+/-- The store a candidate is matched and committed against is scoped when the
+candidate passes the commit's name checks. -/
+theorem Store.prepare_scoped {store : Store Variable Literal Symbol} (valid : store.Scoped)
+    {obligation : Obligation Variable Literal Symbol} {flexibles rigids : List Variable}
+    (distinct : (flexibles ++ rigids).Nodup) (fresh : ∀ name ∈ flexibles ++ rigids, store.info? name = none)
+    (declared : ∀ name ∈ obligation.scope.rigids, store.info? name = some .rigid) :
+    (store.prepare obligation flexibles rigids).Scoped := by
+  have first := Store.declare_scoped valid (info := .flexible obligation.scope.rigids) (names := flexibles)
+    (fun name member => fresh name (List.mem_append_left _ member))
+    (fun dependencies equal rigid member => by cases equal; exact declared rigid member)
+  exact Store.declare_scoped first (Store.declare_keeps_fresh distinct fresh) (fun _ equal => by cases equal)
+
 theorem Store.commit_scoped {store next : Store Variable Literal Symbol} (valid : store.Scoped)
     {obligation : Obligation Variable Literal Symbol} {flexibles rigids : List Variable}
     {bindings : List (Variable × Term Variable Literal Symbol)}
@@ -560,19 +627,24 @@ theorem Store.commit_scoped {store next : Store Variable Literal Symbol} (valid 
   unfold Store.commit at committed
   split at committed
   · rename_i checks
-    obtain ⟨distinct, fresh, declared⟩ := checks
-    have first := Store.declare_scoped valid (info := .flexible obligation.scope.rigids) (names := flexibles)
-      (fun name member => (fresh name (List.mem_append_left _ member)).1)
-      (fun dependencies equal rigid member => by cases equal; exact declared rigid member)
-    refine Store.bindAll_scoped (Store.declare_scoped first (info := .rigid) (names := rigids) ?_ ?_) committed
-    · intro name member
-      rw [Store.info?_declare]
-      have notFlexible : name ∉ flexibles := fun flexible =>
-        (List.nodup_append.mp distinct).2.2 name flexible name member rfl
-      simp only [notFlexible, ite_false]
-      exact (fresh name (List.mem_append_right _ member)).1
-    · intro _ equal; cases equal
+    exact Store.bindAll_scoped
+      (Store.prepare_scoped valid checks.1 (fun name member => (checks.2.1 name member).1) checks.2.2) committed
   · cases committed
+
+/-- A candidate whose names pass the commit's checks commits exactly the
+bindings it computed against the prepared store. -/
+theorem Store.commit_prepared {store next : Store Variable Literal Symbol}
+    {obligation : Obligation Variable Literal Symbol} {flexibles rigids : List Variable}
+    {bindings : List (Variable × Term Variable Literal Symbol)}
+    (distinct : (flexibles ++ rigids).Nodup)
+    (fresh : ∀ name ∈ flexibles ++ rigids, store.info? name = none ∧ name ∉ obligation.names)
+    (declared : ∀ name ∈ obligation.scope.rigids, store.info? name = some .rigid)
+    (committed : (store.prepare obligation flexibles rigids).bindAll obligation.scope bindings = .committed next) :
+    store.commit obligation flexibles rigids bindings = .committed next := by
+  unfold Store.commit
+  split
+  · exact committed
+  · rename_i failed; exact absurd ⟨distinct, fresh, declared⟩ failed
 
 theorem Store.bind_flexible {store next : Store Variable Literal Symbol}
     {scope : Scope Variable Literal Symbol} {name : Variable} {value : Term Variable Literal Symbol}

@@ -1,5 +1,8 @@
--- Abstract machine states, continuations, proof evidence, and branch isolation (S04).
+-- Abstract machine states, continuations, proof evidence, and branch isolation (S04);
+-- reading through answers, freshening, and scope-safe matching (S05).
 import AnthillModKbSpec.Resolution.Machine.Store
+import AnthillModKbSpec.Resolution.Machine.Instantiation
+import AnthillModKbSpec.Resolution.Machine.Unification
 import AnthillModKbSpec.Resolution.Machine.Evidence
 import AnthillModKbSpec.Resolution.Machine.State
 import AnthillModKbSpec.Resolution.Machine.Commands

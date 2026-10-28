@@ -28,7 +28,10 @@ clauses, so lowered formulas do not depend on the predicate registry.
 obligations, AND frames and OR choice points with rollback, an answer store whose
 flexible names carry scope dependencies, proof trees recording rule parameters
 for later export, and outcomes that keep success separate from exhaustion and
-unknown results.
+unknown results. [S05 matching](machine-matching.md) adds instantiation with
+alpha-renaming, clause freshening that keeps captured parameters, reading of
+pending goals through committed answers, and a matcher that separates a
+mismatch from a capability the profile does not admit.
 
 ## Resolution steps and their justification
 

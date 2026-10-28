@@ -5,8 +5,8 @@ open AnthillModKbSpec AnthillModKbSpec.Machine
 namespace MachineTests
 
 /-! Executable traces of the S04 machine. The command below is a test driver for
-logical connectives and atomic assumptions: S05 supplies the real matcher and
-S06 the real commands. `#guard` evaluates each run; the generic theorems
+logical connectives and atomic assumptions; S05's matcher is exercised in
+`Tests/Resolution/Matching.lean`, and S06 supplies the real commands. `#guard` evaluates each run; the generic theorems
 (`step_valid`, `run_success`, `Frame.feed_exact`, `run_exhausted`,
 `Store.commit_no_escape`) hold for any command. -/
 
@@ -30,27 +30,9 @@ def atom (symbol : Sym) (args : List T) : T := .app symbol args
 
 /-! ### Test driver -/
 
-mutual
-/-- Structural equality for the shapes used here. -/
-def same : T → T → Bool
-  | .var x, .var y => x == y
-  | .lit x, .lit y => x == y
-  | .app s xs, .app t ys => s == t && sameArgs xs ys
-  | .truth, .truth => true
-  | .falsity, .falsity => true
-  | .conj a b, .conj c d => same a c && same b d
-  | .disj a b, .disj c d => same a c && same b d
-  | .imp a b, .imp c d => same a c && same b d
-  | .equal a b, .equal c d => same a c && same b d
-  | .existsVar x a, .existsVar y b => x == y && same a b
-  | .forallVar x a, .forallVar y b => x == y && same a b
-  | _, _ => false
-
-def sameArgs : List T → List T → Bool
-  | [], [] => true
-  | x :: xs, y :: ys => same x y && sameArgs xs ys
-  | _, _ => false
-end
+/-- Syntactic equality, as the S05 matcher decides it. -/
+def same : T → T → Bool := identical
+def sameArgs : List T → List T → Bool := identicalArgs
 
 mutual
 /-- `candidate` is `body` with the binder replaced by some name. -/
@@ -65,17 +47,12 @@ def instancesOf (binder : Nat) : List T → List T → Bool
   | _, _ => false
 end
 
-def flexibleUnbound (store : Store Nat Nat Sym) (name : Nat) : Bool :=
-  match store.info? name with
-  | some (.flexible _) => (store.binding? name).isNone
-  | _ => false
-
 mutual
 /-- One-way matching: binds unbound flexible names of the pattern only. -/
 def matchTerm (store : Store Nat Nat Sym) : T → T → List (Nat × T) → Option (List (Nat × T))
   | .var x, target, acc =>
       if same (.var x) target then some acc
-      else if flexibleUnbound store x then
+      else if store.assignable x then
         match OperationDictionaries.lookup acc x with
         | some value => if same value target then some acc else none
         | none => some ((x, target) :: acc)
@@ -92,13 +69,11 @@ def matchArgs (store : Store Nat Nat Sym) : List T → List T → List (Nat × T
   | _, _, _ => none
 end
 
-/-- Identity candidates, or `none` when an assumption cannot be resolved
-(a capture hazard asks for alpha-renaming; it is not a miss). -/
+/-- Identity candidates against the assumptions read through the answers. -/
 def identityCandidates (store : Store Nat Nat Sym) (scope : Scope Nat Nat Sym) (goal : T) :
-    Option (List (Expansion Nat Nat Sym Absent)) :=
-  (scope.assumptions.mapM store.resolve?).map fun resolved =>
-    resolved.filterMap fun assumption =>
-      (matchTerm store goal assumption []).map (fun bindings => Expansion.assumption bindings)
+    List (Expansion Nat Nat Sym Absent) :=
+  (scope.assumptions.map store.resolve).filterMap fun assumption =>
+    (matchTerm store goal assumption []).map (fun bindings => Expansion.assumption bindings)
 
 /-- Case analysis on `a or b` is offered only while neither case is assumed, so
 it is not repeated inside its own cases. -/
@@ -130,24 +105,21 @@ def equalityCandidates (store : Store Nat Nat Sym) (left right : T) : List (Expa
 /-- Identity is preferred whenever it applies; otherwise case analysis and
 existential opening come before the goal's introduction rule. -/
 def logical : Command Nat Nat Sym Absent := fun obligation store =>
-  match store.resolve? obligation.goal with
-  | none => .unsupported
-  | some goal =>
-      match identityCandidates store obligation.scope goal with
-      | none => .unsupported
-      | some (first :: rest) => .candidates (first :: rest)
-      | some [] =>
-          let left := caseCandidates obligation.scope goal ++ openCandidates store obligation goal
-          match goal with
-          | .truth => .candidates [.truth]
-          | .conj a b => .candidates (left ++ [.conjIntro a b])
-          | .disj a b => .candidates (left ++ [.disjLeft a, .disjRight b])
-          | .imp a b => .candidates (left ++ [.impIntro a b])
-          | .forallVar x body => .candidates [.forallIntro x body (store.freshFor obligation)]
-          | .existsVar x body => .candidates (left ++ [.existsIntro x body (store.freshFor obligation)])
-          | .equal l r => .candidates (equalityCandidates store l r)
-          | .app _ _ => .candidates left
-          | _ => .unsupported
+  let goal := store.resolve obligation.goal
+  match identityCandidates store obligation.scope goal with
+  | first :: rest => .candidates (first :: rest)
+  | [] =>
+      let left := caseCandidates obligation.scope goal ++ openCandidates store obligation goal
+      match goal with
+      | .truth => .candidates [.truth]
+      | .conj a b => .candidates (left ++ [.conjIntro a b])
+      | .disj a b => .candidates (left ++ [.disjLeft a, .disjRight b])
+      | .imp a b => .candidates (left ++ [.impIntro a b])
+      | .forallVar x body => .candidates [.forallIntro x body (store.freshFor obligation)]
+      | .existsVar x body => .candidates (left ++ [.existsIntro x body (store.freshFor obligation)])
+      | .equal l r => .candidates (equalityCandidates store l r)
+      | .app _ _ => .candidates left
+      | _ => .unsupported
 
 def query (flexibles : List Nat) (context : List T) (goal : T) : State Nat Nat Sym Absent Nat :=
   State.init 0 flexibles context goal
@@ -159,8 +131,8 @@ def rulesOf (outcome : Outcome Nat Nat Sym Absent Nat) : Option (List RuleId) :=
   outcome.proof?.map (·.tree.rules)
 
 def answerIs (outcome : Outcome Nat Nat Sym Absent Nat) (name : Nat) (expected : T) : Bool :=
-  match outcome.proof?.bind (·.answer? name) with
-  | some value => same value expected
+  match outcome.proof? with
+  | some proof => same (proof.answer name) expected
   | none => false
 
 def resume : Outcome Nat Nat Sym Absent Nat → Outcome Nat Nat Sym Absent Nat
@@ -316,7 +288,7 @@ def crossBranch : Command Nat Nat Sym Absent := fun obligation store =>
   | .truth, rigid :: _ =>
       let escaping := store.names.filterMap fun
         | (name, .flexible dependencies) =>
-            if flexibleUnbound store name && !dependencies.contains rigid then some name else none
+            if store.assignable name && !dependencies.contains rigid then some name else none
         | _ => none
       .candidates (escaping.map (fun name => Expansion.assumption [(name, .var rigid)]) ++ [.truth])
   | _, _ => logical obligation store
@@ -359,8 +331,8 @@ def staleName : Command Nat Nat Sym Absent := fun _ _ => .candidates [.existsInt
 
 -- Closes `naf A` when A is absent from the context, keeping the certificate.
 def withNaf : Command Nat Nat Sym Absent := fun obligation store =>
-  match store.resolve? obligation.goal with
-  | some (.defaultNeg operand) =>
+  match store.resolve obligation.goal with
+  | .defaultNeg operand =>
       if obligation.context.any (same operand) then .candidates []
       else .candidates [{ rule := .defaultNegIntro ⟨operand, obligation.context⟩ }]
   | _ => logical obligation store

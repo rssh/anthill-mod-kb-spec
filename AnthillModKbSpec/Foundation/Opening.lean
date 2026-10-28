@@ -67,7 +67,7 @@ def Term.openFree [DecidableEq Variable] (binder eigen : Variable) :
 
 variable {Variable Literal Symbol : Type} [DecidableEq Variable]
 
-private theorem bind_identity (name : Variable) :
+theorem Substitution.bind_identity (name : Variable) :
     Substitution.bind (Term.var : Substitution Variable Literal Symbol) name (.var name) = Term.var := by
   funext candidate
   by_cases same : candidate = name <;> simp [Substitution.bind, same]
@@ -90,16 +90,21 @@ theorem Substitutes.identity (term : Term Variable Literal Symbol) : Substitutes
   · intro name body ih
     apply Substitutes.forallVar (renamed := name)
     · intro candidate member different; simpa [Term.freeVars] using Ne.symm different
-    · simpa [bind_identity] using ih
+    · simpa [Substitution.bind_identity] using ih
   · intro name body ih
     apply Substitutes.existsVar (renamed := name)
     · intro candidate member different; simpa [Term.freeVars] using Ne.symm different
-    · simpa [bind_identity] using ih
+    · simpa [Substitution.bind_identity] using ih
   · intro dictionary path operation args ihDictionary ihArgs
     exact .dictionaryCall ihDictionary ihArgs
   · intro a b left right; exact .equal left right
   · exact .nil
   · intro head tail first rest; exact .cons first rest
+
+/-- A substitution that fixes every free name of a term relates it to itself. -/
+theorem Substitutes.fixed {σ : Substitution Variable Literal Symbol} {term : Term Variable Literal Symbol}
+    (fixed : ∀ name ∈ term.freeVars, σ name = .var name) : Substitutes σ term term :=
+  (Substitutes.identity term).congr (fun name member => (fixed name member).symm)
 
 private theorem reset_single (binder : Variable) (eigen : Variable) :
     Substitution.bind (Substitution.single binder (.var eigen) : Substitution Variable Literal Symbol)
