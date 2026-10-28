@@ -11,7 +11,7 @@ owns completion and rollback.
 
 | Module | Contents |
 | --- | --- |
-| [Store](../AnthillModKbSpec/Resolution/Machine/Store.lean) | Rigid and flexible names with dependencies, triangular answer bindings, scopes and obligations, binding and commit checks, the `Scoped` invariant |
+| [Store](../AnthillModKbSpec/Resolution/Machine/Store.lean) | Rigid and flexible names with dependencies, triangular answer bindings, scopes and obligations, binding and commit checks, the `Scoped` invariant, declared names (`Obligation.Declared`) |
 | [Evidence](../AnthillModKbSpec/Resolution/Machine/Evidence.lean) | Rule identities and parameters, proof trees, scope coherence, completed proofs, evidence classes |
 | [State](../AnthillModKbSpec/Resolution/Machine/State.lean) | Candidates, frames, choice points, gaps, `step`, `run`, the machine invariant and its theorems |
 | [Commands](../AnthillModKbSpec/Resolution/Machine/Commands.lean) | Named command contracts for the logical rules and their `Derives` completion lemmas |
@@ -43,6 +43,33 @@ rigid names. Nothing a sibling assumes or opens reaches it.
 `State.init snapshot flexibles context goal` declares every free name of the
 query: the given answer names as flexible, depending on the query's
 parameters, and all other free names as those rigid parameters.
+
+### Declared names
+
+Every free name of every committed obligation is declared in the store it is
+read through (`Obligation.Declared`: `store.info? name ≠ none` for the free
+names of the goal and the assumptions). This covers the focus, every frame's
+parent, premises, and completed subproofs (`Frame.Declared`), and every choice
+point's obligation and frames under its saved store. Bound names are not
+constrained. Neither are the parameters a rule application records (witness
+terms, clause instantiations, templates): the commit does not see them, and
+S08's checker validates them.
+
+`State.init` establishes the invariant, and the commit enforces it for every
+premise (below). Commits only add declarations, so it survives each commit
+(`Store.Refines.declared`). Rollback restores a saved store together with the
+frames declared under it.
+
+A name the store has not declared is therefore fresh for every obligation the
+store reads (`Obligation.Declared.fresh`). Store freshness replaces S04's check
+against the obligation's free and binder names. Binder names impose nothing,
+because the opening contracts rename a binder that would capture
+([S05](machine-matching.md)). One lemma, `Store.commit_fresh_resolved`, gives
+an opened name its freshness for the read obligation in every later store,
+from the invariant at the commit. The finished tree does not record the store
+of each commit, and in the final store an eigenvariable is itself declared.
+Composing a whole run (S16) therefore applies the lemma at each commit step,
+where `State.Valid` holds, and does not rely on the final tree alone.
 
 ### Dependencies instead of levels
 
@@ -78,8 +105,9 @@ then binds each proposed answer.
 
 | Check | Failure |
 | --- | --- |
-| New names are distinct, undeclared, and absent from the obligation's free and binder names (`Obligation.names`) | `violated` |
+| New names are distinct and undeclared; a binder name of the obligation is allowed | `violated` |
 | The obligation's rigid names are declared rigid | `violated` |
+| Every free name of each premise goal and discharged assumption is declared in the prepared store (old names, the candidate's flexible and rigid names), and every rigid name a premise mentions is in its scope: a rigid name of the obligation or one the premise opens (`Store.Admits`) | `violated` |
 | The bound name is a declared, still unbound flexible name | `violated` (a rigid is never assigned; an answer is never rebound) |
 | Every name in the value is a rigid name of this scope or an unbound flexible name | `violated` (the value must be resolved and in scope) |
 | Occurs check: the bound name is not in the value | `rejected` |
@@ -89,7 +117,15 @@ Binding a name to itself changes nothing. On success, the flexible names in the
 value are narrowed to the bound name's dependencies. `rejected` is an ordinary
 candidate miss. `violated` means the command broke the machine contract; the
 candidate is abandoned and the obligation recorded as a `contract` gap.
-`Store.freshFor` picks a name that passes the freshness check.
+`Store.freshFor` picks a name that passes the freshness check (`Store.freshFor_fresh`).
+
+`Store.Accepts` names these checks before binding. A premise mentions a rigid
+name only within its own scope. A rigid name opened for one premise is
+therefore out of scope in its siblings, which keeps the existential that
+`existsElim` opens free of its eigenvariable. A rigid name that went out of
+scope earlier cannot return through a premise either. A command that leaves a
+name undeclared in a premise, for example a clause body variable it did not
+freshen, is refused at the commit, before the premise is focused.
 
 ### Transitions
 
@@ -114,13 +150,13 @@ candidate is abandoned and the obligation recorded as a `contract` gap.
 | Property | Theorem |
 | --- | --- |
 | An AND parent completes exactly once, after all its premises: `step` passes each returning subproof to `receive`; fewer subproofs leave the frame waiting, exactly one per premise completes it, more are refused | `step_waiting`, `step_complete`, `Frame.feed_partial`, `Frame.feed_exact`, `Frame.feed_overfull` |
-| Every transition keeps every frame, focus, and choice point linked to the obligation it continues, and every store scoped, whatever the command answers | `State.init_valid`, `step_valid` |
-| A successful run proves the root obligation, each subproof proves exactly its premise under the parent scope extended only by that premise, and the final answers are scoped | `run_success`, `ProofTree.CoherentPremises.subproof_context` |
+| Every transition keeps every frame, focus, and choice point linked to the obligation it continues, every store scoped, and every free name of every committed obligation declared in its store, including after rollback to a saved store, whatever the command answers | `State.init_valid`, `step_valid`, `Store.commit_declared` |
+| A successful run proves the root obligation, each subproof proves exactly its premise under the parent scope extended only by that premise, the final answers are scoped, and every obligation of the tree names only names the final store declares | `run_success`, `ProofTree.CoherentPremises.subproof_context`, `ProofTree.Declared` |
 | AND siblings share answers in sequence: a sibling starts from the store the previous one left, commits only add the candidate's bindings, and a bound answer is never rebound | `step_proved_store`, `Store.commit_extends`, `Store.bind_bound` |
 | OR alternatives start from the saved store: bindings of a failed alternative are discarded | `step_backtrack`, `State.enter_store` |
-| Opened names avoid the obligation's free and binder names, which gives the freshness `Derives` checks | `Store.commit_fresh`, `Obligation.fresh_of_not_mem_names` |
+| Opened names are new to the store, which by the name invariant gives the freshness `Derives` checks; for read obligations, `Store.commit_fresh_resolved` gives it in every later store | `Store.commit_fresh`, `Obligation.Declared.fresh`, `Store.commit_fresh_resolved` |
 | `Store.Scoped`: every answer mentions only rigid names among its name's dependencies, and flexible names whose dependencies are among them | `Store.commit_scoped`, `Store.Scoped.answer_rigid` |
-| A rigid name a commit opens is never a dependency of a flexible name that already existed, so it never enters that name's answer | `Store.commit_no_escape`, `Store.bind_respects_scope` |
+| A rigid name a commit opens is never a dependency of a flexible name, old or new, so it never enters an older name's answer | `Store.commit_no_escape`, `Store.commit_independent`, `Store.bind_respects_scope` |
 | Only `success` carries a proof; exhaustion is reported only when no state of the run recorded a gap | `Outcome.proof?_eq_some`, `run_exhausted` |
 | Resolution by the committed bindings is a chain of capture-avoiding substitutions, renaming a binder on a capture hazard ([S05](machine-matching.md)) | `Store.resolve_sound` |
 
@@ -210,9 +246,9 @@ through committed answers, S05's `Expansion.SoundUnder` states and proves it
 | `impIntro a b` | `a → b` | `b` assuming `a` | `impIntro_sound` |
 | `impElim a g` | `g` | `a → g`; `a` | `impElim_sound` |
 | `falsityElim` | any `g` | `false` | `falsityElim_sound` |
-| `forallIntro x body e` | `∀x. body` | `body[e/x]` with fresh rigid `e` | `forallIntro_sound`, from `e ∉ Obligation.names` |
+| `forallIntro x body e` | `∀x. body` | `body[e/x]` with fresh rigid `e` | `forallIntro_sound`, from the declared obligation and `e` undeclared |
 | `existsIntro x body w` | `∃x. body` | `body[w/x]` with fresh flexible `w` depending on the scope's rigid names | `existsIntro_sound` |
-| `existsElim x body e g` | `g` | `∃x. body`; `g` assuming `body[e/x]` with fresh rigid `e` | `existsElim_sound`, with `e` fresh for the context, the existential, and `g` |
+| `existsElim x body e g` | `g` | `∃x. body`; `g` assuming `body[e/x]` with fresh rigid `e` | `existsElim_sound`, from the declared obligation, `e` undeclared, and `e` absent from the existential |
 
 `body[e/x]` is `Term.instantiate`, which renames an inner binder of `body` that
 would capture `e` ([S05](machine-matching.md)). An opened name therefore needs
@@ -242,10 +278,14 @@ outcome is checked by `#guard`.
 | `(∃x. p(x)) → ∃y. p(y)` / `∃y. ((∃x. p(x)) → p(y))` | Success through `existsElim` / exhausted: the opened witness cannot become an earlier name's answer |
 | `(∀x. ∃y. true) ∧ (∀z. true)`, a command binding `y := z` | Refused; success without the binding. A level number would accept it |
 | `p(1) → ∀x. p(x)` | Exhausted: the free name 1 is a declared parameter, so opening `∀x` does not reuse it |
+| `∀x. (p(x) → p(x))`, a command opening `∀x` with `x` itself | Success: a binder name of the obligation is a new name of the store |
 | `naf p`; `naf q ∨ p` under `p` | Unknown; success, then unknown on resume (the gap persists) |
 | `p ∧ naf q` under `p`, with a command producing a toy certificate | Success; the NAF node retains its certificate, read back from `ProofTree.closedWorld` |
 | Small budget | Interrupted |
 | A command binding a rigid name, or opening a name free in the obligation | Contract gap, outcome unknown |
+| A command whose premise goal or discharged assumption names an undeclared name | Contract gap on the expanded obligation, outcome unknown |
+| An `existsElim` whose existential names its own eigenvariable | Contract gap: a rigid name opened for one premise is out of scope in its siblings |
+| `(∀x. true) ∧ q`, a command whose premise for `q` names the closed eigenvariable | Contract gap on `q`: the name is declared but out of scope |
 
 The `#guard` checks evaluate compiled code; the kernel cannot reduce the existing
 well-founded `Term.freeVars` and `Term.instantiate?`. The generic theorems above

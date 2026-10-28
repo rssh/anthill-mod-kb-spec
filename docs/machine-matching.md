@@ -51,8 +51,11 @@ The opening contracts (`forallIntro`, `existsIntro`, `existsElim`) open the body
 with `Term.instantiate` as well. An inner binder that would capture the opened
 name is renamed, so the name needs to be fresh only for free names. This matters
 when a command opens the goal as read through the answers. Reading can rename
-binders or bring in binders from answer values, and the commit's freshness check
-sees only the obligation as written.
+binders or bring in binders from answer values, which no check on the
+obligation as written can see. The commit checks only that a new name is new to
+the store (S19). By the [name invariant](machine-state.md#declared-names) that
+makes it fresh for the free names of every obligation the store reads, and
+binder names impose nothing.
 
 ## Freshening a clause use
 
@@ -68,9 +71,11 @@ A clause use instantiates exactly the names its quantifiers own.
 other name. `Term.rename_freeVars` characterizes the result exactly: a free name
 of the renamed term is the renaming of one of its free names. Bound names never
 become free, and no fresh name is captured. `Store.freshen` picks the fresh names.
-They are distinct, undeclared, and absent from the obligation's free and binder
-names and from the templates (`Store.freshen_fresh`, `Store.freshen_nodup`), so
-they pass the commit's freshness check. For local rules, `Derives.instantiateLeading`
+They are distinct, undeclared, and absent from the templates
+(`Store.freshen_fresh`, `Store.freshen_nodup`), so they pass the commit's
+freshness check. Every template name must be freshened. The commit refuses a
+premise that names an undeclared name, such as a clause body variable left as
+written; this is a contract gap. For local rules, `Derives.instantiateLeading`
 gives the instance by universal elimination, `Term.instantiateLeading_captured`
 keeps every captured name free, and `Term.instantiateLeading_freeVars` bounds the
 new free names by the witnesses.
@@ -109,7 +114,7 @@ property of fully resolved answers, through every alias and binding chain.
 | A resolved answer mentions only rigid names among its dependencies and flexible names depending only on them | `Store.Scoped.resolve_answer`, `Store.Scoped.not_mem_answer` |
 | Commits refine the store: kinds kept, dependencies only narrowed, bindings only added | `Store.Refines`, `Store.commit_refines`, `Store.bindAll_refines` |
 | A rigid name a commit opens never occurs in an older name's resolved answer, in any later scoped refinement | `Store.commit_no_escape_resolved` |
-| An opened name stays absent from the reading of a term built from older names: the freshness `Derives` checks survives later answers | `Store.commit_fresh_resolved`, `Store.Scoped.fresh_resolve` |
+| A rigid name a commit opens is unbound and absent from the read goal and context of the obligation, and of every premise that does not open it (the existential `existsElim` opens), in every later scoped store refining the commit (`Obligation.FreshUnder`). The name invariant supplies the declared names, so there is no per-term hypothesis | `Store.commit_fresh_resolved`, `Store.commit_independent`, `Store.Scoped.fresh_resolve` |
 
 ## Matching
 
@@ -148,7 +153,7 @@ size of the pending pairs. No fuel is involved.
 | Property | Theorem |
 | --- | --- |
 | The bindings replay as commits; the result refines the store, is scoped, and both sides read the same there | `unifyPairs_bindAll`, `unifyPairs_sound`, `Store.unify_sound` |
-| A match computed against the store a candidate's commit prepares is replayed exactly by that commit | `Store.commit_unify`, `Store.commit_prepared`, `Store.prepare_scoped` |
+| A match computed against the store a candidate's commit prepares is replayed exactly by that commit, when the candidate's names and premises pass its checks | `Store.commit_unify`, `Store.commit_prepared`, `Store.prepare_scoped` |
 | On ordinary readings (no binders, calls, or `ho_apply`) matching never reports `unsupported` | `unifyPairs_supported`, `Store.unify_supported` |
 | `violated` is reported exactly when a reading names an unusable name | `unifyPairs_wellScoped`, `Store.unify_wellScoped`, `Store.unify_violated` |
 | Matching terminates | `unifyPairs` is defined by well-founded recursion; `Store.bind_openCount` and `matchParts_size` give the decrease |
@@ -171,7 +176,7 @@ resolve the goal before choosing the rule.
 | `truth`, `conjIntro`, `disjLeft`, `disjRight`, `impIntro` | `*_soundUnder` | The goal reads as the connective |
 | `assumption bindings` | `assumption_soundUnder` | The goal reads as an assumption of the scope: a match, kept by `Store.Refines.resolve_eq` |
 | `disjElim`, `impElim`, `falsityElim` | `*_soundUnder` | None |
-| `forallIntro`, `existsElim` | `forallIntro_soundUnder`, `existsElim_soundUnder` | The eigenvariable is unbound and absent from the free names of the read obligation (`Store.commit_fresh_resolved`) |
+| `forallIntro`, `existsElim` | `forallIntro_soundUnder`, `existsElim_soundUnder` | The eigenvariable is fresh for the read obligation (`Obligation.FreshUnder`) and, for `existsElim`, absent from the read existential. `Store.commit_fresh_resolved` gives both from the commit |
 | `existsIntro` | `existsIntro_soundUnder` | None; the witness's answer is read |
 | `forallElim binder body witness` (new) | `forallElim_soundUnder` | The goal reads as the body's instance; this instantiates local rules with fresh witnesses |
 | `clause head body fresh bindings` (new) | `clause_soundUnder` | The renamed head reads as the goal; the read renaming is the clause instance |
@@ -179,7 +184,10 @@ resolve the goal before choosing the rule.
 These are per-node lemmas. Composing them along a whole successful run belongs to
 S06 and S16. That composition uses `Store.Refines` from each commit to the final
 store, `Store.Refines.resolve_eq` for matched readings, and
-`Store.commit_fresh_resolved` for opened names.
+`Store.commit_fresh_resolved` for opened names. That lemma needs the name
+invariant at the commit, which `State.Valid` carries at that step. The final
+tree does not record the store of each commit, so the composition applies the
+lemma along the run.
 
 ## Traces
 
@@ -198,7 +206,9 @@ freshened clauses, each matched against the prepared store.
 | Alpha-variants, a call, `ho_apply` against an atom | `unsupported`; identical binders and `ho_apply` against `ho_apply` are admitted |
 | An undeclared name, a rigid name outside the scope, also on identical sides | `violated` |
 | Opening `∀5. ∀6. r(5, 6, 1)` with 6 | `∀7. r(6, 7, 1)`: the inner binder is renamed |
-| `p(0) ∧ ∀5. ∀1. r(5, 1, 0)` under `p(1)` with `r(X, X, Y)`, and its `∃5` and `∀9` variants | Exhausted: after `0 := 1` the read conjunct `∀5. ∀6. r(5, 6, 1)` is opened with 6 without capture |
+| `p(0) ∧ ∀5. ∀1. r(5, 1, 0)` under `p(1)` with `r(X, X, Y)`, and its `∃5` and `∀9` variants | Exhausted: after `0 := 1` the conjunct reads as `∀5. ∀6. r(5, 6, 1)`. A driver that opens with the read inner binder uses 6, and the opening renames without capture |
+| `∀5. ∀6. (p(5, 6) → p(5, 6))`, opened with the inner binder 6 | Success: a binder name of the obligation is a new name of the store (S05 refused it) |
+| `r(X) :- s(X, Z)` used by a command that freshens only the head | Contract gap on `r(Y)`: the body names the undeclared `Z`. Freshening every template answers `a` |
 | `∀x. ∃y. y = x` / `∃y. ∀x. y = x` | Success / exhausted (a mismatch, not unknown) |
 | `∃y. ∀x. ∃z. (y = z ∧ z = x)` | Exhausted: `y = z` narrows `z`, so `z = x` is refused |
 | `(∀x. X = x) ∨ X = a` | The scope miss rolls back; answer `a`; a command proposing `X := x` directly is rejected by the commit, with no gap |

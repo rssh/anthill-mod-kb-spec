@@ -128,13 +128,16 @@ theorem falsityElim_sound {goal : Formula Variable Literal Symbol} :
     (falsityElim (Certificate := Certificate)).Sound hoApplySymbol kb naf ⟨scope, goal⟩ :=
   fun proofs => .falsityElim (proofs { goal := .falsity } (by simp [falsityElim]))
 
-/-- The freshness `Derives` checks for opening the goal follows from avoiding the
-obligation's names, which `Store.commit` enforces for every opened name
-(`Store.commit_fresh`). -/
+/-- The freshness `Derives` checks for opening the goal: the machine keeps every
+free name of the obligation declared (`Obligation.Declared`), and `Store.commit`
+opens only names the store has not declared (`Store.commit_fresh`). Binders
+impose nothing: the opening renames a binder that would capture. -/
 theorem forallIntro_sound [FreshNames Variable] {binder eigen : Variable} {body : Formula Variable Literal Symbol}
-    (fresh : eigen ∉ (⟨scope, .forallVar binder body⟩ : Obligation Variable Literal Symbol).names) :
+    {store : Store Variable Literal Symbol}
+    (declared : (⟨scope, .forallVar binder body⟩ : Obligation Variable Literal Symbol).Declared store)
+    (fresh : store.info? eigen = none) :
     (forallIntro (Certificate := Certificate) binder body eigen).Sound hoApplySymbol kb naf ⟨scope, .forallVar binder body⟩ := by
-  obtain ⟨freshContext, freshGoal, _⟩ := Obligation.fresh_of_not_mem_names fresh
+  obtain ⟨freshContext, freshGoal⟩ := declared.fresh fresh
   exact fun proofs => .forallIntro freshContext freshGoal (body.instantiate_substitutes _)
     (proofs { discharge := { rigids := [eigen] }, goal := body.instantiate (Substitution.single binder (.var eigen)) }
       (by simp [forallIntro]))
@@ -146,13 +149,17 @@ theorem existsIntro_sound [FreshNames Variable] {binder witness : Variable} {bod
   fun proofs => .existsIntro (body.instantiate_substitutes _)
     (proofs { goal := body.instantiate (Substitution.single binder (.var witness)) } (by simp [existsIntro]))
 
-/-- The opened existential comes from a premise, not from the obligation, so
-its freshness conditions are stated directly. -/
+/-- The context and goal freshness come from the name invariant, as for
+`forallIntro_sound`. The opened existential is a premise, not part of the
+obligation; the commit keeps the eigenvariable out of it, since the premise
+does not open it (`Store.Admits`). -/
 theorem existsElim_sound [FreshNames Variable] {binder eigen : Variable} {body goal : Formula Variable Literal Symbol}
-    (freshContext : FreshForContext eigen scope.assumptions)
-    (freshBody : eigen ∉ (Term.existsVar binder body).freeVars) (freshGoal : eigen ∉ goal.freeVars) :
-    (existsElim (Certificate := Certificate) binder body eigen goal).Sound hoApplySymbol kb naf ⟨scope, goal⟩ :=
-  fun proofs => .existsElim (proofs { goal := .existsVar binder body } (by simp [existsElim]))
+    {store : Store Variable Literal Symbol}
+    (declared : (⟨scope, goal⟩ : Obligation Variable Literal Symbol).Declared store)
+    (fresh : store.info? eigen = none) (freshBody : eigen ∉ (Term.existsVar binder body).freeVars) :
+    (existsElim (Certificate := Certificate) binder body eigen goal).Sound hoApplySymbol kb naf ⟨scope, goal⟩ := by
+  obtain ⟨freshContext, freshGoal⟩ := declared.fresh fresh
+  exact fun proofs => .existsElim (proofs { goal := .existsVar binder body } (by simp [existsElim]))
     freshContext freshBody freshGoal (body.instantiate_substitutes _)
     (proofs
       { discharge := { assumptions := [body.instantiate (Substitution.single binder (.var eigen))], rigids := [eigen] }
@@ -191,8 +198,8 @@ An obligation's goal and context may mention flexible names; they mean their
 reading through the final store. `SoundUnder` is the completion contract for
 read obligations: it covers candidates that commit bindings, such as a goal
 matched against an assumption or a clause head. Opening a quantifier needs the
-opened name fresh for the read obligation, which `Store.commit_fresh_resolved`
-provides from the commit. -/
+opened name fresh for the read obligation (`Obligation.FreshUnder`), which
+`Store.commit_fresh_resolved` provides from the commit and the name invariant. -/
 
 end Expansion
 
@@ -303,14 +310,12 @@ theorem falsityElim_soundUnder {goal : Formula Variable Literal Symbol} :
     exact .falsityElim contradiction
 
 /-- Opening a universal goal under answers: the read goal is a universal whose
-read body opens to the read premise. The eigenvariable must be unbound and
-absent from the free names of the read obligation (`Store.commit_fresh_resolved`);
-binders are renamed by the opening, so they impose nothing. -/
+read body opens to the read premise. The eigenvariable must be fresh for the
+read obligation (`Store.commit_fresh_resolved`); binders are renamed by the
+opening, so they impose nothing. -/
 theorem forallIntro_soundUnder {goal : Formula Variable Literal Symbol} {binder eigen : Variable}
     {body : Formula Variable Literal Symbol} (read : store.resolve goal = store.resolve (.forallVar binder body))
-    (unbound : eigen ∉ store.bindings.map Prod.fst)
-    (freshGoal : eigen ∉ (store.resolve goal).freeVars)
-    (freshContext : FreshForContext eigen (scope.assumptions.map store.resolve)) :
+    (fresh : (⟨scope, goal⟩ : Obligation Variable Literal Symbol).FreshUnder store eigen) :
     (forallIntro (Certificate := Certificate) binder body eigen).SoundUnder hoApplySymbol kb naf store
       ⟨scope, goal⟩ := fun proofs => by
   have premise := read_premise.mp
@@ -319,10 +324,11 @@ theorem forallIntro_soundUnder {goal : Formula Variable Literal Symbol} {binder 
   simp only [List.map_nil, List.nil_append] at premise
   obtain ⟨renamed, result, quantifier, opening⟩ := store.resolve_forallVar binder body
   have opened := opening (body.instantiate_substitutes (Substitution.single binder (.var eigen)))
-  rw [store.resolve_unbound unbound] at opened
+  rw [store.resolve_unbound fresh.unbound] at opened
+  have freshGoal : eigen ∉ (store.resolve goal).freeVars := fresh.goal
   rw [read, quantifier] at freshGoal
   simp only [ReadDerives, Obligation.context, read, quantifier]
-  exact .forallIntro freshContext freshGoal opened premise
+  exact .forallIntro fresh.context freshGoal opened premise
 
 /-- Introducing an existential goal with a flexible witness: the read goal is an
 existential whose read body, instantiated with the witness's answer, is the
@@ -340,12 +346,12 @@ theorem existsIntro_soundUnder {goal : Formula Variable Literal Symbol} {binder 
   exact .existsIntro opened premise
 
 /-- Opening an existential assumption under answers, with the eigenvariable
-unbound and absent from the read context, existential, and goal. -/
+fresh for the read obligation and absent from the read existential. The
+existential is the goal of the premise that does not open the eigenvariable, so
+`Store.commit_fresh_resolved` gives both. -/
 theorem existsElim_soundUnder {binder eigen : Variable} {body goal : Formula Variable Literal Symbol}
-    (unbound : eigen ∉ store.bindings.map Prod.fst)
-    (freshContext : FreshForContext eigen (scope.assumptions.map store.resolve))
-    (freshBody : eigen ∉ (store.resolve (.existsVar binder body)).freeVars)
-    (freshGoal : eigen ∉ (store.resolve goal).freeVars) :
+    (fresh : (⟨scope, goal⟩ : Obligation Variable Literal Symbol).FreshUnder store eigen)
+    (freshBody : eigen ∉ (store.resolve (.existsVar binder body)).freeVars) :
     (existsElim (Certificate := Certificate) binder body eigen goal).SoundUnder hoApplySymbol kb naf store
       ⟨scope, goal⟩ := fun proofs => by
   have existence := read_premise.mp (proofs { goal := .existsVar binder body } (by simp [existsElim]))
@@ -357,10 +363,10 @@ theorem existsElim_soundUnder {binder eigen : Variable} {body goal : Formula Var
   simp only [List.map_cons, List.map_nil, List.nil_append, List.singleton_append, Obligation.context] at existence premise
   obtain ⟨renamed, result, read, opening⟩ := store.resolve_existsVar binder body
   have opened := opening (body.instantiate_substitutes (Substitution.single binder (.var eigen)))
-  rw [store.resolve_unbound unbound] at opened
+  rw [store.resolve_unbound fresh.unbound] at opened
   rw [read] at existence freshBody
   simp only [ReadDerives, Obligation.context]
-  exact .existsElim existence freshContext freshBody freshGoal opened premise
+  exact .existsElim existence fresh.context freshBody fresh.goal opened premise
 
 /-- Universal elimination under answers: a goal reading as an instance of the
 body is derived from the read quantifier with the witness's answer. -/

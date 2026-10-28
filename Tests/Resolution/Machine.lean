@@ -91,7 +91,7 @@ def openCandidates (store : Store Nat Nat Sym) (obligation : Obligation Nat Nat 
   obligation.scope.assumptions.filterMap fun
     | .existsVar binder body =>
         if obligation.scope.assumptions.any (instanceOf binder body) then none
-        else some (Expansion.existsElim binder body (store.freshFor obligation) goal)
+        else some (Expansion.existsElim binder body store.freshFor goal)
     | _ => none
 
 def equalityCandidates (store : Store Nat Nat Sym) (left right : T) : List (Expansion Nat Nat Sym Absent) :=
@@ -115,8 +115,8 @@ def logical : Command Nat Nat Sym Absent := fun obligation store =>
       | .conj a b => .candidates (left ++ [.conjIntro a b])
       | .disj a b => .candidates (left ++ [.disjLeft a, .disjRight b])
       | .imp a b => .candidates (left ++ [.impIntro a b])
-      | .forallVar x body => .candidates [.forallIntro x body (store.freshFor obligation)]
-      | .existsVar x body => .candidates (left ++ [.existsIntro x body (store.freshFor obligation)])
+      | .forallVar x body => .candidates [.forallIntro x body store.freshFor]
+      | .existsVar x body => .candidates (left ++ [.existsIntro x body store.freshFor])
       | .equal l r => .candidates (equalityCandidates store l r)
       | .app _ _ => .candidates left
       | _ => .unsupported
@@ -323,9 +323,58 @@ def gapThenSuccess := solve (query [] [k .p] (.disj (.defaultNeg (k .q)) (k .p))
 def bindRigid : Command Nat Nat Sym Absent := fun _ _ => .candidates [.assumption [(7, k .a)]]
 #guard (run bindRigid 10 (query [] [] (atom .p [.var 7]))).kind = .unknown
 
--- Opening a name already free in the obligation breaks the contract.
+-- Opening a name already free in the obligation breaks the contract: every free
+-- name of an obligation is declared, and new names must be new to the store.
 def staleName : Command Nat Nat Sym Absent := fun _ _ => .candidates [.existsIntro 0 (atom .p [.var 7]) 7]
 #guard (run staleName 10 (query [] [] (.existsVar 0 (atom .p [.var 7])))).kind = .unknown
+
+-- A new name may equal a binder name of the obligation: opening ∀10 with 10
+-- itself is accepted, and binders impose nothing.
+def ownBinder : Command Nat Nat Sym Absent := fun obligation store =>
+  match store.resolve obligation.goal with
+  | .forallVar x body => .candidates [.forallIntro x body x]
+  | _ => logical obligation store
+#guard (run ownBinder 50 (query [] [] (.forallVar 10 (.imp (atom .p [.var 10]) (atom .p [.var 10]))))).kind = .success
+
+-- A premise goal or discharged assumption naming an undeclared name breaks the
+-- contract: the commit refuses it, a gap on the obligation being expanded.
+def undeclaredGoal : Command Nat Nat Sym Absent := fun obligation store =>
+  match obligation.goal with
+  | .conj _ _ => .candidates [.conjIntro (atom .p [.var 9]) (k .q)]
+  | _ => logical obligation store
+#guard match run undeclaredGoal 50 (query [] [k .q] (.conj (k .p) (k .q))) with
+  | .unknown [⟨.contract, obligation⟩] => same obligation.goal (.conj (k .p) (k .q))
+  | _ => false
+
+def undeclaredAssumption : Command Nat Nat Sym Absent := fun obligation store =>
+  match obligation.goal with
+  | .imp _ conclusion => .candidates [.impIntro (atom .p [.var 9]) conclusion]
+  | _ => logical obligation store
+#guard match run undeclaredAssumption 50 (query [] [] (.imp (k .p) (k .p))) with
+  | .unknown [⟨.contract, obligation⟩] => same obligation.goal (.imp (k .p) (k .p))
+  | _ => false
+
+-- A premise may mention a rigid name only within its own scope. After ∀x. true
+-- is closed, its eigenvariable is still declared, but a premise of the sibling
+-- q naming it is refused.
+def staleRigid : Command Nat Nat Sym Absent := fun obligation store =>
+  let outOfScope := store.names.find? fun entry => entry.2 == .rigid && !obligation.scope.rigids.contains entry.1
+  match obligation.goal, outOfScope with
+  | .app .q [], some (stale, _) => .candidates [.disjLeft (atom .p [.var stale])]
+  | _, _ => logical obligation store
+#guard match run staleRigid 50 (query [] [] (.conj (.forallVar 10 .truth) (k .q))) with
+  | .unknown [⟨.contract, obligation⟩] => same obligation.goal (k .q)
+  | _ => false
+
+-- So is a rigid name opened for one premise in its siblings: an existsElim
+-- whose existential names the eigenvariable it opens is refused.
+def siblingRigid : Command Nat Nat Sym Absent := fun obligation store =>
+  match obligation.goal with
+  | .app .q [] => .candidates [.existsElim 0 (atom .p [.var 0, .var 7]) 7 obligation.goal]
+  | _ => logical obligation store
+#guard match run siblingRigid 50 (query [] [] (k .q)) with
+  | .unknown [⟨.contract, obligation⟩] => same obligation.goal (k .q)
+  | _ => false
 
 /-! ### Closed-world evidence is retained -/
 
@@ -375,12 +424,14 @@ example : (ProofTree.node .conjIntro parent [left, right] [leftTree, rightTree])
   .node (.cons rfl (.node .nil) (.cons rfl (.node .nil) .nil))
 
 -- Every reachable state of any command keeps the invariant; a success proves the
--- root with a coherent tree and scoped answers.
+-- root with a coherent tree and scoped answers, and every obligation of the tree
+-- names only names the final store declares.
 example (command : Command Nat Nat Sym Absent) (fuel : Nat) (proof : CompletedProof Nat Nat Sym Absent Nat)
     (next : State Nat Nat Sym Absent Nat) (ran : run command fuel (query [X] [k .p] (atom .p [.var X])) = .success proof next) :
-    proof.tree.obligation = (query [X] [k .p] (atom .p [.var X])).root ∧ proof.tree.Coherent ∧ proof.store.Scoped :=
-  let ⟨_, root, coherent, answers, _⟩ := run_success command fuel (State.init_valid _ _ _ _) ran
-  ⟨root, coherent, answers⟩
+    proof.tree.obligation = (query [X] [k .p] (atom .p [.var X])).root ∧ proof.tree.Coherent ∧ proof.store.Scoped ∧
+      proof.tree.Declared proof.store :=
+  let ⟨_, root, coherent, answers, declared, _⟩ := run_success command fuel (State.init_valid _ _ _ _) ran
+  ⟨root, coherent, answers, declared⟩
 
 -- Clause and logical evidence is monotonic; closed-world evidence is not.
 example {kb grown : LogicalKb Nat Nat Sym} (larger : ∀ clause, clause ∈ kb → clause ∈ grown)

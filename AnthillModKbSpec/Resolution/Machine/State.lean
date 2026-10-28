@@ -1,4 +1,5 @@
 import AnthillModKbSpec.Resolution.Machine.Evidence
+import AnthillModKbSpec.Resolution.Machine.Instantiation
 
 namespace AnthillModKbSpec.Machine
 
@@ -300,17 +301,70 @@ theorem Frame.receive_valid {frame : Frame Variable Literal Symbol Certificate} 
 
 variable [DecidableEq Variable]
 
-def ChoicePoint.Valid (root : Obligation Variable Literal Symbol) (point : ChoicePoint Variable Literal Symbol Certificate) :
-    Prop :=
-  point.store.Scoped ∧ Linked root point.frames ∧ point.obligation = expected root point.frames
+/-- The name invariant for a frame: its parent, every premise obligation, and
+every completed subproof name only names declared in `store`. -/
+structure Frame.Declared (store : Store Variable Literal Symbol) (frame : Frame Variable Literal Symbol Certificate) :
+    Prop where
+  parent : frame.parent.Declared store
+  premises : ∀ premise ∈ frame.premises, (frame.parent.premise premise).Declared store
+  done : ∀ tree ∈ frame.done, tree.Declared store
 
-/-- Scope coherence of the whole state and its saved alternatives, with the
-store's dependency invariant. -/
+def Focus.Declared (store : Store Variable Literal Symbol) : Focus Variable Literal Symbol Certificate → Prop
+  | .solve obligation => obligation.Declared store
+  | .proved tree => tree.Declared store
+  | .failed => True
+
+theorem ProofTree.Declared.refines {store later : Store Variable Literal Symbol}
+    {tree : ProofTree Variable Literal Symbol Certificate} (declared : tree.Declared store)
+    (refines : store.Refines later) : tree.Declared later :=
+  declared.mono fun _ present => refines.declared present
+
+theorem Frame.Declared.refines {store later : Store Variable Literal Symbol}
+    {frame : Frame Variable Literal Symbol Certificate} (declared : frame.Declared store)
+    (refines : store.Refines later) : frame.Declared later :=
+  ⟨declared.parent.refines refines, fun premise member => (declared.premises premise member).refines refines,
+    fun tree member => (declared.done tree member).refines refines⟩
+
+theorem Frame.receive_declared {store : Store Variable Literal Symbol}
+    {frame : Frame Variable Literal Symbol Certificate} {tree : ProofTree Variable Literal Symbol Certificate}
+    (declared : frame.Declared store) (proved : tree.Declared store) :
+    (∀ node, frame.receive tree = .complete node → node.Declared store) ∧
+      ∀ next, frame.receive tree = .waiting next → next.Declared store ∧ next.focus.Declared store := by
+  have children : ∀ child ∈ frame.done ++ [tree], child.Declared store := fun child member => by
+    rcases List.mem_append.mp member with done | last
+    · exact declared.done child done
+    · rw [List.mem_singleton.mp last]; exact proved
+  constructor
+  · intro node complete
+    obtain ⟨_, rfl⟩ := Frame.receive_complete complete
+    exact ProofTree.Declared.node declared.parent declared.premises children
+  · intro next waiting
+    obtain ⟨sameParent, _, samePremises, _, sameDone, _⟩ := Frame.receive_waiting waiting
+    have nextDeclared : next.Declared store :=
+      ⟨sameParent ▸ declared.parent, by rw [samePremises, sameParent]; exact declared.premises,
+        by rw [sameDone]; exact children⟩
+    exact ⟨nextDeclared, nextDeclared.premises next.current (by simp [Frame.premises])⟩
+
+/-- A saved alternative point is linked like the state it was saved from, and
+its obligation and frames name only names declared in its saved store. -/
+structure ChoicePoint.Valid (root : Obligation Variable Literal Symbol)
+    (point : ChoicePoint Variable Literal Symbol Certificate) : Prop where
+  store : point.store.Scoped
+  linked : Linked root point.frames
+  obligation : point.obligation = expected root point.frames
+  declared : point.obligation.Declared point.store
+  frames : ∀ frame ∈ point.frames, frame.Declared point.store
+
+/-- Scope coherence of the whole state and its saved alternatives, the store's
+dependency invariant, and the name invariant: every free name of the focus and
+of every frame is declared in the store. -/
 structure State.Valid (state : State Variable Literal Symbol Certificate Snapshot) : Prop where
   store : state.store.Scoped
   linked : Linked state.root state.frames
   focus : state.focus.Valid state.root state.frames
   choices : ∀ point ∈ state.choices, point.Valid state.root
+  declared : state.focus.Declared state.store
+  frames : ∀ frame ∈ state.frames, frame.Declared state.store
 
 /-! ## Transitions -/
 
@@ -328,7 +382,7 @@ def State.enter (state : State Variable Literal Symbol Certificate Snapshot) (ob
     (expansion : Expansion Variable Literal Symbol Certificate) (rest : List (Expansion Variable Literal Symbol Certificate)) :
     State Variable Literal Symbol Certificate Snapshot :=
   let saved := { state with choices := state.save obligation rest }
-  match state.store.commit obligation expansion.flexibles expansion.rigids expansion.bindings with
+  match state.store.commit obligation expansion.flexibles expansion.rigids expansion.premises expansion.bindings with
   | .rejected => { saved with focus := .failed }
   | .violated => { saved with focus := .failed, gaps := ⟨.contract, obligation⟩ :: state.gaps }
   | .committed store =>
@@ -399,18 +453,30 @@ def State.init (snapshot : Snapshot) (flexibles : List Variable) (context : Proo
 theorem State.init_valid (snapshot : Snapshot) (flexibles : List Variable)
     (context : ProofContext Variable Literal Symbol) (goal : Formula Variable Literal Symbol) :
     (State.init (Certificate := Certificate) snapshot flexibles context goal).Valid := by
-  refine ⟨⟨?_, by simp [State.init], .nil⟩, .nil, rfl, by simp [State.init]⟩
-  intro name dependencies infoEq rigid member
-  have found := lookup_mem infoEq
-  simp only [State.init, List.mem_append, List.mem_map, Prod.mk.injEq] at found
-  rcases found with ⟨_, _, _, impossible⟩ | ⟨_, _, _, same⟩
-  · cases impossible
-  · cases same
-    exact lookup_declared _ _ _ _ member
+  refine ⟨⟨?_, by simp [State.init], .nil⟩, .nil, rfl, by simp [State.init], ?_, by simp [State.init]⟩
+  · intro name dependencies infoEq rigid member
+    have found := lookup_mem infoEq
+    simp only [State.init, List.mem_append, List.mem_map, Prod.mk.injEq] at found
+    rcases found with ⟨_, _, _, impossible⟩ | ⟨_, _, _, same⟩
+    · cases impossible
+    · cases same
+      exact lookup_declared _ _ _ _ member
+  · -- Every free name of the query is declared: an answer name flexible, any other rigid.
+    intro name member
+    simp only [State.init, Obligation.root, Obligation.freeVars, Obligation.context] at member ⊢
+    rw [Store.info?, ← Option.isSome_iff_ne_none]
+    by_cases rigid : name ∈ rootRigids flexibles context goal
+    · exact lookup_isSome_of_mem (List.mem_append_left _ (List.mem_map.mpr ⟨name, rigid, rfl⟩))
+    · have flexible : name ∈ flexibles := by
+        by_cases inside : name ∈ flexibles
+        · exact inside
+        · exact absurd (List.mem_filter.mpr ⟨member, by simpa using inside⟩) rigid
+      exact lookup_isSome_of_mem (List.mem_append_right _ (List.mem_map.mpr ⟨name, flexible, rfl⟩))
 
 theorem State.save_valid {state : State Variable Literal Symbol Certificate Snapshot}
     {obligation : Obligation Variable Literal Symbol} {rest : List (Expansion Variable Literal Symbol Certificate)}
-    (valid : state.Valid) (focus : obligation = expected state.root state.frames) :
+    (valid : state.Valid) (focus : obligation = expected state.root state.frames)
+    (declared : obligation.Declared state.store) :
     ∀ point ∈ state.save obligation rest, point.Valid state.root := by
   cases rest with
   | nil => exact valid.choices
@@ -418,23 +484,34 @@ theorem State.save_valid {state : State Variable Literal Symbol Certificate Snap
       intro point member
       simp only [State.save, List.mem_cons] at member
       rcases member with rfl | member
-      · exact ⟨valid.store, valid.linked, focus⟩
+      · exact ⟨valid.store, valid.linked, focus, declared, valid.frames⟩
       · exact valid.choices point member
 
 theorem State.enter_valid {state : State Variable Literal Symbol Certificate Snapshot}
     {obligation : Obligation Variable Literal Symbol} {expansion : Expansion Variable Literal Symbol Certificate}
     {rest : List (Expansion Variable Literal Symbol Certificate)} (valid : state.Valid)
-    (focus : obligation = expected state.root state.frames) : (state.enter obligation expansion rest).Valid := by
-  have saved := State.save_valid (rest := rest) valid focus
+    (focus : obligation = expected state.root state.frames) (declared : obligation.Declared state.store) :
+    (state.enter obligation expansion rest).Valid := by
+  have saved := State.save_valid (rest := rest) valid focus declared
   unfold State.enter
   split
-  · exact ⟨valid.store, valid.linked, trivial, saved⟩
-  · exact ⟨valid.store, valid.linked, trivial, saved⟩
+  · exact ⟨valid.store, valid.linked, trivial, saved, trivial, valid.frames⟩
+  · exact ⟨valid.store, valid.linked, trivial, saved, trivial, valid.frames⟩
   · rename_i store committed
     have committedValid := Store.commit_scoped valid.store committed
+    obtain ⟨parentDeclared, premisesDeclared⟩ := Store.commit_declared committed declared
+    have frames : ∀ frame ∈ state.frames, frame.Declared store :=
+      fun frame member => (valid.frames frame member).refines (Store.commit_refines committed)
     split
-    · exact ⟨committedValid, valid.linked, ⟨focus, .node .nil⟩, saved⟩
-    · exact ⟨committedValid, .cons focus .nil valid.linked, rfl, saved⟩
+    · exact ⟨committedValid, valid.linked, ⟨focus, .node .nil⟩, saved,
+        ProofTree.Declared.node parentDeclared (by simp) (by simp), frames⟩
+    · rename_i premise pending premisesEq
+      refine ⟨committedValid, .cons focus .nil valid.linked, rfl, saved,
+        premisesDeclared premise (by simp [premisesEq]), fun frame member => ?_⟩
+      rcases List.mem_cons.mp member with rfl | member
+      · exact ⟨parentDeclared, fun other inside => premisesDeclared other
+          (by simpa [Frame.start, Frame.premises, premisesEq] using inside), by simp [Frame.start]⟩
+      · exact frames frame member
 
 theorem State.enter_root (state : State Variable Literal Symbol Certificate Snapshot)
     (obligation : Obligation Variable Literal Symbol) (expansion : Expansion Variable Literal Symbol Certificate)
@@ -472,35 +549,46 @@ theorem step_valid (command : Command Variable Literal Symbol Certificate)
     {state next : State Variable Literal Symbol Certificate Snapshot} (valid : state.Valid)
     (stepped : step command state = .running next) : next.Valid ∧ next.root = state.root := by
   have focusValid := valid.focus
+  have focusDeclared := valid.declared
   unfold step at stepped
   split at stepped
   · rename_i obligation focusEq
-    rw [focusEq] at focusValid
+    rw [focusEq] at focusValid focusDeclared
     split at stepped
-    · cases stepped; exact ⟨⟨valid.store, valid.linked, trivial, valid.choices⟩, rfl⟩
+    · cases stepped; exact ⟨⟨valid.store, valid.linked, trivial, valid.choices, trivial, valid.frames⟩, rfl⟩
     · cases stepped
-      exact ⟨State.enter_valid valid focusValid, State.enter_root _ _ _ _⟩
-    · cases stepped; exact ⟨⟨valid.store, valid.linked, trivial, valid.choices⟩, rfl⟩
+      exact ⟨State.enter_valid valid focusValid focusDeclared, State.enter_root _ _ _ _⟩
+    · cases stepped; exact ⟨⟨valid.store, valid.linked, trivial, valid.choices, trivial, valid.frames⟩, rfl⟩
   · rename_i tree focusEq
-    rw [focusEq] at focusValid
+    rw [focusEq] at focusValid focusDeclared
     obtain ⟨opened, coherent⟩ := focusValid
     split at stepped
     · cases stepped
     · rename_i frame frames framesEq
       have linked := valid.linked
-      rw [framesEq] at linked opened
+      have framesDeclared := valid.frames
+      rw [framesEq] at linked opened framesDeclared
+      have rest : ∀ other ∈ frames, other.Declared state.store :=
+        fun other member => framesDeclared other (List.mem_cons_of_mem _ member)
+      have received := Frame.receive_declared (framesDeclared frame List.mem_cons_self) focusDeclared
       cases linked with
-      | cons parent children rest =>
-          have received := Frame.receive_valid children opened coherent
+      | cons parent children restLinked =>
+          have receivedValid := Frame.receive_valid children opened coherent
           split at stepped
           · rename_i node complete
             cases stepped
-            obtain ⟨nodeObligation, nodeCoherent⟩ := received.1 node complete
-            exact ⟨⟨valid.store, rest, ⟨nodeObligation.trans parent, nodeCoherent⟩, valid.choices⟩, rfl⟩
+            obtain ⟨nodeObligation, nodeCoherent⟩ := receivedValid.1 node complete
+            exact ⟨⟨valid.store, restLinked, ⟨nodeObligation.trans parent, nodeCoherent⟩, valid.choices,
+              received.1 node complete, rest⟩, rfl⟩
           · rename_i waiting frameWaiting
             cases stepped
-            obtain ⟨sameParent, nextChildren⟩ := received.2 waiting frameWaiting
-            exact ⟨⟨valid.store, .cons (sameParent.trans parent) nextChildren rest, rfl, valid.choices⟩, rfl⟩
+            obtain ⟨sameParent, nextChildren⟩ := receivedValid.2 waiting frameWaiting
+            obtain ⟨nextDeclared, nextFocus⟩ := received.2 waiting frameWaiting
+            refine ⟨⟨valid.store, .cons (sameParent.trans parent) nextChildren restLinked, rfl, valid.choices,
+              nextFocus, fun other member => ?_⟩, rfl⟩
+            rcases List.mem_cons.mp member with rfl | member
+            · exact nextDeclared
+            · exact rest other member
   · rename_i focusEq
     split at stepped
     · cases stepped
@@ -510,46 +598,51 @@ theorem step_valid (command : Command Variable Literal Symbol Certificate)
         fun other member => valid.choices other (by simp [choicesEq, member])
       split at stepped
       · cases stepped
-        exact ⟨⟨valid.store, valid.linked, by simp [focusEq, Focus.Valid], othersValid⟩, rfl⟩
+        exact ⟨⟨valid.store, valid.linked, by simp [focusEq, Focus.Valid], othersValid,
+          by simp [focusEq, Focus.Declared], valid.frames⟩, rfl⟩
       · cases stepped
         exact ⟨State.enter_valid
           (state := { state with store := point.store, frames := point.frames, choices := others })
-          ⟨pointValid.1, pointValid.2.1, by simp [focusEq, Focus.Valid], othersValid⟩ pointValid.2.2,
+          ⟨pointValid.store, pointValid.linked, by simp [focusEq, Focus.Valid], othersValid,
+            by simp [focusEq, Focus.Declared], pointValid.frames⟩ pointValid.obligation pointValid.declared,
           State.enter_root _ _ _ _⟩
 
-/-- A successful step finishes the root obligation with a coherent tree and a
-store satisfying the dependency invariant. -/
+/-- A successful step finishes the root obligation with a coherent tree, a
+store satisfying the dependency invariant, and a tree naming only names that
+store declares. -/
 theorem step_success (command : Command Variable Literal Symbol Certificate)
     {state resume : State Variable Literal Symbol Certificate Snapshot} {proof : CompletedProof Variable Literal Symbol Certificate Snapshot}
     (valid : state.Valid) (stepped : step command state = .finished (.success proof resume)) :
     proof.root = state.root ∧ proof.tree.obligation = state.root ∧ proof.tree.Coherent ∧
-      proof.store.Scoped ∧ resume.Valid ∧ resume.root = state.root := by
+      proof.store.Scoped ∧ proof.tree.Declared proof.store ∧ resume.Valid ∧ resume.root = state.root := by
   have focusValid := valid.focus
+  have focusDeclared := valid.declared
   unfold step at stepped
   split at stepped
   · split at stepped <;> cases stepped
   · rename_i tree focusEq
-    rw [focusEq] at focusValid
+    rw [focusEq] at focusValid focusDeclared
     split at stepped
     · rename_i framesEq
       cases stepped
       rw [framesEq] at focusValid
-      exact ⟨rfl, focusValid.1, focusValid.2, valid.store,
-        ⟨valid.store, by rw [framesEq]; exact .nil, trivial, valid.choices⟩, rfl⟩
+      exact ⟨rfl, focusValid.1, focusValid.2, valid.store, focusDeclared,
+        ⟨valid.store, by rw [framesEq]; exact .nil, trivial, valid.choices, trivial, valid.frames⟩, rfl⟩
     · split at stepped <;> cases stepped
   · split at stepped
     · split at stepped <;> cases stepped
     · split at stepped <;> cases stepped
 
 /-- A completed run proves the original query under the original scope, every
-node's subproofs prove exactly its premises under their own scopes, and the
-final answers satisfy the dependency invariant. -/
+node's subproofs prove exactly its premises under their own scopes, the final
+answers satisfy the dependency invariant, and every obligation of the tree
+names only names declared in the final store. -/
 theorem run_success (command : Command Variable Literal Symbol Certificate) :
     ∀ (fuel : Nat) {state resume : State Variable Literal Symbol Certificate Snapshot}
       {proof : CompletedProof Variable Literal Symbol Certificate Snapshot},
       state.Valid → run command fuel state = .success proof resume →
         proof.root = state.root ∧ proof.tree.obligation = state.root ∧ proof.tree.Coherent ∧
-          proof.store.Scoped ∧ resume.Valid ∧ resume.root = state.root
+          proof.store.Scoped ∧ proof.tree.Declared proof.store ∧ resume.Valid ∧ resume.root = state.root
   | 0, _, _, _, _, ran => by cases ran
   | fuel + 1, state, resume, proof, valid, ran => by
       unfold run at ran

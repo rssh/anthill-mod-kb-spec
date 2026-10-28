@@ -31,7 +31,9 @@ for later export, and outcomes that keep success separate from exhaustion and
 unknown results. [S05 matching](machine-matching.md) adds instantiation with
 alpha-renaming, clause freshening that keeps captured parameters, reading of
 pending goals through committed answers, and a matcher that separates a
-mismatch from a capability the profile does not admit.
+mismatch from a capability the profile does not admit. S19 makes
+[declared free names](machine-state.md#declared-names) a machine invariant, so
+fresh names need only be new to the store.
 
 ## Resolution steps and their justification
 

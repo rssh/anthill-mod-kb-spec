@@ -150,6 +150,51 @@ def closedWorldOf : List (ProofTree Variable Literal Symbol Certificate) → Lis
   | tree :: trees => tree.closedWorld ++ closedWorldOf trees
 end
 
+mutual
+/-- The obligations the tree's nodes prove and require, in preorder: each
+node's obligation followed by its premise obligations. -/
+def obligations : ProofTree Variable Literal Symbol Certificate → List (Obligation Variable Literal Symbol)
+  | .node _ obligation premises subproofs =>
+      obligation :: premises.map obligation.premise ++ obligationsOf subproofs
+
+def obligationsOf : List (ProofTree Variable Literal Symbol Certificate) → List (Obligation Variable Literal Symbol)
+  | [] => []
+  | tree :: trees => tree.obligations ++ obligationsOf trees
+end
+
+theorem mem_obligationsOf {trees : List (ProofTree Variable Literal Symbol Certificate)}
+    {obligation : Obligation Variable Literal Symbol} :
+    obligation ∈ obligationsOf trees ↔ ∃ tree ∈ trees, obligation ∈ tree.obligations := by
+  induction trees with
+  | nil => simp [obligationsOf]
+  | cons tree trees ih => simp [obligationsOf, ih]
+
+/-- Every obligation the tree proves or requires names only names declared in
+`store`. -/
+def Declared [DecidableEq Variable] (store : Store Variable Literal Symbol)
+    (tree : ProofTree Variable Literal Symbol Certificate) : Prop :=
+  ∀ obligation ∈ tree.obligations, obligation.Declared store
+
+theorem Declared.node [DecidableEq Variable] {store : Store Variable Literal Symbol}
+    {rule : RuleApp Variable Literal Symbol Certificate} {obligation : Obligation Variable Literal Symbol}
+    {premises : List (Premise Variable Literal Symbol)} {subproofs : List (ProofTree Variable Literal Symbol Certificate)}
+    (declared : obligation.Declared store)
+    (required : ∀ premise ∈ premises, (obligation.premise premise).Declared store)
+    (children : ∀ tree ∈ subproofs, tree.Declared store) :
+    (ProofTree.node rule obligation premises subproofs).Declared store := by
+  intro other member
+  simp only [obligations, List.cons_append, List.mem_cons, List.mem_append, List.mem_map,
+    mem_obligationsOf] at member
+  rcases member with rfl | ⟨premise, inside, rfl⟩ | ⟨tree, inside, found⟩
+  · exact declared
+  · exact required premise inside
+  · exact children tree inside other found
+
+theorem Declared.mono [DecidableEq Variable] {store later : Store Variable Literal Symbol}
+    {tree : ProofTree Variable Literal Symbol Certificate} (declared : tree.Declared store)
+    (grows : ∀ name, store.info? name ≠ none → later.info? name ≠ none) : tree.Declared later :=
+  fun obligation member => (declared obligation member).mono grows
+
 /-- A tree with no closed-world node does not depend on its run's snapshot. For
 `Derives` rules its validity survives KB and registry growth (`Derives.mono`
 with the disabled provider); an extension declared monotonic needs that from its

@@ -990,21 +990,20 @@ theorem Store.unify_violated (store : Store Variable Literal Symbol) {left right
   · rename_i notUsable; exact exists_of_not_all notUsable
 
 /-- A match for a candidate is computed against the store its commit prepares.
-When the candidate's names pass the commit's checks, the machine's commit
-replays the match exactly. -/
+When the candidate's names and premises pass the commit's checks, the
+machine's commit replays the match exactly. -/
 theorem Store.commit_unify {store final : Store Variable Literal Symbol} (valid : store.Scoped)
     {obligation : Obligation Variable Literal Symbol} {flexibles rigids : List Variable}
-    (distinct : (flexibles ++ rigids).Nodup)
-    (fresh : ∀ name ∈ flexibles ++ rigids, store.info? name = none ∧ name ∉ obligation.names)
-    (declared : ∀ name ∈ obligation.scope.rigids, store.info? name = some .rigid)
+    {premises : List (Premise Variable Literal Symbol)}
+    (accepted : store.Accepts obligation flexibles rigids premises)
     {left right : Term Variable Literal Symbol} {bindings : List (Variable × Term Variable Literal Symbol)}
     (computed : (store.prepare obligation flexibles rigids).unify obligation.scope hoApplySymbol left right =
       .unified final bindings) :
-    store.commit obligation flexibles rigids bindings = .committed final ∧
+    store.commit obligation flexibles rigids premises bindings = .committed final ∧
       final.resolve left = final.resolve right := by
-  have ⟨committed, _, _, same⟩ :=
-    Store.unify_sound (Store.prepare_scoped valid distinct (fun name member => (fresh name member).1) declared) computed
-  exact ⟨Store.commit_prepared distinct fresh declared committed, same⟩
+  have ⟨distinct, fresh, declared, _⟩ := accepted
+  have ⟨committed, _, _, same⟩ := Store.unify_sound (Store.prepare_scoped valid distinct fresh declared) computed
+  exact ⟨Store.commit_prepared accepted committed, same⟩
 
 end Correctness
 

@@ -181,14 +181,14 @@ def driver (program : Program) : Command Nat Nat Sym Unit := fun obligation stor
     candidate (store.unify scope .ha obligation.goal assumption) fun bindings => Expansion.assumption bindings
   let instances := scope.assumptions.filterMap fun
     | .forallVar binder body =>
-        let witness := store.freshFor obligation [binder]
+        let witness := store.freshFor [binder]
         some (candidate ((store.prepare obligation [witness] []).unify scope .ha
             (body.instantiate (Substitution.single binder (.var witness))) obligation.goal)
           fun bindings => { Expansion.forallElim binder body (.var witness) with
             flexibles := [witness], bindings := bindings })
     | _ => none
   let clauses := program.map fun (head, body) =>
-    let fresh := store.freshen obligation (HornClause.definite head body).templates
+    let fresh := store.freshen (HornClause.definite head body).templates
     candidate ((store.prepare obligation (fresh.map Prod.snd) []).unify scope .ha
         (head.instantiate (Substitution.rename fresh)) obligation.goal)
       fun bindings => Expansion.clause head body fresh bindings
@@ -198,8 +198,8 @@ def driver (program : Program) : Command Nat Nat Sym Unit := fun obligation stor
   | .conj a b => respond identity [.conjIntro a b]
   | .disj a b => respond identity [.disjLeft a, .disjRight b]
   | .imp a b => respond identity [.impIntro a b]
-  | .forallVar x body => respond identity [.forallIntro x body (store.freshFor obligation)]
-  | .existsVar x body => respond identity [.existsIntro x body (store.freshFor obligation)]
+  | .forallVar x body => respond identity [.forallIntro x body store.freshFor]
+  | .existsVar x body => respond identity [.existsIntro x body store.freshFor]
   | .equal l r =>
       respond (identity ++ [candidate (store.unify scope .ha l r) fun bindings => { rule := .equalRefl, bindings }]) []
   | _ => .unsupported
@@ -335,10 +335,8 @@ def renamedReading := solve [] (query [0] [atom .p [.var 5]] (.conj (atom .p [.v
   | _ => false
 
 -- p(0) ∧ ∀5. ∀1. r(5, 1, 0) under p(1) with r(X, X, Y): after 0 := 1 the pending
--- conjunct reads as ∀5. ∀6. r(5, 6, 1), and the eigenvariable chosen for 5 may
--- be 6. Opening renames the inner binder, so no instance r(X, X, Y) applies and
--- the run is exhausted, as for the alpha-variant with ∀9. The same holds for an
--- existential witness.
+-- conjunct reads as ∀5. ∀6. r(5, 6, 1). No instance r(X, X, Y) applies, so the
+-- run is exhausted, as for the alpha-variant with ∀9 and for an existential.
 def rrProgram : Program := [(atom .r [.var 50, .var 50, .var 51], [])]
 def nested (inner : Nat) (quantifier : Nat → T → T) : T :=
   .conj (atom .p [.var 0]) (quantifier 5 (.forallVar inner (atom .r [.var 5, .var inner, .var 0])))
@@ -346,6 +344,68 @@ def nested (inner : Nat) (quantifier : Nat → T → T) : T :=
 #guard (solve rrProgram (query [0] [atom .p [.var 1]] (nested 9 .forallVar))).kind = .exhausted
 #guard (solve rrProgram (query [0] [atom .p [.var 1]] (nested 1 .existsVar))).kind = .exhausted
 #guard (solve rrProgram (query [0] [atom .p [.var 1]] (nested 9 .existsVar))).kind = .exhausted
+
+/-! ### New names equal to binder names -/
+
+/-- The inner binder of a quantifier's body, or the quantifier's own binder. -/
+def binderOf (binder : Nat) : T → Nat
+  | .forallVar inner _ | .existsVar inner _ => inner
+  | _ => binder
+
+/-- The driver, except that it opens every quantified goal with a binder name of
+the goal as read (`binderOf`). The commit checks only store freshness, so these
+names are accepted; the opening renames the inner binder that would capture. If
+the name is already declared the focus is unsupported, so a trace that cannot
+reuse a binder name is never mistaken for one that did. -/
+def reuseBinders (program : Program) : Command Nat Nat Sym Unit := fun obligation store =>
+  match store.resolve obligation.goal with
+  | .forallVar x body =>
+      if store.info? (binderOf x body) = none then .candidates [.forallIntro x body (binderOf x body)]
+      else .unsupported
+  | .existsVar x body =>
+      if store.info? (binderOf x body) = none then .candidates [.existsIntro x body (binderOf x body)]
+      else .unsupported
+  | _ => driver program obligation store
+
+-- ∀5. ∀6. (p(5, 6) → p(5, 6)) opened with 6, the inner binder, gives
+-- ∀7. (p(6, 7) → p(6, 7)), then opened with 7, its own binder. S05 refused 6 as
+-- a binder name of the obligation; it is a new name of the store.
+def binderNames := run (reuseBinders []) 100
+  (query [] [] (.forallVar 5 (.forallVar 6 (.imp (atom .p [.var 5, .var 6]) (atom .p [.var 5, .var 6])))))
+#guard binderNames.kind = .success
+#guard rulesOf binderNames = some [.forallIntro, .forallIntro, .impIntro, .assumption]
+
+-- The nested traces again, with the read inner binder chosen on purpose: the
+-- conjunct ∀5. ∀6. r(5, 6, 1) is opened with 6 as ∀7. r(6, 7, 1), and the
+-- existential's witness 6 likewise. Capture would give r(6, 6, 1), an instance.
+#guard (run (reuseBinders rrProgram) 300 (query [0] [atom .p [.var 1]] (nested 1 .forallVar))).kind = .exhausted
+#guard (run (reuseBinders rrProgram) 300 (query [0] [atom .p [.var 1]] (nested 9 .forallVar))).kind = .exhausted
+#guard (run (reuseBinders rrProgram) 300 (query [0] [atom .p [.var 1]] (nested 1 .existsVar))).kind = .exhausted
+#guard (run (reuseBinders rrProgram) 300 (query [0] [atom .p [.var 1]] (nested 9 .existsVar))).kind = .exhausted
+
+/-! ### Undeclared names in premises -/
+
+-- r(X) :- s(X, Z) used by a command that freshens only the head's names: the
+-- body still names the template Z, which the store has not declared. The commit
+-- refuses the candidate, a contract gap on r(Y) itself, before the body is
+-- focused. Freshening every template name answers a.
+def headOnly : Command Nat Nat Sym Unit := fun obligation store =>
+  let head := atom .r [.var 50]
+  let fresh := store.freshen head.freeVars
+  match store.resolve obligation.goal,
+      (store.prepare obligation (fresh.map Prod.snd) []).unify obligation.scope .ha
+        (head.instantiate (Substitution.rename fresh)) obligation.goal with
+  | .app .r _, .unified _ bindings => .candidates [Expansion.clause head [atom .s [.var 50, .var 60]] fresh bindings]
+  | _, _ => driver [] obligation store
+
+def unfreshened := run headOnly 50 (query [0] [atom .s [k .a, k .b]] (atom .r [.var 0]))
+#guard match unfreshened with
+  | .unknown [⟨.contract, obligation⟩] => same obligation.goal (atom .r [.var 0])
+  | _ => false
+def freshenedAll := solve [(atom .r [.var 50], [atom .s [.var 50, .var 60]])]
+  (query [0] [atom .s [k .a, k .b]] (atom .r [.var 0]))
+#guard freshenedAll.kind = .success
+#guard answerIs freshenedAll 0 (k .a)
 
 /-! ### Gaps and misses -/
 
@@ -379,12 +439,37 @@ example {kb : LogicalKb Nat Nat Sym} (member : HornClause.definite ruleHead rule
 -- A rigid name a commit opens never occurs in the answer of an older name, in
 -- any later scoped store.
 example {store next later : Store Nat Nat Sym} (valid : store.Scoped) {obligation : Obligation Nat Nat Sym}
-    {flexibles rigids : List Nat} {bindings : List (Nat × T)}
-    (committed : store.commit obligation flexibles rigids bindings = .committed next)
+    {flexibles rigids : List Nat} {premises : List (Premise Nat Nat Sym)} {bindings : List (Nat × T)}
+    (committed : store.commit obligation flexibles rigids premises bindings = .committed next)
     (refines : next.Refines later) (laterScoped : later.Scoped) {opened : Nat} (member : opened ∈ rigids)
     {name : Nat} {dependencies : List Nat} (existing : store.info? name = some (.flexible dependencies)) :
     opened ∉ (later.resolve (.var name)).freeVars :=
   Store.commit_no_escape_resolved valid committed refines laterScoped member existing
+
+-- The opening contracts' freshness comes from the commit, once: an eigenvariable
+-- committed for forallIntro or existsElim is fresh for the read obligation and
+-- for the read existential in every later scoped store.
+example {store next later : Store Nat Nat Sym} (valid : store.Scoped) {scope : Scope Nat Nat Sym}
+    {goal body : T} {binder eigen : Nat} (declared : (⟨scope, goal⟩ : Obligation Nat Nat Sym).Declared store)
+    (committed : store.commit ⟨scope, goal⟩ [] [eigen]
+      (Expansion.forallIntro (Certificate := Unit) binder body eigen).premises [] = .committed next)
+    (refines : next.Refines later) (laterScoped : later.Scoped)
+    (read : later.resolve goal = later.resolve (.forallVar binder body)) {kb : LogicalKb Nat Nat Sym} :
+    (Expansion.forallIntro (Certificate := Unit) binder body eigen).SoundUnder Sym.ha kb NafFailure.disabled
+      later ⟨scope, goal⟩ :=
+  Expansion.forallIntro_soundUnder read
+    (Store.commit_fresh_resolved valid declared committed refines laterScoped (List.mem_singleton_self _)).1
+
+example {store next later : Store Nat Nat Sym} (valid : store.Scoped) {scope : Scope Nat Nat Sym}
+    {goal body : T} {binder eigen : Nat} (declared : (⟨scope, goal⟩ : Obligation Nat Nat Sym).Declared store)
+    (committed : store.commit ⟨scope, goal⟩ [] [eigen]
+      (Expansion.existsElim (Certificate := Unit) binder body eigen goal).premises [] = .committed next)
+    (refines : next.Refines later) (laterScoped : later.Scoped) {kb : LogicalKb Nat Nat Sym} :
+    (Expansion.existsElim (Certificate := Unit) binder body eigen goal).SoundUnder Sym.ha kb NafFailure.disabled
+      later ⟨scope, goal⟩ :=
+  let fresh := Store.commit_fresh_resolved valid declared committed refines laterScoped (List.mem_singleton_self _)
+  Expansion.existsElim_soundUnder fresh.1
+    (fresh.2 { goal := .existsVar binder body } (by simp [Expansion.existsElim]) (by simp)).goal
 
 -- On ordinary, well-scoped readings the only failure is a mismatch.
 example (store : Store Nat Nat Sym) (scope : Scope Nat Nat Sym) {left right : T}

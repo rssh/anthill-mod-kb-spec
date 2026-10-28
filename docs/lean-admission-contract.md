@@ -477,7 +477,9 @@ rigid name out of the answers of names created outside its scope. S05 proves the
 property of fully resolved answers (`Store.Scoped.resolve_answer`,
 `Store.commit_no_escape_resolved`). It adds a matcher whose commit replays it and
 read-through completion contracts (`Expansion.SoundUnder`)
-([details](machine-matching.md)).
+([details](machine-matching.md)). S19 adds declared free names to `State.Valid`.
+The opening contracts then take their freshness from one commit lemma
+(`Store.commit_fresh_resolved`) ([details](machine-state.md#declared-names)).
 
 ### P0 commands
 
@@ -563,6 +565,7 @@ cannot establish Ready. Proof checking and proof discovery are distinct tasks.
 | `Elaboration` (S03) | Recursive range guards, universal/existential semantics, free-name preservation, capture-safe substitution/opening, context and clause-template contracts, rejection of data ranges at `ho_apply` heads, symbolic guards that read only the signature naming, generated signature clauses (`signatureKb`) deriving every guard ([details](guarded-elaboration.md)) | Admitted quantifier strategies and machine reconstruction |
 | `Machine` (S04) | State, AND frames, OR choice points with rollback, answer store with dependency sets and triangular bindings, commit checks, proof trees with rule parameters and scope coherence, evidence classes, outcomes, logical command contracts; `step_valid`, `run_success`, `Frame.feed_exact`, `Store.commit_no_escape`, `run_exhausted`, `Derives.mono` ([details](machine-state.md)) | Concrete commands and whole-run reconstruction under bindings (S06), P0 termination and failure certificates (S07), Term encoding and checker (S08) |
 | `Machine` matching (S05) | Total `Store.resolve` with alpha-renaming, triangular bindings, store refinement and the scope of resolved answers, clause and local-rule freshening, the matcher with `unified`/`mismatch`/`unsupported`/`violated` outcomes, read-through contracts; `Store.unify_sound`, `Store.commit_unify`, `Store.unify_supported`, `Store.commit_no_escape_resolved`, `Store.commit_fresh_resolved`, `Expansion.clause_soundUnder` ([details](machine-matching.md)) | Matching up to alpha-equivalence, operation evaluation (S14), `ho_apply` conversion (S11); no completeness of the matcher |
+| `Machine` declared names (S19) | Every free name of every committed obligation is declared in its store: the commit checks that premises name only declared names and in-scope rigid names, store freshness replaces obligation-name freshness, and one lemma gives opened names their freshness for read obligations; `State.Valid`, `Store.commit_declared`, `Store.commit_fresh_resolved`, `run_success` ([details](machine-state.md#declared-names)) | Suspended and woken obligations (S18) |
 | `Substitution`, `Opening` | Capture-avoiding substitution and rigid-name opening proofs; free names of instances, agreement, and cancellation (S05) | — |
 | `ClauseInstantiation` | `instantiate?_sound` validates a partial computed instance; `Term.instantiate` (S05) renames binders on capture hazards, agrees with `instantiate?` when it succeeds, and composes | — |
 | `Freshening` (S05) | Clause template names, fresh names, renaming with captured names kept, local-rule binder instantiation | — |
