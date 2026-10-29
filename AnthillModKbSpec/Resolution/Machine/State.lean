@@ -453,6 +453,14 @@ macro_rules
       | (apply Or.inl; pick_member $h)
       | (apply Or.inr; pick_member $h))
 
+/-- Membership in reference lists that hold the same pieces in another order. -/
+syntax "refs_member " ident " [" Lean.Parser.Tactic.simpLemma,* "]" : tactic
+macro_rules
+  | `(tactic| refs_member $h [$extra,*]) => `(tactic| (
+      simp only [branchRefs, Focus.refs, ProofTree.refs, ProofTree.refsOf_append, ProofTree.refsOf, List.append_nil,
+        List.nil_append, List.flatMap_cons, Continuation.refs, List.mem_append, $extra,*] at $h:ident ⊢
+      pick_member $h))
+
 /-- References point forward: a woken entry's id is below every reference built
 above it on the stack, since those are delays created after it woke. -/
 def Ordered : List (Hole Variable Literal Symbol) → List (Continuation Variable Literal Symbol Certificate) → Prop
@@ -608,8 +616,8 @@ def State.enter (state : State Variable Literal Symbol Certificate Snapshot) (ob
 /-- One machine transition. A delayed obligation is suspended in the store and
 stands proved by a reference. A proved subtree returns to the innermost
 continuation: a frame records it, a woken entry records it as a deferred proof.
-With no continuation left the branch succeeds, or flounders when goals are
-still delayed. A failed path resumes the newest choice point from its saved
+With no continuation left the branch succeeds, filling every reference with
+its deferred proof, or flounders when goals are still delayed. A failed path resumes the newest choice point from its saved
 store, continuations, and deferred proofs. -/
 def step (command : Command Variable Literal Symbol Certificate) (state : State Variable Literal Symbol Certificate Snapshot) :
     Status Variable Literal Symbol Certificate Snapshot :=
@@ -633,7 +641,9 @@ def step (command : Command Variable Literal Symbol Certificate) (state : State 
       | [] =>
           match state.store.residual with
           | [] =>
-              .finished (.success ⟨state.snapshot, state.root, tree, state.deferred, state.store⟩
+              .finished
+                (.success ⟨state.snapshot, state.root, tree.fillAll state.deferred state.deferred.length,
+                    state.deferred, state.store⟩
                 { state with focus := .failed })
           | pending :: more =>
               .running
@@ -710,8 +720,7 @@ theorem Branch.Valid.fail {focus : Focus Variable Literal Symbol Certificate}
     valid := trivial
     declared := trivial
     accounted := valid.accounted.of_perm (.refl _)
-      (fun ref member => by
-        simp only [branchRefs, Focus.refs, List.nil_append, List.mem_append] at member ⊢; pick_member member)
+      (fun ref member => by refs_member member [])
       (valid.accounted.ordered.mono fun _ member => by simp [Focus.refs] at member) valid.accounted.acyclic }
 
 /-- A valid delay suspends the focused obligation under the next id; the
@@ -765,59 +774,41 @@ theorem Branch.Valid.suspend {obligation : Obligation Variable Literal Symbol} {
         exact heldBelow hole (by simp only [branchHoles, List.mem_append]; exact .inl (.inr inside))
       exact extended.mono fun ref member => by simpa [Focus.refs, ProofTree.refs] using member
 
-/-- A frame receiving the last subproof completes its node. -/
-theorem Branch.Valid.complete {tree node : ProofTree Variable Literal Symbol Certificate}
+/-- A frame receiving a subproof: the last one completes its node, an earlier
+one focuses the next premise. -/
+theorem Branch.Valid.receive {tree : ProofTree Variable Literal Symbol Certificate}
     {frame : Frame Variable Literal Symbol Certificate}
-    (valid : Branch.Valid root store (.proved tree) (.frame frame :: frames) deferred bound)
-    (complete : frame.receive tree = .complete node) :
-    Branch.Valid root store (.proved node) frames deferred bound := by
+    (valid : Branch.Valid root store (.proved tree) (.frame frame :: frames) deferred bound) :
+    (∀ node, frame.receive tree = .complete node → Branch.Valid root store (.proved node) frames deferred bound) ∧
+      ∀ next, frame.receive tree = .waiting next →
+        Branch.Valid root store (.solve next.focus) (.frame next :: frames) deferred bound := by
   obtain ⟨opened, coherent⟩ := valid.valid
-  have frameDeclared := valid.continuations (.frame frame) List.mem_cons_self
+  have declared := Frame.receive_declared (valid.continuations (.frame frame) List.mem_cons_self) valid.declared
+  have below := fun continuation member => valid.continuations continuation (List.mem_cons_of_mem _ member)
   have ordered : Ordered (tree.refs ++ ProofTree.refsOf frame.done) frames := valid.accounted.ordered
+  have joined : Ordered (ProofTree.refsOf (frame.done ++ [tree])) frames := ordered.mono fun ref member => by
+    refs_member member []
   cases valid.linked with
   | frame parent children rest =>
-      obtain ⟨nodeObligation, nodeCoherent⟩ := (Frame.receive_valid children opened coherent).1 node complete
-      obtain ⟨_, rfl⟩ := Frame.receive_complete complete
-      refine ⟨valid.storeScoped, valid.waiting, valid.held, rest, ⟨nodeObligation.trans parent, nodeCoherent⟩,
-        (Frame.receive_declared frameDeclared valid.declared).1 _ complete,
-        fun continuation member => valid.continuations continuation (List.mem_cons_of_mem _ member), valid.records,
-        valid.accounted.of_perm (by simp [branchHoles, Continuation.holes]) (fun ref member => ?_)
-          (ordered.mono fun ref member => ?_) valid.accounted.acyclic⟩
-      · simp only [branchRefs, Focus.refs, ProofTree.refs, ProofTree.refsOf_append, ProofTree.refsOf, List.append_nil,
-          List.flatMap_cons, Continuation.refs, List.mem_append] at member ⊢
-        pick_member member
-      · simp only [Focus.refs, ProofTree.refs, ProofTree.refsOf_append, ProofTree.refsOf, List.append_nil,
-          List.mem_append] at member ⊢
-        pick_member member
-
-/-- A frame receiving a subproof while premises remain focuses its next premise. -/
-theorem Branch.Valid.advance {tree : ProofTree Variable Literal Symbol Certificate}
-    {frame next : Frame Variable Literal Symbol Certificate}
-    (valid : Branch.Valid root store (.proved tree) (.frame frame :: frames) deferred bound)
-    (waiting : frame.receive tree = .waiting next) :
-    Branch.Valid root store (.solve next.focus) (.frame next :: frames) deferred bound := by
-  obtain ⟨opened, coherent⟩ := valid.valid
-  have frameDeclared := valid.continuations (.frame frame) List.mem_cons_self
-  have ordered : Ordered (tree.refs ++ ProofTree.refsOf frame.done) frames := valid.accounted.ordered
-  obtain ⟨nextDeclared, nextFocus⟩ := (Frame.receive_declared frameDeclared valid.declared).2 next waiting
-  obtain ⟨_, _, _, _, sameDone, _⟩ := Frame.receive_waiting waiting
-  cases valid.linked with
-  | frame parent children rest =>
-      obtain ⟨sameParent, nextChildren⟩ := (Frame.receive_valid children opened coherent).2 next waiting
-      refine ⟨valid.storeScoped, valid.waiting, valid.held, .frame (sameParent.trans parent) nextChildren rest, rfl,
-        nextFocus, fun continuation member => ?_, valid.records,
-        valid.accounted.of_perm (by simp [branchHoles, Continuation.holes]) (fun ref member => ?_)
-          (show Ordered ([] ++ ProofTree.refsOf next.done) frames from ordered.mono fun ref member => ?_)
-          valid.accounted.acyclic⟩
-      · rcases List.mem_cons.mp member with rfl | member
+      have received := Frame.receive_valid children opened coherent
+      refine ⟨fun node complete => ?_, fun next waiting => ?_⟩
+      · obtain ⟨nodeObligation, nodeCoherent⟩ := received.1 node complete
+        obtain ⟨_, rfl⟩ := Frame.receive_complete complete
+        exact ⟨valid.storeScoped, valid.waiting, valid.held, rest, ⟨nodeObligation.trans parent, nodeCoherent⟩,
+          declared.1 _ complete, below, valid.records,
+          valid.accounted.of_perm (by simp [branchHoles, Continuation.holes]) (fun ref member => by refs_member member [])
+            joined valid.accounted.acyclic⟩
+      · obtain ⟨nextDeclared, nextFocus⟩ := declared.2 next waiting
+        obtain ⟨_, _, _, _, sameDone, _⟩ := Frame.receive_waiting waiting
+        obtain ⟨sameParent, nextChildren⟩ := received.2 next waiting
+        refine ⟨valid.storeScoped, valid.waiting, valid.held, .frame (sameParent.trans parent) nextChildren rest, rfl,
+          nextFocus, fun continuation member => ?_, valid.records,
+          valid.accounted.of_perm (by simp [branchHoles, Continuation.holes]) (fun ref member => by
+            refs_member member [sameDone]) (show Ordered ([] ++ ProofTree.refsOf next.done) frames by
+              rw [List.nil_append, sameDone]; exact joined) valid.accounted.acyclic⟩
+        rcases List.mem_cons.mp member with rfl | member
         · exact nextDeclared
-        · exact valid.continuations continuation (List.mem_cons_of_mem _ member)
-      · simp only [branchRefs, Focus.refs, List.flatMap_cons, Continuation.refs, sameDone,
-          ProofTree.refsOf_append, ProofTree.refsOf, List.append_nil, List.nil_append, List.mem_append] at member ⊢
-        pick_member member
-      · simp only [sameDone, ProofTree.refsOf_append, ProofTree.refsOf, List.append_nil, List.nil_append,
-          List.mem_append] at member ⊢
-        pick_member member
+        · exact below continuation member
 
 /-- A woken goal's proof is recorded under its id, and the focus it interrupted
 resumes. Nothing from the woken goal's scope reaches that focus. -/
@@ -840,8 +831,7 @@ theorem Branch.Valid.record {tree : ProofTree Variable Literal Symbol Certificat
       · simp only [branchHoles, List.flatMap_cons, Continuation.holes, List.map_cons, DeferredProof.hole]
         simp only [List.singleton_append, List.append_assoc]
         exact (List.perm_middle.append_left _)
-      · simp only [branchRefs, List.flatMap_cons, Continuation.refs, Focus.refs, List.mem_append] at member ⊢
-        pick_member member
+      · refs_member member []
       · rcases List.mem_cons.mp member with rfl | member
         · exact ordered.1
         · exact valid.accounted.acyclic record member
@@ -892,23 +882,30 @@ theorem Continuation.schedule_refs : ∀ (suspensions : List (Suspension Variabl
       rw [schedule, schedule_refs rest]
       simp [Focus.refs, Continuation.refs]
 
+/-- A focus and its continuation stack: the focus valid for the stack, the
+stack linked, both declared, and references ordered. -/
+structure Stack.Valid (root : Obligation Variable Literal Symbol) (store : Store Variable Literal Symbol)
+    (next : Focus Variable Literal Symbol Certificate × List (Continuation Variable Literal Symbol Certificate)) :
+    Prop where
+  focus : next.1.Valid root next.2
+  linked : Linked root next.2
+  declared : next.1.Declared store
+  continuations : ∀ continuation ∈ next.2, continuation.Declared store
+  ordered : Ordered next.1.refs next.2
+
 /-- Scheduled woken goals keep the branch linked, declared, and ordered. -/
 theorem Continuation.schedule_valid : ∀ (suspensions : List (Suspension Variable Literal Symbol))
-    (focus : Focus Variable Literal Symbol Certificate) (frames : List (Continuation Variable Literal Symbol Certificate)),
-    focus.Valid root frames → Linked root frames → focus.Declared store → (∀ continuation ∈ frames, continuation.Declared store) →
-      Ordered focus.refs frames → (∀ suspension ∈ suspensions, suspension.obligation.Declared store) →
-      (schedule suspensions (focus, frames)).1.Valid root (schedule suspensions (focus, frames)).2 ∧
-        Linked root (schedule suspensions (focus, frames)).2 ∧ (schedule suspensions (focus, frames)).1.Declared store ∧
-        (∀ continuation ∈ (schedule suspensions (focus, frames)).2, continuation.Declared store) ∧
-        Ordered (schedule suspensions (focus, frames)).1.refs (schedule suspensions (focus, frames)).2
-  | [], _, _, valid, linked, declared, continuations, ordered, _ => ⟨valid, linked, declared, continuations, ordered⟩
-  | suspension :: rest, focus, frames, valid, linked, declared, continuations, ordered, suspended =>
-      schedule_valid rest _ _ rfl (.woken valid linked) (suspended suspension List.mem_cons_self)
-        (fun continuation member => by
+    (next : Focus Variable Literal Symbol Certificate × List (Continuation Variable Literal Symbol Certificate)),
+    Stack.Valid root store next → (∀ suspension ∈ suspensions, suspension.obligation.Declared store) →
+      Stack.Valid root store (schedule suspensions next)
+  | [], _, valid, _ => valid
+  | suspension :: rest, (_, _), valid, suspended =>
+      schedule_valid rest _ ⟨rfl, .woken valid.focus valid.linked, suspended suspension List.mem_cons_self,
+        fun continuation member => by
           rcases List.mem_cons.mp member with rfl | member
-          · exact ⟨suspended suspension List.mem_cons_self, declared⟩
-          · exact continuations continuation member)
-        ⟨fun _ member => (by cases member), by simpa [Focus.refs] using ordered⟩
+          · exact ⟨suspended suspension List.mem_cons_self, valid.declared⟩
+          · exact valid.continuations continuation member,
+        ⟨fun _ member => (by cases member), by simpa [Focus.refs] using valid.ordered⟩⟩
         (fun other member => suspended other (List.mem_cons_of_mem _ member))
 
 /-- A committed candidate's own continuation, before any woken goal. -/
@@ -917,21 +914,17 @@ theorem Expansion.start_valid {obligation : Obligation Variable Literal Symbol} 
     (linked : Linked root frames) (ordered : Ordered [] frames) (parentDeclared : obligation.Declared next)
     (premisesDeclared : ∀ premise ∈ expansion.premises, (obligation.premise premise).Declared next)
     (continuations : ∀ continuation ∈ frames, continuation.Declared next) :
-    (expansion.start obligation frames).1.Valid root (expansion.start obligation frames).2 ∧
-      Linked root (expansion.start obligation frames).2 ∧ (expansion.start obligation frames).1.Declared next ∧
-      (∀ continuation ∈ (expansion.start obligation frames).2, continuation.Declared next) ∧
-      Ordered (expansion.start obligation frames).1.refs (expansion.start obligation frames).2 ∧
-      (expansion.start obligation frames).1.refs = [] ∧
+    Stack.Valid root next (expansion.start obligation frames) ∧ (expansion.start obligation frames).1.refs = [] ∧
       (expansion.start obligation frames).2.flatMap Continuation.refs = frames.flatMap Continuation.refs ∧
       (expansion.start obligation frames).2.flatMap Continuation.holes = frames.flatMap Continuation.holes := by
   unfold Expansion.start
   split
-  · exact ⟨⟨focus, .node .nil⟩, linked, ProofTree.Declared.node parentDeclared (by simp) (by simp), continuations,
-      by simpa [Focus.refs, ProofTree.refs, ProofTree.refsOf] using ordered,
+  · exact ⟨⟨⟨focus, .node .nil⟩, linked, ProofTree.Declared.node parentDeclared (by simp) (by simp), continuations,
+      by simpa [Focus.refs, ProofTree.refs, ProofTree.refsOf] using ordered⟩,
       by simp [Focus.refs, ProofTree.refs, ProofTree.refsOf], rfl, rfl⟩
   · rename_i premise pending premisesEq
-    refine ⟨rfl, .frame focus .nil linked, premisesDeclared premise (by simp [premisesEq]),
-      fun continuation member => ?_, by simpa [Ordered, Focus.refs, Frame.start, ProofTree.refsOf] using ordered,
+    refine ⟨⟨rfl, .frame focus .nil linked, premisesDeclared premise (by simp [premisesEq]),
+      fun continuation member => ?_, by simpa [Ordered, Focus.refs, Frame.start, ProofTree.refsOf] using ordered⟩,
       rfl, by simp [Continuation.refs, Frame.start, ProofTree.refsOf], by simp [Continuation.holes]⟩
     rcases List.mem_cons.mp member with rfl | member
     · exact ⟨parentDeclared, fun other inside => premisesDeclared other
@@ -949,19 +942,18 @@ theorem Branch.Valid.commit {obligation : Obligation Variable Literal Symbol}
     Branch.Valid root next (Continuation.schedule woken (expansion.start obligation frames)).1
       (Continuation.schedule woken (expansion.start obligation frames)).2 deferred bound := by
   have refines := Store.commit_refines committed
-  obtain ⟨partition, _, _, _, _, waiting, constraints⟩ := Store.commit_wakes valid.storeScoped valid.waiting committed
+  obtain ⟨partition, _, _, _, waiting, constraints⟩ := Store.commit_wakes valid.storeScoped valid.waiting committed
   have old : ∀ suspension, suspension ∈ woken ∨ suspension ∈ next.wakeups → suspension ∈ store.wakeups :=
     fun suspension member => partition.mem_iff.mp (List.mem_append.mpr member)
   have suspended : ∀ suspension ∈ store.wakeups, suspension.obligation.Declared next :=
     fun suspension member => (valid.held.1 suspension member).refines refines
   obtain ⟨parentDeclared, premisesDeclared⟩ := Store.commit_declared committed valid.declared
   have accounted := valid.accounted
-  obtain ⟨startValid, startLinked, startDeclared, startContinuations, startOrdered, startRefs, startFrameRefs,
-    startHoles⟩ := expansion.start_valid valid.valid valid.linked accounted.ordered parentDeclared premisesDeclared
-      fun continuation member => (valid.continuations continuation member).refines refines
+  obtain ⟨started, startRefs, startFrameRefs, startHoles⟩ := expansion.start_valid valid.valid valid.linked
+    accounted.ordered parentDeclared premisesDeclared fun continuation member =>
+      (valid.continuations continuation member).refines refines
   obtain ⟨scheduledValid, scheduledLinked, scheduledDeclared, scheduledContinuations, scheduledOrdered⟩ :=
-    Continuation.schedule_valid woken _ _ startValid startLinked startDeclared startContinuations startOrdered
-      fun suspension member => suspended suspension (old suspension (.inl member))
+    Continuation.schedule_valid woken _ started fun suspension member => suspended suspension (old suspension (.inl member))
   refine ⟨Store.commit_scoped valid.storeScoped committed, waiting,
     ⟨fun suspension member => suspended suspension (old suspension (.inr member)),
       fun constraint member => (valid.held.2 constraint (constraints ▸ member)).refines refines⟩,
@@ -1149,9 +1141,9 @@ theorem step_valid (command : Command Variable Literal Symbol Certificate)
       rw [framesEq] at branch
       split at stepped
       · rename_i node complete
-        cases stepped; exact ⟨⟨branch.complete complete, valid.choices⟩, rfl⟩
+        cases stepped; exact ⟨⟨branch.receive.1 _ complete, valid.choices⟩, rfl⟩
       · rename_i waiting frameWaiting
-        cases stepped; exact ⟨⟨branch.advance frameWaiting, valid.choices⟩, rfl⟩
+        cases stepped; exact ⟨⟨branch.receive.2 _ frameWaiting, valid.choices⟩, rfl⟩
     · rename_i id obligation resume frames framesEq
       rw [framesEq] at branch
       cases stepped; exact ⟨⟨branch.record, valid.choices⟩, rfl⟩
@@ -1172,11 +1164,12 @@ theorem step_valid (command : Command Variable Literal Symbol Certificate)
             choices := others }) pointValid othersValid, State.enter_root _ _ _ _⟩
 
 /-- What a successful run guarantees. The tree proves the root obligation,
-coherently, and names only names the final store declares; the final answers
-are scoped. No goal is still delayed and no constraint unresolved;
-restrictions (dependency sets) are not counted. Every deferred proof proves its
-recorded obligation, and the references resolve (`CompletedProof.filled_valid`
-fills them). -/
+coherently, names only names the final store declares, and holds no
+reference: the success step filled each with its deferred proof. The final
+answers are scoped. No goal is still delayed and no constraint unresolved;
+restrictions (dependency sets) are not counted. The deferred proofs, kept as
+provenance, have distinct ids, each proves its recorded obligation, and the
+references left in them resolve to later records. -/
 structure CompletedProof.Valid [DecidableEq Variable] (root : Obligation Variable Literal Symbol)
     (proof : CompletedProof Variable Literal Symbol Certificate Snapshot) : Prop where
   rooted : proof.root = root
@@ -1184,28 +1177,24 @@ structure CompletedProof.Valid [DecidableEq Variable] (root : Obligation Variabl
   coherent : proof.tree.Coherent
   answers : proof.store.Scoped
   declared : proof.tree.Declared proof.store
+  complete : proof.tree.refs = []
   settled : proof.store.wakeups = [] ∧ proof.store.constraints = []
   records : ∀ record ∈ proof.deferred, record.Valid proof.store
-  resolved : proof.Resolved
+  distinct : (proof.deferred.map DeferredProof.id).Nodup
+  forward : ∀ record ∈ proof.deferred, ∀ ref ∈ record.tree.refs,
+    ref ∈ proof.deferred.map DeferredProof.hole ∧ record.id < ref.1
 
-/-- The filled tree of a successful run proves the root obligation, coherently,
-names only declared names, and holds no reference. -/
-theorem CompletedProof.Valid.filled {root : Obligation Variable Literal Symbol}
-    {proof : CompletedProof Variable Literal Symbol Certificate Snapshot} (valid : proof.Valid root) :
-    proof.filled.obligation = root ∧ proof.filled.Coherent ∧ proof.filled.Declared proof.store ∧
-      proof.filled.refs = [] := by
-  obtain ⟨sameObligation, coherent, declared, empty⟩ :=
-    CompletedProof.filled_valid valid.resolved valid.records valid.coherent valid.declared
-  exact ⟨sameObligation.trans valid.proves, coherent, declared, empty⟩
-
-/-- A valid completed proof leaves no reference once filled, so it is monotonic
-exactly when it retains no closed-world evidence. -/
+/-- A successful run's tree holds no reference, so it is monotonic exactly when
+it retains no closed-world evidence. -/
 theorem CompletedProof.Valid.monotonic_iff {root : Obligation Variable Literal Symbol}
     {proof : CompletedProof Variable Literal Symbol Certificate Snapshot} (valid : proof.Valid root) :
-    proof.Monotonic ↔ proof.closedWorld = [] :=
-  ⟨fun monotonic => monotonic.2, fun empty => ⟨valid.filled.2.2.2, empty⟩⟩
+    proof.tree.Monotonic ↔ proof.tree.closedWorld = [] :=
+  ⟨fun monotonic => monotonic.2, fun empty => ⟨valid.complete, empty⟩⟩
 
-/-- A successful step finishes the root obligation with a valid completed proof. -/
+/-- A successful step finishes the root obligation with a valid completed proof:
+the references of the finished tree resolve to the deferred proofs, and the
+references in those records point to later records, so filling leaves a
+complete tree (`ProofTree.fillAll_complete`). -/
 theorem step_success (command : Command Variable Literal Symbol Certificate)
     {state resume : State Variable Literal Symbol Certificate Snapshot} {proof : CompletedProof Variable Literal Symbol Certificate Snapshot}
     (valid : state.Valid) (stepped : step command state = .finished (.success proof resume)) :
@@ -1228,17 +1217,22 @@ theorem step_success (command : Command Variable Literal Symbol Certificate)
         have accounted := branch.accounted
         have holesEq : branchHoles state.store [] state.deferred = state.deferred.map DeferredProof.hole := by
           simp [branchHoles, noWakeups]
-        refine ⟨⟨rfl, branch.valid.1, branch.valid.2, branch.storeScoped, branch.declared, ⟨noWakeups, noConstraints⟩,
-          branch.records, ⟨?_, fun ref member => ?_, fun record member ref inside => ⟨?_, accounted.acyclic record member ref inside⟩⟩⟩,
-          resumed, rfl⟩
-        · have distinct := accounted.distinct
-          rw [holesEq, List.map_map] at distinct
-          exact distinct
-        · rw [← holesEq]
+        have distinct : (state.deferred.map DeferredProof.id).Nodup := by
+          have held := accounted.distinct
+          rw [holesEq, List.map_map] at held
+          exact held
+        have resolved : ProofTree.Resolved state.deferred tree.refs := fun ref member => by
+          rw [← holesEq]
           exact accounted.resolved ref (by simp [branchRefs, Focus.refs, member])
-        · rw [← holesEq]
-          exact accounted.resolved ref
-            (by simp only [branchRefs, List.mem_append, List.mem_flatMap]; exact .inr ⟨record, member, inside⟩)
+        have inner : ∀ record ∈ state.deferred, ∀ ref ∈ record.tree.refs,
+            ref ∈ state.deferred.map DeferredProof.hole ∧ record.id < ref.1 := fun record member ref inside =>
+          ⟨holesEq ▸ accounted.resolved ref
+              (by simp only [branchRefs, List.mem_append, List.mem_flatMap]; exact .inr ⟨record, member, inside⟩),
+            accounted.acyclic record member ref inside⟩
+        obtain ⟨sameObligation, filledCoherent, filledDeclared, empty⟩ :=
+          ProofTree.fillAll_complete distinct branch.records inner branch.valid.2 branch.declared resolved
+        exact ⟨⟨rfl, sameObligation.trans branch.valid.1, filledCoherent, branch.storeScoped, filledDeclared, empty,
+          ⟨noWakeups, noConstraints⟩, branch.records, distinct, inner⟩, resumed, rfl⟩
       · cases stepped
     · split at stepped <;> cases stepped
     · cases stepped
@@ -1249,8 +1243,8 @@ theorem step_success (command : Command Variable Literal Symbol Certificate)
 /-- A completed run proves the original query under the original scope with a
 valid completed proof: every node's subproofs prove exactly its premises under
 their own scopes, the final answers satisfy the dependency invariant, every
-obligation of the tree names only names declared in the final store, no goal
-is still delayed, and the deferred proofs fill every reference. -/
+obligation of the tree names only names declared in the final store, the tree
+holds no reference, and no goal is still delayed. -/
 theorem run_success (command : Command Variable Literal Symbol Certificate) :
     ∀ (fuel : Nat) {state resume : State Variable Literal Symbol Certificate Snapshot}
       {proof : CompletedProof Variable Literal Symbol Certificate Snapshot},

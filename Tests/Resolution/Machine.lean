@@ -130,7 +130,7 @@ def solve (state : State Nat Nat Sym Absent Nat) (fuel : Nat := 200) : Outcome N
   run logical fuel state
 
 def rulesOf (outcome : Outcome Nat Nat Sym Absent Nat) : Option (List RuleId) :=
-  outcome.proof?.map (·.rules)
+  outcome.proof?.map (·.tree.rules)
 
 def answerIs (outcome : Outcome Nat Nat Sym Absent Nat) (name : Nat) (expected : T) : Bool :=
   match outcome.proof? with
@@ -156,7 +156,7 @@ end
 def leavesAre (outcome : Outcome Nat Nat Sym Absent Nat) (expected : List (RuleId × List T)) : Bool :=
   match outcome.proof? with
   | some proof =>
-      let actual := leaves proof.filled
+      let actual := leaves proof.tree
       actual.length == expected.length &&
         (actual.zip expected).all (fun (found, wanted) => found.1 == wanted.1 && sameArgs found.2 wanted.2)
   | none => false
@@ -424,7 +424,7 @@ def negation := run withNaf 100 (query [] [k .p] (.conj (k .p) (.defaultNeg (k .
 #guard rulesOf negation = some [.conjIntro, .assumption, .defaultNegIntro]
 #guard match negation.proof? with
   | some proof =>
-      match proof.closedWorld with
+      match proof.tree.closedWorld with
       | [⟨.completeFailure, certificate⟩] => same certificate.operand (k .q) && sameArgs certificate.context [k .p]
       | _ => false
   | none => false

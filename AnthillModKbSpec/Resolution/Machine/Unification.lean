@@ -198,17 +198,6 @@ theorem matchParts_size {left right : Term Variable Literal Symbol}
     · cases split
   all_goals (cases split; try (simp only [pairsSize]; simp; omega))
 
-private theorem filter_length_lt {α : Type} {items : List α} {p q : α → Bool}
-    (smaller : ∀ item ∈ items, q item = true → p item = true)
-    (lost : ∃ item ∈ items, p item = true ∧ q item = false) :
-    (items.filter q).length < (items.filter p).length := by
-  have nested : items.filter q = (items.filter p).filter q := by
-    rw [List.filter_filter]
-    exact List.filter_congr fun item member => by cases h : q item <;> simp [h, smaller item member]
-  obtain ⟨item, member, kept, dropped⟩ := lost
-  rw [nested, List.length_filter_lt_length_iff_exists]
-  exact ⟨item, List.mem_filter.mpr ⟨member, kept⟩, by simp [dropped]⟩
-
 omit [DecidableEq Literal] [DecidableEq Symbol] in
 /-- A binding leaves its name assigned and every other name as it was. -/
 theorem Store.assignable_bind {store : Store Variable Literal Symbol} {name : Variable}

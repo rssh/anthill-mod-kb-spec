@@ -319,6 +319,10 @@ instance (store : Store Variable Literal Symbol) (obligation : Obligation Variab
 def Store.wakes (store : Store Variable Literal Symbol) (suspension : Suspension Variable Literal Symbol) : Bool :=
   suspension.names.any fun name => (store.binding? name).isSome
 
+theorem Store.wakes_eq_false {store : Store Variable Literal Symbol} {suspension : Suspension Variable Literal Symbol} :
+    store.wakes suspension = false ↔ ∀ name ∈ suspension.names, store.binding? name = none := by
+  simp only [Store.wakes, List.any_eq_false, Option.isSome_iff_ne_none, ne_eq, Decidable.not_not]
+
 /-- The suspensions the store wakes, in store order (newest first). -/
 def Store.woken (store : Store Variable Literal Symbol) : List (Suspension Variable Literal Symbol) :=
   store.wakeups.filter store.wakes
@@ -448,6 +452,18 @@ theorem lookup_mem {α : Type} {entries : List (Variable × α)} {name : Variabl
       · simp only [lookup, same, ite_false] at found
         exact List.mem_cons_of_mem _ (ih found)
 
+/-- A filter that keeps a subset of another's items, and loses one of them, keeps fewer. -/
+theorem filter_length_lt {α : Type} {items : List α} {p q : α → Bool}
+    (smaller : ∀ item ∈ items, q item = true → p item = true)
+    (lost : ∃ item ∈ items, p item = true ∧ q item = false) :
+    (items.filter q).length < (items.filter p).length := by
+  have nested : items.filter q = (items.filter p).filter q := by
+    rw [List.filter_filter]
+    exact List.filter_congr fun item member => by cases h : q item <;> simp [h, smaller item member]
+  obtain ⟨item, member, kept, dropped⟩ := lost
+  rw [nested, List.length_filter_lt_length_iff_exists]
+  exact ⟨item, List.mem_filter.mpr ⟨member, kept⟩, by simp [dropped]⟩
+
 /-! ## Commit specification -/
 
 theorem Store.info?_declare (store : Store Variable Literal Symbol) (info : NameInfo Variable)
@@ -483,15 +499,16 @@ theorem Store.info?_narrow (store : Store Variable Literal Symbol) (targets allo
     (store.narrow targets allowed).info? name = (store.info? name).map (narrowInfo targets allowed name) :=
   lookup_map_keyed store.names (narrowInfo targets allowed) name
 
-/-- Narrowing keeps every flexible name flexible. -/
+/-- Narrowing keeps every flexible name flexible, with at most its dependencies. -/
 theorem Store.narrow_flexible {store : Store Variable Literal Symbol} {targets allowed : List Variable}
     {name : Variable} {own : List Variable} (flexible : store.info? name = some (.flexible own)) :
-    ∃ narrowed, (store.narrow targets allowed).info? name = some (.flexible narrowed) := by
+    ∃ narrowed, (store.narrow targets allowed).info? name = some (.flexible narrowed) ∧
+      ∀ rigid ∈ narrowed, rigid ∈ own := by
   rw [Store.info?_narrow, flexible]
   unfold narrowInfo
   split
-  · exact ⟨_, rfl⟩
-  · exact ⟨own, rfl⟩
+  · exact ⟨_, rfl, fun _ member => (List.mem_filter.mp member).1⟩
+  · exact ⟨own, rfl, fun _ member => member⟩
 
 theorem narrowInfo_flexible {targets allowed : List Variable} {name : Variable} {info : NameInfo Variable}
     {narrowed : List Variable} (equal : narrowInfo targets allowed name info = .flexible narrowed) :
@@ -757,7 +774,7 @@ theorem Store.bind_scoped {store next : Store Variable Literal Symbol} (valid : 
       fun other => Store.info?_narrow store _ _ other
     have attached := valid.attached (later := { (store.narrow value.freeVars dependencies) with
         bindings := (name, value) :: store.bindings })
-      (fun _ _ flexible => Store.narrow_flexible flexible) rfl rfl
+      (fun _ _ flexible => (Store.narrow_flexible flexible).imp fun _ found => found.1) rfl rfl
     have unchanged : ∀ other, other ∉ value.freeVars → ∀ own, store.info? other = some (.flexible own) →
         ({ (store.narrow value.freeVars dependencies) with
           bindings := (name, value) :: store.bindings } : Store Variable Literal Symbol).info? other =
@@ -861,12 +878,7 @@ theorem Store.bind_flexible {store next : Store Variable Literal Symbol}
   obtain ⟨dependencies, _, _, outcome⟩ := Store.bind_committed committed
   rcases outcome with ⟨_, rfl⟩ | ⟨rfl, _, _⟩
   · exact ⟨own, flexible, fun _ member => member⟩
-  · show ∃ narrowed, (store.narrow value.freeVars dependencies).info? other = _ ∧ _
-    rw [Store.info?_narrow, flexible]
-    unfold narrowInfo
-    split
-    · exact ⟨_, rfl, fun rigid member => (List.mem_filter.mp member).1⟩
-    · exact ⟨own, rfl, fun _ member => member⟩
+  · exact Store.narrow_flexible flexible
 
 theorem Store.bindAll_flexible {store next : Store Variable Literal Symbol}
     {scope : Scope Variable Literal Symbol} {bindings : List (Variable × Term Variable Literal Symbol)}
@@ -1072,8 +1084,8 @@ theorem Store.commit_woken {store next : Store Variable Literal Symbol} (valid :
 /-- Exactly-once wakeup. The woken and the remaining suspensions partition the
 old ones, each id once: a commit returns each suspension it wakes once, even
 when it binds several of its names, and removes it as a whole, so no stale
-attachment remains on its other names. The woken list is newest first. Each
-woken suspension waits on a name this commit bound; every suspension none of
+attachment remains on its other names (the woken list is newest first:
+`Store.commit_woken`). Each woken suspension waits on a name this commit bound; every suspension none of
 whose names it bound stays. The committed store is waiting again. Constraints
 are kept for their solver. -/
 theorem Store.commit_wakes {store next : Store Variable Literal Symbol} (valid : store.Scoped)
@@ -1082,7 +1094,6 @@ theorem Store.commit_wakes {store next : Store Variable Literal Symbol} (valid :
     {woken : List (Suspension Variable Literal Symbol)}
     (committed : store.commit obligation flexibles rigids premises bindings = .committed next woken) :
     (woken ++ next.wakeups).Perm store.wakeups ∧ ((woken ++ next.wakeups).map Suspension.id).Nodup ∧
-      (woken.map Suspension.id).Pairwise (· > ·) ∧
       (∀ suspension ∈ woken, ∃ name ∈ suspension.names,
         store.binding? name = none ∧ (next.binding? name).isSome) ∧
       (∀ suspension ∈ store.wakeups, (∀ name ∈ suspension.names, next.binding? name = none) →
@@ -1093,19 +1104,16 @@ theorem Store.commit_wakes {store next : Store Variable Literal Symbol} (valid :
   change bound.wakeups = store.wakeups at same
   have partition : (bound.woken ++ bound.wake.wakeups).Perm store.wakeups := by
     rw [← same]; exact List.filter_append_perm _ _
-  refine ⟨partition, (partition.map _).nodup_iff.mpr valid.distinct, (Store.commit_woken valid committed).2,
-    fun suspension member => ?_,
+  refine ⟨partition, (partition.map _).nodup_iff.mpr valid.distinct, fun suspension member => ?_,
     fun suspension member unbound => ?_, fun suspension member name inside => ?_, constraints⟩
   · obtain ⟨inside, wakes⟩ := List.mem_filter.mp member
     obtain ⟨name, nameMember, isBound⟩ := List.any_eq_true.mp wakes
     exact ⟨name, nameMember, waiting suspension (same ▸ inside) name nameMember, isBound⟩
   · refine List.mem_filter.mpr ⟨same ▸ member, ?_⟩
-    simp only [Store.wakes, Bool.not_eq_true', List.any_eq_false, Option.isSome_iff_ne_none, ne_eq,
-      Decidable.not_not]
+    rw [Bool.not_eq_true', Store.wakes_eq_false]
     exact unbound
   · obtain ⟨_, keep⟩ := List.mem_filter.mp member
-    simp only [Store.wakes, Bool.not_eq_true', List.any_eq_false, Option.isSome_iff_ne_none, ne_eq,
-      Decidable.not_not] at keep
+    rw [Bool.not_eq_true', Store.wakes_eq_false] at keep
     exact keep name inside
 
 end AnthillModKbSpec.Machine

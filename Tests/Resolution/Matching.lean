@@ -219,7 +219,7 @@ def resume (program : Program) : Outcome Nat Nat Sym Unit Nat → Outcome Nat Na
   | other => other
 
 def rulesOf (outcome : Outcome Nat Nat Sym Unit Nat) : Option (List RuleId) :=
-  outcome.proof?.map (·.rules)
+  outcome.proof?.map (·.tree.rules)
 
 def answerIs (outcome : Outcome Nat Nat Sym Unit Nat) (name : Nat) (expected : T) : Bool :=
   match outcome.proof? with
@@ -301,7 +301,7 @@ def clauseRollback := solve rProgram
 -- The proof keeps only the second clause; its renaming reads as b.
 #guard match clauseRollback.proof? with
   | some proof =>
-      match clauseUses proof.filled with
+      match clauseUses proof.tree with
       | [(.definite _ [.app .t _], [(50, fresh)])] => same (proof.store.resolve fresh) (k .b)
       | _ => false
   | none => false

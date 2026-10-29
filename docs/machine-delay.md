@@ -71,12 +71,12 @@ commit that binds a name reports what it wakes.
 | `DeferredProof` | An id, the delayed obligation, and the tree that proved it after waking |
 | `State.deferred` | Proofs of woken suspensions, newest first; saved by choice points, restored on backtracking |
 | `State.nextHole` | Counter for ids; not restored, so ids are unique across the run |
-| `ProofTree.deferred id obligation` | A reference, in a tree, to the separately recorded proof of a delayed obligation |
+| `ProofTree.deferred id obligation` | A reference to the separately recorded proof of a delayed obligation, in a tree under construction or in a record; the success step replaces every reference in the returned tree |
 | `Continuation.woken id obligation next` | On the continuation stack (`State.frames`), beside rule frames (`Continuation.frame`): record the woken goal's proof under `id`, then resume the focus `next` |
 
 Deferred proofs stay out of the store: the store is the logical state the
-matcher (S05) reads and commits to, while deferred proofs are evidence for
-export (S08).
+matcher (S05) reads and commits to, while deferred proofs are evidence the
+success step fills into the completed tree.
 
 A suspension is attached to every name it waits on, but it is one entry keyed
 by its id, not a copy per name; a per-name index is only a view of it. A commit
@@ -125,7 +125,7 @@ Success requires no pending wakeup and no unresolved constraint
 | `solve ob` | `delay names`, invalid | `failed`, contract gap (`step_delay_invalid`) |
 | `solve ob` | A candidate's commit returns woken suspensions | They run oldest first, before the candidate's own continuation, each under its own scope with a `woken` continuation (`Continuation.schedule`, `State.enter_committed`, `State.enter_oldest_first`) |
 | `proved t` | Top continuation `woken id ob next` | Record `(id, ob, t)` in `deferred`; focus `next` (`step_woken`) |
-| `proved t` | No continuation, `Store.residual` empty | Success |
+| `proved t` | No continuation, `Store.residual` empty | Success: the references in `t` are filled with the deferred proofs (`ProofTree.fillAll`) |
 | `proved t` | No continuation, pending wakeups or unresolved constraints | One `floundered` gap per residual item; focus `failed` (`step_flounder`) |
 | `failed` | A choice point with alternatives | Restore its store (with its suspensions), continuations, and deferred proofs; `nextHole` and gaps are kept (`step_backtrack`) |
 
@@ -150,30 +150,30 @@ certificate, and `unknown` carries no evidence either way.
 ### Proof evidence: fill at the end
 
 A delayed obligation's proof is built after its place in the tree has already
-been passed, so the tree holds a reference and the proof is recorded separately.
-On success, `CompletedProof` keeps the tree and the deferred proofs, and
-`CompletedProof.filled` substitutes the references: `ProofTree.fill` replaces
-each reference by its record once, and `fillAll` repeats it once per record.
+been passed, so while the run builds the tree it holds a reference and the proof
+is recorded separately. The success step fills the references before it returns
+the proof: `ProofTree.fill` replaces each reference by its record once, and
+`fillAll` repeats it once per record. `CompletedProof.tree` is therefore the
+complete proof, with no reference. `CompletedProof.deferred` keeps the records
+as provenance: each delayed obligation's proof under its distinct id, as
+recorded when it woke, so a record may still reference later records. The
+completed tree carries no ids, so it does not say where each record was used.
 
 A deferred proof only references delays created after its own goal woke, so
 references are acyclic, and substituting all records once per record resolves
 every chain. Coherence carries through: a reference stands for exactly the
 premise obligation it replaced, and each record proves the obligation it was
-recorded for. `CompletedProof.Resolved` states what S08's checker verifies:
-record ids are distinct, every reference resolves to a record for the same
-obligation, and a record references only records with larger ids. From it,
-`CompletedProof.filled_valid` proves that the filled tree proves what the tree
+recorded for. The branch invariant gives exactly what filling needs: record
+ids are distinct, every reference resolves to a record for the same
+obligation, and a record references only records with larger ids. From these,
+`ProofTree.fillAll_complete` proves that the filled tree proves what the tree
 proves, coherently, names only declared names, and holds no reference.
 
-The tree alone is not the proof: a reference retains no rule and no evidence of
-its own, and a delayed NAF goal keeps its certificate in its deferred proof.
-Analyses of a completed proof therefore read the filled tree:
-`CompletedProof.rules`, `CompletedProof.closedWorld`, and
-`CompletedProof.Monotonic`. A tree with references is never `Monotonic`, so a
-reference no record resolves keeps a proof from being classified monotonic; for
-a successful run that leaves only its closed-world evidence
-(`CompletedProof.Valid.monotonic_iff`). Without deferred proofs the filled tree
-is the tree (`CompletedProof.filled_of_nil`).
+Because the completed tree holds every delayed obligation's proof, its rules
+and closed-world evidence include theirs: a delayed NAF goal's certificate is
+in the tree. A reference retains no evidence of its own, so a tree with
+references is never `Monotonic`; a successful run's tree is monotonic exactly
+when it retains no closed-world evidence (`CompletedProof.Valid.monotonic_iff`).
 
 ## Guarantees
 
@@ -184,7 +184,7 @@ is the tree (`CompletedProof.filled_of_nil`).
 | `Store.Scoped` extends to wakeups and constraints: they wait only on declared flexible names, and wakeups are kept newest first, with strictly decreasing ids | `Store.Scoped`, `Store.Scoped.distinct`, `Store.commit_scoped`, `Store.Scoped.suspend` |
 | Every transition keeps every branch valid (`Branch.Valid`, for the state and each choice point): continuations linked, a `woken` entry's `next` valid for the stack below it, the store scoped and waiting, every suspension, constraint, and deferred proof naming only declared names (S19), every deferred proof proving its obligation | `State.init_valid`, `step_valid` |
 | Every suspension id is held exactly once (a pending wakeup, a woken continuation, or a deferred proof) and below `nextHole`; every reference stands for a held id with its obligation; references point forward | `Accounted`, `Branch.Valid.commit`, `Branch.Valid.record` |
-| A success proves the root with a coherent, declared tree and scoped answers; no wakeup is pending and no constraint unresolved (restrictions do not count); every deferred proof proves its recorded obligation; the references resolve, and the filled tree proves the root with none left | `run_success` (`CompletedProof.Valid`), `CompletedProof.Valid.filled` |
+| A success proves the root with a coherent, declared tree and scoped answers; the success step filled every reference, so the tree holds none; no wakeup is pending and no constraint unresolved (restrictions do not count); the deferred proofs, kept as provenance, have distinct ids, each proves its recorded obligation, and the references left in them resolve to later records | `run_success` (`CompletedProof.Valid`), `ProofTree.fillAll_complete` |
 | Floundering adds gaps, so exhaustion still implies no gap, and a floundered run is never exhausted | `step_flounder`, `run_exhausted`, `run_not_exhausted` |
 | Woken goals run before the waking candidate's continuation, oldest first: the woken list is newest first, and scheduling pushes one woken entry per suspension in reverse, so from the top of the stack their ids increase and the focus is the oldest woken obligation | `Store.commit_woken`, `Continuation.schedule_stack`, `Continuation.schedule_focus`, `State.enter_oldest_first` |
 | A suspension outlives its frame; a woken goal's proof is recorded under its id and the saved focus resumes | `step_proved_store`, `step_woken` |
@@ -195,10 +195,11 @@ is the tree (`CompletedProof.filled_of_nil`).
 
 - **S06**: a range guard on an unbound variable delays instead of enumerating
   ahead of the body. The generated `fill` or member goal is appended after the
-  body. Reconstruction substitutes deferred proofs before rebuilding `Derives`.
+  body. Reconstruction reads `CompletedProof.tree`, already complete.
 - **S07**: P0 is ground and never delays.
-- **S08**: encode references and deferred proofs; check resolution, agreement,
-  and acyclicity.
+- **S08**: machine output has no reference, so the completed tree is what it
+  encodes, and the records need no encoding. A supplied tree (manual, external,
+  P2) that still holds a reference is an unresolved hole and is rejected.
 - **S10**: NAF on a flexible operand delays until the operand is bound ("retain a
   dependency and retry after instantiation"). Waiting cannot help a rigid
   operand.
@@ -208,7 +209,7 @@ is the tree (`CompletedProof.filled_of_nil`).
 - Commands decide when to delay (S06 for guards, S10 for NAF); the machine
   checks the names and owns waking, recording, and floundering.
 - No constraint solver: S18 adds the slot only.
-- The test driver is not S06's command set. Rebuilding `Derives` from a filled
+- The test driver is not S06's command set. Rebuilding `Derives` from a completed
   tree read through the final answers is S06/S16.
 - No fairness or termination is claimed: woken goals run oldest first, before
   the waking candidate's continuation.
@@ -222,7 +223,7 @@ the same way. Each is a `#guard` in
 
 | Trace | Expected |
 | --- | --- |
-| `r(X) ∧ p(X)` under `p(a), r(a)` | `r(X)` delays; `p(X)` binds `X := a` and wakes it; `r(a)` holds. The tree has one reference; the filled tree has none, and the completed proof lists the woken goal's rule |
+| `r(X) ∧ p(X)` under `p(a), r(a)` | `r(X)` delays; `p(X)` binds `X := a` and wakes it; `r(a)` holds. Its proof is recorded under id 0 and filled in at success: the completed tree has no reference and lists the woken goal's rule |
 | Same, under `p(b), p(a), r(a)` | `X := b` wakes `r(b)`, which fails; rollback restores the suspension; `X := a` succeeds |
 | `r(X) ∧ p(X) ∧ q(X)` under `p(a), p(b), r(a), r(b), q(b)` | `X := a` wakes `r(a)`, whose proof is recorded; `q(a)` fails; rollback discards that record and restores the suspension; `X := b` succeeds with exactly one deferred proof, for `r(b)` |
 | `r(X, Y) ∧ p(X) ∧ q(Y)` under `p(a), r(a, b), r(a, c), q(c)` | `p(X)` wakes `r(a, Y)`, which binds `Y := b`; its proof is recorded and `q(b)` fails; backtracking resumes the woken goal's own alternative `Y := c` with the woken entry restored and the record discarded |
@@ -230,7 +231,7 @@ the same way. Each is a `#guard` in
 | A check delaying on `[X, Y]`, then a goal binding `X` only | Woken once; no stale attachment on `Y`; success without floundering |
 | A check delaying on `[X, Y]`, then a goal binding `X` and `Y` in one commit | Woken once; one deferred proof |
 | Commits on a store with suspensions on `[X, Y]` and on `Z` | Binding `X`, or `X` and `Y`, returns the first once and keeps the second |
-| `r(X) ∧ e(X, Y) ∧ p(Y)` under `p(a), r(a)`, where `e` binds `X := Y` | The alias wakes `r(X)`, which resolves to `r(Y)` and delays again under a new id; `p(Y)` binds `Y := a` and wakes it. Two records, the first referencing the second; the filled tree has no references |
+| `r(X) ∧ e(X, Y) ∧ p(Y)` under `p(a), r(a)`, where `e` binds `X := Y` | The alias wakes `r(X)`, which resolves to `r(Y)` and delays again under a new id; `p(Y)` binds `Y := a` and wakes it. Two records, the first referencing the second; the completed tree has no references |
 | A callee `c(X)` (a test-driver clause; S06 supplies clause selection) whose body delays `r(X)`, then the caller's `p(X)` | `c`'s frame completes with `r(X)` suspended; the caller's `p(X)` binds `X := a` and wakes `r(a)` after the callee returned |
 | `(r(a) → r(X)) ∧ p(X)` under `p(a)` | `r(X)` delays under the local assumption `r(a)`; after the implication is discharged, `p(X)` wakes it and `r(a)` holds by that assumption |
 | `(r(a) → r(X)) ∧ p(X) ∧ r(a)` under `p(a)` | Exhausted: the woken goal used `r(a)`, but the caller's last goal cannot |
@@ -238,6 +239,6 @@ the same way. Each is a `#guard` in
 | `r(X) ∨ (r(X) ∧ p(X))` under `p(a), r(a)` | The first branch flounders; the second succeeds; resuming is unknown |
 | A store holding an unresolved constraint, goal `true` | Flounders: unknown with a `floundered` gap |
 | `r(X) ∧ p(X)` with no `p` | Exhausted: the suspension is discarded with its branch |
-| `naf r(X) ∧ p(X)` under `p(a)` | `naf r(X)` delays; `p(X)` wakes it and its NAF node keeps the certificate in the deferred proof: the tree's closed-world evidence is empty, the completed proof's is not |
+| `naf r(X) ∧ p(X)` under `p(a)` | `naf r(X)` delays; `p(X)` wakes it and its NAF node keeps the certificate in the deferred proof, which the success step fills in: the completed tree retains the certificate |
 | `∀x. (r(x) → ∃y. (r(y) ∧ y = x))` | Success: `y` keeps its dependency set after binding, and restrictions never flounder |
 | `delay []`, a delay on a rigid, undeclared, or bound name | Contract gap |

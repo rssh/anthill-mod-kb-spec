@@ -145,8 +145,7 @@ def subproofs : ProofTree Variable Literal Symbol Certificate → List (ProofTre
 
 mutual
 /-- Rule identities in preorder. A reference is not a rule application; `refs`
-lists the references, and `CompletedProof.rules` includes the rules of the
-delayed obligations they stand for. -/
+lists the references. A successful run's tree has none. -/
 def rules : ProofTree Variable Literal Symbol Certificate → List RuleId
   | .node rule _ _ subproofs => rule.id :: rulesOf subproofs
   | .deferred _ _ => []
@@ -250,8 +249,7 @@ snapshot. For `Derives` rules its validity survives KB and registry growth
 (`Derives.mono` with the disabled provider); an extension declared monotonic
 needs that from its own soundness proof. A reference retains no evidence itself
 and may stand for a proof that does, so a tree with references is never
-monotonic: classify a completed proof by its filled tree
-(`CompletedProof.Monotonic`). -/
+monotonic. A successful run's tree has none (`CompletedProof.Valid`). -/
 def Monotonic (tree : ProofTree Variable Literal Symbol Certificate) : Prop := tree.refs = [] ∧ tree.closedWorld = []
 
 mutual
@@ -321,9 +319,9 @@ end ProofTree
 /-! ## Deferred proofs -/
 
 /-- The proof of a woken suspension: its id, the obligation it delayed, and the
-tree that proved it after waking. Deferred proofs are evidence for export (S08)
-and stay out of the store, which is the logical state the matcher reads and
-commits to. -/
+tree that proved it after waking. Its tree may reference later records. Deferred
+proofs stay out of the store, which is the logical state the matcher reads and
+commits to; the success step fills them into the completed tree. -/
 structure DeferredProof (Variable Literal Symbol Certificate : Type) where
   id : Nat
   obligation : Obligation Variable Literal Symbol
@@ -343,18 +341,10 @@ structure DeferredProof.Valid [DecidableEq Variable] (store : Store Variable Lit
 theorem nodup_map_inj {α β : Type} {f : α → β} {items : List α} (distinct : (items.map f).Nodup)
     {first second : α} (firstMember : first ∈ items) (secondMember : second ∈ items) (same : f first = f second) :
     first = second := by
-  induction items with
-  | nil => cases firstMember
-  | cons head tail ih =>
-      rw [List.map_cons, List.nodup_cons] at distinct
-      have outside : ∀ other ∈ tail, f head ≠ f other :=
-        fun other member same => distinct.1 (List.mem_map.mpr ⟨other, member, same.symm⟩)
-      rcases List.mem_cons.mp firstMember with firstEq | firstTail <;>
-        rcases List.mem_cons.mp secondMember with secondEq | secondTail
-      · rw [firstEq, secondEq]
-      · subst firstEq; exact absurd same (outside second secondTail)
-      · subst secondEq; exact absurd same.symm (outside first firstTail)
-      · exact ih distinct.2 firstTail secondTail
+  have pairwise := List.pairwise_map.mp distinct
+  exact List.Pairwise.forall_of_forall_of_flip (R := fun a b => f a = f b → a = b) (fun _ _ _ => rfl)
+    (pairwise.imp fun differ equal => absurd equal differ) (pairwise.imp fun differ equal => absurd equal.symm differ)
+    firstMember secondMember same
 
 /-- With distinct ids, the record found for a hole's id is the record of that hole. -/
 theorem DeferredProof.find_hole {records : List (DeferredProof Variable Literal Symbol Certificate)}
@@ -410,7 +400,7 @@ theorem obligation_fill (distinct : (records.map DeferredProof.id).Nodup)
   | node => simp [fill, obligation]
   | deferred id obligation =>
       obtain ⟨record, member, found, _, sameObligation⟩ :=
-        DeferredProof.find_hole distinct (resolved (id, obligation) (by simp [refs]))
+        DeferredProof.find_hole distinct (resolved (id, obligation) (List.mem_singleton_self _))
       simp only [fill, found]
       exact (proves record member).trans sameObligation
 
@@ -421,9 +411,9 @@ theorem fill_coherent (distinct : (records.map DeferredProof.id).Nodup)
       (tree.fill records).Coherent
   | .node _ _ _ subproofs, coherent, resolved => by
       cases coherent with
-      | node children => exact .node (fillOf_coherent distinct valid subproofs children (by simpa [refs] using resolved))
+      | node children => exact .node (fillOf_coherent distinct valid subproofs children resolved)
   | .deferred id obligation, _, resolved => by
-      obtain ⟨record, member, found, _, _⟩ := DeferredProof.find_hole distinct (resolved (id, obligation) (by simp [refs]))
+      obtain ⟨record, member, found, _, _⟩ := DeferredProof.find_hole distinct (resolved (id, obligation) (List.mem_singleton_self _))
       simp only [fill, found]
       exact (valid record member).2
 
@@ -445,33 +435,31 @@ end
 mutual
 /-- A reference left after one pass comes from the substituted record of a
 reference of the tree. -/
-theorem refs_fill : ∀ tree : ProofTree Variable Literal Symbol Certificate,
-    (∀ ref ∈ tree.refs, ∃ record ∈ records, record.id = ref.1) →
+theorem refs_fill (distinct : (records.map DeferredProof.id).Nodup) : ∀ tree : ProofTree Variable Literal Symbol Certificate,
+    Resolved records tree.refs →
     ∀ ref ∈ (tree.fill records).refs, ∃ record ∈ records, record.id ∈ tree.refs.map Prod.fst ∧ ref ∈ record.tree.refs
-  | .node _ _ _ subproofs, found, ref, member => by
-      simp only [fill, refs] at member found ⊢
-      exact refsOf_fill subproofs found ref member
-  | .deferred id obligation, found, ref, member => by
-      obtain ⟨present, presentMember, presentId⟩ := found (id, obligation) (by simp [refs])
-      cases findEq : records.find? (·.id == id) with
-      | none => exact absurd presentId (by simpa using List.find?_eq_none.mp findEq present presentMember)
-      | some record =>
-          simp only [fill, findEq] at member
-          exact ⟨record, List.mem_of_find?_eq_some findEq, by simpa [refs] using List.find?_some findEq, member⟩
+  | .node _ _ _ subproofs, resolved, ref, member => by
+      simp only [fill, refs] at member resolved ⊢
+      exact refsOf_fill distinct subproofs resolved ref member
+  | .deferred id obligation, resolved, ref, member => by
+      obtain ⟨record, recordMember, found, sameId, _⟩ :=
+        DeferredProof.find_hole distinct (resolved (id, obligation) (List.mem_singleton_self _))
+      simp only [fill, found] at member
+      exact ⟨record, recordMember, by simp [refs, sameId], member⟩
 
-theorem refsOf_fill : ∀ trees : List (ProofTree Variable Literal Symbol Certificate),
-    (∀ ref ∈ refsOf trees, ∃ record ∈ records, record.id = ref.1) →
+theorem refsOf_fill (distinct : (records.map DeferredProof.id).Nodup) : ∀ trees : List (ProofTree Variable Literal Symbol Certificate),
+    Resolved records (refsOf trees) →
     ∀ ref ∈ refsOf (fillOf records trees), ∃ record ∈ records,
       record.id ∈ (refsOf trees).map Prod.fst ∧ ref ∈ record.tree.refs
   | [], _, ref, member => by simp [fillOf, refsOf] at member
-  | tree :: trees, found, ref, member => by
+  | tree :: trees, resolved, ref, member => by
       simp only [fillOf, refsOf, List.mem_append] at member
       rcases member with here | there
       · obtain ⟨record, member, idMember, inside⟩ :=
-          refs_fill tree (fun ref inside => found ref (by simp [refsOf, inside])) ref here
+          refs_fill distinct tree (fun ref inside => resolved ref (by simp [refsOf, inside])) ref here
         exact ⟨record, member, by simp only [refsOf, List.map_append, List.mem_append]; exact .inl idMember, inside⟩
       · obtain ⟨record, member, idMember, inside⟩ :=
-          refsOf_fill trees (fun ref inside => found ref (by simp [refsOf, inside])) ref there
+          refsOf_fill distinct trees (fun ref inside => resolved ref (by simp [refsOf, inside])) ref there
         exact ⟨record, member, by simp only [refsOf, List.map_append, List.mem_append]; exact .inr idMember, inside⟩
 end
 
@@ -515,17 +503,9 @@ def countBelow (records : List (DeferredProof Variable Literal Symbol Certificat
   (records.filter (·.id < id)).length
 
 theorem countBelow_lt {record : DeferredProof Variable Literal Symbol Certificate} (member : record ∈ records)
-    {id : Nat} (lower : record.id < id) : countBelow records record.id < countBelow records id := by
-  have nested : records.filter (·.id < record.id) = (records.filter (·.id < id)).filter (·.id < record.id) := by
-    rw [List.filter_filter]
-    exact List.filter_congr fun other _ => by
-      by_cases smaller : other.id < record.id
-      · simp [smaller, Nat.lt_trans smaller lower]
-      · simp [smaller]
-  unfold countBelow
-  rw [nested]
-  exact List.length_filter_lt_length_iff_exists.mpr ⟨record, List.mem_filter.mpr ⟨member, by simpa using lower⟩,
-    by simp⟩
+    {id : Nat} (lower : record.id < id) : countBelow records record.id < countBelow records id :=
+  filter_length_lt (fun _ _ smaller => by simpa using Nat.lt_trans (by simpa using smaller) lower)
+    ⟨record, member, by simpa using lower, by simp⟩
 
 theorem countBelow_lt_length {record : DeferredProof Variable Literal Symbol Certificate} (member : record ∈ records) :
     countBelow records record.id < records.length :=
@@ -544,10 +524,7 @@ theorem fillAll_valid [DecidableEq Variable] {store : Store Variable Literal Sym
         ∀ ref ∈ (tree.fillAll records count).refs, least + count ≤ countBelow records ref.1
   | 0, tree, least, coherent, declared, resolved, ranked => ⟨rfl, coherent, declared, resolved, ranked⟩
   | count + 1, tree, least, coherent, declared, resolved, ranked => by
-      have found : ∀ ref ∈ tree.refs, ∃ record ∈ records, record.id = ref.1 := fun ref inside => by
-        obtain ⟨record, member, sameHole⟩ := List.mem_map.mp (resolved ref inside)
-        exact ⟨record, member, by rw [← sameHole]; rfl⟩
-      have origin := refs_fill tree found
+      have origin := refs_fill distinct tree resolved
       have filledResolved : Resolved records (tree.fill records).refs := fun ref inside => by
         obtain ⟨record, member, _, there⟩ := origin ref inside
         exact (inner record member ref there).1
@@ -571,80 +548,45 @@ theorem fillAll_valid [DecidableEq Variable] {store : Store Variable Literal Sym
       simp only [Nat.add_assoc, Nat.add_comm 1 count] at this
       exact this
 
+/-- Fill at the end: with distinct record ids, valid records, and references that
+resolve and point to later records, one pass per record leaves a tree that
+proves the same obligation, coherently, names only declared names, and holds no
+reference. -/
+theorem fillAll_complete [DecidableEq Variable] {store : Store Variable Literal Symbol}
+    (distinct : (records.map DeferredProof.id).Nodup) (valid : ∀ record ∈ records, record.Valid store)
+    (inner : ∀ record ∈ records, ∀ ref ∈ record.tree.refs, ref ∈ records.map DeferredProof.hole ∧ record.id < ref.1)
+    {tree : ProofTree Variable Literal Symbol Certificate} (coherent : tree.Coherent) (declared : tree.Declared store)
+    (resolved : Resolved records tree.refs) :
+    (tree.fillAll records records.length).obligation = tree.obligation ∧ (tree.fillAll records records.length).Coherent ∧
+      (tree.fillAll records records.length).Declared store ∧ (tree.fillAll records records.length).refs = [] := by
+  obtain ⟨sameObligation, filledCoherent, filledDeclared, filledResolved, ranked⟩ :=
+    fillAll_valid distinct valid inner records.length tree 0 coherent declared resolved (fun _ _ => Nat.zero_le _)
+  refine ⟨sameObligation, filledCoherent, filledDeclared, ?_⟩
+  cases refsEq : (tree.fillAll records records.length).refs with
+  | nil => rfl
+  | cons ref _ =>
+      have inside : ref ∈ (tree.fillAll records records.length).refs := by rw [refsEq]; exact List.mem_cons_self
+      obtain ⟨record, member, sameHole⟩ := List.mem_map.mp (filledResolved ref inside)
+      have rank := ranked ref inside
+      rw [← sameHole, Nat.zero_add] at rank
+      exact (Nat.lt_irrefl _ (Nat.lt_of_le_of_lt rank (countBelow_lt_length member))).elim
+
 end ProofTree
 
-/-- A successful run: the tree for the root obligation, the proofs of the
-delayed obligations it references, the final store, and the snapshot the
-closed-world certificates of the tree and of the deferred proofs are relative to
-(irrelevant for a `CompletedProof.Monotonic` proof). Answers are the root's
-flexible names read through the store. -/
+/-- A successful run: the complete tree for the root obligation, the deferred
+proofs, the final store, and the snapshot the tree's closed-world certificates
+are relative to. The success step has already substituted every deferred proof
+for its reference, so the tree holds no reference. `deferred` is provenance:
+each delayed obligation's proof under its id, as recorded when it woke, so a
+record may still reference later records. The tree carries no ids, so it does
+not say where each delayed proof sits. Answers are the root's flexible names
+read through the store. -/
 structure CompletedProof (Variable Literal Symbol Certificate Snapshot : Type) where
   snapshot : Snapshot
   root : Obligation Variable Literal Symbol
   tree : ProofTree Variable Literal Symbol Certificate
   deferred : List (DeferredProof Variable Literal Symbol Certificate)
   store : Store Variable Literal Symbol
-
-/-- The tree with every reference replaced by its recorded proof. Each pass
-substitutes all records once; one pass per record resolves every chain. -/
-def CompletedProof.filled (proof : CompletedProof Variable Literal Symbol Certificate Snapshot) :
-    ProofTree Variable Literal Symbol Certificate :=
-  proof.tree.fillAll proof.deferred proof.deferred.length
-
-/-- Without delayed obligations the filled tree is the tree itself. -/
-theorem CompletedProof.filled_of_nil {proof : CompletedProof Variable Literal Symbol Certificate Snapshot}
-    (empty : proof.deferred = []) : proof.filled = proof.tree := by
-  simp [CompletedProof.filled, empty, ProofTree.fillAll]
-
-/-- The rule identities of a completed proof in preorder, read from the filled
-tree, so the rules of delayed obligations are included. -/
-def CompletedProof.rules (proof : CompletedProof Variable Literal Symbol Certificate Snapshot) : List RuleId :=
-  proof.filled.rules
-
-/-- The closed-world evidence a completed proof retains, read from the filled
-tree: a delayed obligation's evidence, such as NAF on an operand that was
-bound later, sits in its deferred proof, not in the tree's reference. -/
-def CompletedProof.closedWorld (proof : CompletedProof Variable Literal Symbol Certificate Snapshot) :
-    List (ClosedWorldEvidence Certificate) :=
-  proof.filled.closedWorld
-
-/-- A completed proof that does not depend on its run's snapshot: its filled tree
-has no reference left and no closed-world node. A reference that no record
-resolves keeps the proof from being monotonic. -/
-def CompletedProof.Monotonic (proof : CompletedProof Variable Literal Symbol Certificate Snapshot) : Prop :=
-  proof.filled.Monotonic
-
-/-- The references of a successful run resolve: record ids are distinct, every
-reference in the tree or in a record stands for a record with the same id and
-obligation, and a record references only records of delays created after its
-own goal woke, so references are acyclic. These are the checks S08 makes. -/
-structure CompletedProof.Resolved (proof : CompletedProof Variable Literal Symbol Certificate Snapshot) : Prop where
-  distinct : (proof.deferred.map DeferredProof.id).Nodup
-  tree : ProofTree.Resolved proof.deferred proof.tree.refs
-  records : ∀ record ∈ proof.deferred, ∀ ref ∈ record.tree.refs,
-    ref ∈ proof.deferred.map DeferredProof.hole ∧ record.id < ref.1
-
-/-- Fill at the end: from coherent, declared records and resolved references,
-the filled tree proves what the tree proves, coherently, names only declared
-names, and holds no reference. -/
-theorem CompletedProof.filled_valid [DecidableEq Variable]
-    {proof : CompletedProof Variable Literal Symbol Certificate Snapshot} (resolved : proof.Resolved)
-    (records : ∀ record ∈ proof.deferred, record.Valid proof.store) (coherent : proof.tree.Coherent)
-    (declared : proof.tree.Declared proof.store) :
-    proof.filled.obligation = proof.tree.obligation ∧ proof.filled.Coherent ∧
-      proof.filled.Declared proof.store ∧ proof.filled.refs = [] := by
-  obtain ⟨sameObligation, filledCoherent, filledDeclared, filledResolved, ranked⟩ :=
-    ProofTree.fillAll_valid resolved.distinct records resolved.records proof.deferred.length proof.tree 0
-      coherent declared resolved.tree (fun _ _ => Nat.zero_le _)
-  refine ⟨sameObligation, filledCoherent, filledDeclared, ?_⟩
-  cases refsEq : proof.filled.refs with
-  | nil => rfl
-  | cons ref _ =>
-      have inside : ref ∈ proof.filled.refs := by rw [refsEq]; exact List.mem_cons_self
-      obtain ⟨record, member, sameHole⟩ := List.mem_map.mp (filledResolved ref inside)
-      have rank := ranked ref inside
-      rw [← sameHole, Nat.zero_add] at rank
-      exact (Nat.lt_irrefl _ (Nat.lt_of_le_of_lt rank (ProofTree.countBelow_lt_length member))).elim
 
 def CompletedProof.answer [DecidableEq Variable] [FreshNames Variable]
     (proof : CompletedProof Variable Literal Symbol Certificate Snapshot) (name : Variable) :

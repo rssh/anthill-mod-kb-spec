@@ -160,7 +160,7 @@ freshening every template name is the command's responsibility.
 | `solve ob` | committed, suspensions woken | they run first, oldest first, each under a `woken` continuation; then the focus above |
 | `solve ob` | `unsupported` | `failed`, unsupported gap |
 | `solve ob` | `delay names` | suspend `ob`, focus `proved (deferred id ob)`; an invalid delay is a contract gap |
-| `proved t` | no continuation, nothing pending | finished: `success`, with a resume state |
+| `proved t` | no continuation, nothing pending | finished: `success` with `t`'s references filled by the deferred proofs, and a resume state |
 | `proved t` | no continuation, goals still delayed | `failed`, one `floundered` gap per residual item |
 | `proved t` | top frame has pending premises | frame records `t`, focus its next premise; the store is unchanged |
 | `proved t` | top frame has no pending premise | frame removed, focus `proved (node rule parent premises subproofs)` |
@@ -202,10 +202,9 @@ subproof per premise in order. Coherence (`ProofTree.Coherent`) states that each
 subproof proves its premise's obligation. Frames are partial nodes and are never
 exported. The one leaf that is not a rule application is a reference
 `deferred id obligation` to the separately recorded proof of a delayed
-obligation, so a successful run's tree is complete only together with its
-deferred proofs. `CompletedProof.filled` substitutes the records, and that
-filled tree is what a consumer reads and exports
-([delayed goals](machine-delay.md#proof-evidence-fill-at-the-end)).
+obligation. The success step substitutes the records, so a successful run's tree
+has no reference; the records kept as provenance may still reference later
+records ([delayed goals](machine-delay.md#proof-evidence-fill-at-the-end)).
 
 `RuleApp` names one `Derives` rule or an `extension` and carries the parameters
 that the conclusion and premises do not determine:
@@ -222,10 +221,10 @@ that the conclusion and premises do not determine:
 
 Discharged assumptions and rigid names are each premise's `Discharge`.
 `RuleApp.id` gives the rule identity alone. A `CompletedProof` holds the snapshot,
-the root obligation, the tree, the deferred proofs, and the final store; `answer`
-reads a root name through the bindings, and `CompletedProof.rules` lists the
-rules of the filled tree. Together these are what S08's Term encoding and
-checker need. Exporting a proof replays no search.
+the root obligation, the complete tree, the deferred proofs as provenance, and
+the final store; `answer` reads a root name through the bindings. Together these
+are what S08's Term encoding and checker need. Exporting a proof replays no
+search.
 
 ### Monotonic and snapshot-indexed evidence
 
@@ -245,13 +244,10 @@ evidence from two snapshots.
 `RuleApp.evidenceClass` classifies one node; `ProofTree.closedWorld` lists the
 closed-world evidence a tree retains, and `ProofTree.Monotonic` means there is none
 and no reference is left.
-A reference retains none itself: a delayed NAF goal keeps its certificate in its
-deferred proof. A tree with references is therefore never `Monotonic`, and a completed proof is
-classified through its filled tree (`CompletedProof.closedWorld`,
-`CompletedProof.Monotonic`). A successful run's filled tree has no reference, so
-it is monotonic exactly when it retains no closed-world evidence
-(`CompletedProof.Valid.monotonic_iff`); without deferred proofs the filled tree
-is the tree (`CompletedProof.filled_of_nil`).
+A reference retains none itself, and may stand for a proof that does, so a tree
+with references is never `Monotonic`. A successful run's tree has none: a delayed
+NAF goal's certificate is filled into it, and the tree is monotonic exactly when
+it retains no closed-world evidence (`CompletedProof.Valid.monotonic_iff`).
 An extension's class is the one it declares: `Derives.mono` covers only
 `Derives` rules, so S08 must prove that an extension declared monotonic
 survives growth. Lowered formulas carry no snapshot dependency: elaboration
@@ -261,7 +257,7 @@ reads only the signature naming.
 
 | Outcome | Meaning |
 | --- | --- |
-| `success proof resume` | A coherent tree for the root obligation with the deferred proofs its references stand for (`CompletedProof.filled` substitutes them), the final store with no goal still delayed, and a state from which search resumes for further answers |
+| `success proof resume` | A complete, coherent tree for the root obligation (delayed goals' proofs filled in, their records kept as provenance), the final store with no goal still delayed, and a state from which search resumes for further answers |
 | `exhausted` | Every alternative of this command strategy was tried, and no path was abandoned. Not complete failure (P0 needs `GroundSearch.Fails`, S07), non-derivability, or refutation |
 | `unknown gaps` | Some path was abandoned for lack of capability or a contract breach, or floundered with goals still delayed. No evidence either way |
 | `interrupted state` | The step budget ran out |
@@ -319,7 +315,7 @@ outcome is checked by `#guard`.
 | `p(1) → ∀x. p(x)` | Exhausted: the free name 1 is a declared parameter, so opening `∀x` does not reuse it |
 | `∀x. (p(x) → p(x))`, a command opening `∀x` with `x` itself | Success: a binder name of the obligation is a new name of the store |
 | `naf p`; `naf q ∨ p` under `p` | Unknown; success, then unknown on resume (the gap persists) |
-| `p ∧ naf q` under `p`, with a command producing a toy certificate | Success; the NAF node retains its certificate, read back from `CompletedProof.closedWorld` |
+| `p ∧ naf q` under `p`, with a command producing a toy certificate | Success; the NAF node retains its certificate, read back from `ProofTree.closedWorld` |
 | Small budget | Interrupted |
 | A command binding a rigid name, or opening a name free in the obligation | Contract gap, outcome unknown |
 | A command whose premise goal or discharged assumption names an undeclared name | Contract gap on the expanded obligation, outcome unknown |

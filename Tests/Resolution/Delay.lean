@@ -11,7 +11,7 @@ closes when its operand is not assumed; `s(t, u)` delays on both names while
 both are unbound and otherwise holds; `e(t, u)` binds `t := u`; `c(t)` is a
 test-driver clause `c(t) :- r(t), true` (S06 supplies clause selection). `#guard`
 evaluates each run; the generic theorems (`step_valid`, `run_success`,
-`Store.commit_wakes`, `CompletedProof.Valid.filled`, `run_not_exhausted`) hold
+`Store.commit_wakes`, `CompletedProof.Valid`, `run_not_exhausted`) hold
 for any command. -/
 
 inductive Sym where
@@ -142,10 +142,9 @@ def recordsAre (outcome : Run) (expected : List (Nat × T)) : Bool :=
   actual.length == expected.length &&
     (actual.zip expected).all fun (found, wanted) => found.1 == wanted.1 && same found.2 wanted.2
 
-/-- References in the tree as the run left it, and in the filled tree. -/
-def treeRefs (outcome : Run) : Option Nat := outcome.proof?.map (·.tree.refs.length)
-def filledRefs (outcome : Run) : Option Nat := outcome.proof?.map (·.filled.refs.length)
-def rulesOf (outcome : Run) : Option (List RuleId) := outcome.proof?.map (·.rules)
+/-- The rules of a completed proof's tree. The success step fills each reference
+with its deferred proof, so a woken goal's rules appear where it delayed. -/
+def rulesOf (outcome : Run) : Option (List RuleId) := outcome.proof?.map (·.tree.rules)
 
 def settled (outcome : Run) : Bool :=
   match outcome.proof? with
@@ -158,14 +157,12 @@ def gapReasons : Run → List GapReason
 
 /-! ### Wake on binding -/
 
--- r(X) delays (id 0); p(X) binds X := a and wakes it; r(a) holds. The tree
--- references the deferred proof; the filled tree has none.
+-- r(X) delays (id 0); p(X) binds X := a and wakes it; r(a) holds. Its proof is
+-- recorded under id 0 and filled into the tree at success, where it delayed.
 def wake := solve (query [X] [atom .p [k .a], atom .r [k .a]] (.conj (atom .r [.var X]) (atom .p [.var X])))
 #guard wake.kind = .success
 #guard answerIs wake X (k .a)
 #guard recordsAre wake [(0, atom .r [k .a])]
-#guard treeRefs wake = some 1
-#guard filledRefs wake = some 0
 #guard rulesOf wake = some [.conjIntro, .assumption, .assumption]
 #guard settled wake
 
@@ -187,7 +184,7 @@ def discardRecord := solve (query [X] [atom .p [k .a], atom .p [k .b], atom .r [
 #guard discardRecord.kind = .success
 #guard answerIs discardRecord X (k .b)
 #guard recordsAre discardRecord [(0, atom .r [k .b])]
-#guard filledRefs discardRecord = some 0
+#guard rulesOf discardRecord = some [.conjIntro, .assumption, .conjIntro, .assumption, .assumption]
 
 -- The woken r(a, Y) has two candidates: Y := b, then Y := c. q(b) fails after
 -- its proof was recorded; backtracking resumes the woken goal's own choice
@@ -197,7 +194,7 @@ def wokenAlternatives := solve (query [X, Y] [atom .p [k .a], atom .r [k .a, k .
 #guard wokenAlternatives.kind = .success
 #guard answerIs wokenAlternatives Y (k .c)
 #guard recordsAre wokenAlternatives [(0, atom .r [k .a, k .c])]
-#guard filledRefs wokenAlternatives = some 0
+#guard rulesOf wokenAlternatives = some [.conjIntro, .assumption, .conjIntro, .assumption, .assumption]
 #guard (resume wokenAlternatives).kind = .exhausted
 
 /-! ### Several wakeups -/
@@ -208,8 +205,7 @@ def twoWakeups := solve (query [X, Y] [atom .q [k .a, k .b], atom .r [k .a], ato
   (.conj (atom .r [.var X]) (.conj (atom .r [.var Y]) (atom .q [.var X, .var Y]))))
 #guard twoWakeups.kind = .success
 #guard recordsAre twoWakeups [(1, atom .r [k .b]), (0, atom .r [k .a])]
-#guard treeRefs twoWakeups = some 2
-#guard filledRefs twoWakeups = some 0
+#guard rulesOf twoWakeups = some [.conjIntro, .assumption, .conjIntro, .assumption, .assumption]
 
 -- A check delaying on [X, Y], then a goal binding X only: woken once, no stale
 -- attachment on Y, success without floundering, and Y stays unbound.
@@ -245,8 +241,8 @@ def waitingStore : Store Nat Nat Sym :=
 /-! ### Aliases, callers, and scopes -/
 
 -- e binds X := Y, which wakes r(X); it reads as r(Y) and delays again under id
--- 1. p(Y) binds Y := a and wakes it. Record 0 references record 1; the filled
--- tree has no reference.
+-- 1. p(Y) binds Y := a and wakes it. Record 0 references record 1, and filling
+-- follows the chain: r(a)'s assumption stands where r(X) delayed.
 def alias := solve (query [X, Y] [atom .p [k .a], atom .r [k .a]]
   (.conj (atom .r [.var X]) (.conj (atom .e [.var X, .var Y]) (atom .p [.var Y]))))
 #guard alias.kind = .success
@@ -255,7 +251,7 @@ def alias := solve (query [X, Y] [atom .p [k .a], atom .r [k .a]]
 #guard match alias.proof? with
   | some proof => (proof.deferred.find? (·.id == 0)).map (·.tree.refs.map Prod.fst) == some [1]
   | none => false
-#guard filledRefs alias = some 0
+#guard rulesOf alias = some [.conjIntro, .assumption, .conjIntro, .extension, .assumption]
 
 -- The callee c(X) completes with r(X) suspended; the caller's p(X) binds X := a
 -- after the callee returned and wakes r(a).
@@ -313,12 +309,12 @@ def discarded := solve (query [X] [] (.conj (atom .r [.var X]) (atom .p [.var X]
 /-! ### Evidence of delayed obligations -/
 
 -- naf r(X) delays; p(X) binds X := a and wakes it, and its NAF node keeps the
--- certificate in the deferred proof. The tree's reference retains none, so the
--- completed proof, read through its filled tree, is the one to classify.
+-- certificate in the deferred proof. The success step fills that proof into the
+-- tree, so the completed tree retains the certificate and is not monotonic.
 def delayedNaf := solve (query [X] [atom .p [k .a]] (.conj (.defaultNeg (atom .r [.var X])) (atom .p [.var X])))
 #guard delayedNaf.kind = .success
-#guard delayedNaf.proof?.map (·.tree.closedWorld.length) = some 0
-#guard delayedNaf.proof?.map (·.closedWorld.length) = some 1
+#guard delayedNaf.proof?.map (·.tree.closedWorld.length) = some 1
+#guard delayedNaf.proof?.map (fun proof => (proof.deferred.flatMap (·.tree.closedWorld)).length) = some 1
 #guard rulesOf delayedNaf = some [.conjIntro, .defaultNegIntro, .assumption]
 
 /-! ### Restrictions never flounder -/
@@ -364,32 +360,30 @@ example {store next : Store Nat Nat Sym} (valid : store.Scoped) (waiting : store
     (committed : store.commit obligation [] [] [] bindings = .committed next woken) :
     ((woken ++ next.wakeups).map Suspension.id).Nodup ∧ (woken.map Suspension.id).Pairwise (· > ·) ∧
       next.Waiting :=
-  let ⟨_, once, newestFirst, _, _, waits, _⟩ := Store.commit_wakes valid waiting committed
-  ⟨once, newestFirst, waits⟩
+  let ⟨_, once, _, _, waits, _⟩ := Store.commit_wakes valid waiting committed
+  ⟨once, (Store.commit_woken valid committed).2, waits⟩
 
--- Every success of any command proves the root with no goal still delayed, and
--- its filled tree proves the root coherently with no reference left.
+-- Every success of any command proves the root coherently with no goal still
+-- delayed and no reference left in its tree.
 example (command : Command Nat Nat Sym Unit) (fuel : Nat) (proof : CompletedProof Nat Nat Sym Unit Nat)
     (next : State Nat Nat Sym Unit Nat)
     (ran : run command fuel (query [X] [atom .p [k .a]] (atom .r [.var X])) = .success proof next) :
-    proof.store.wakeups = [] ∧ proof.filled.obligation = (query [X] [atom .p [k .a]] (atom .r [.var X])).root ∧
-      proof.filled.Coherent ∧ proof.filled.refs = [] :=
+    proof.store.wakeups = [] ∧ proof.tree.obligation = (query [X] [atom .p [k .a]] (atom .r [.var X])).root ∧
+      proof.tree.Coherent ∧ proof.tree.refs = [] :=
   let ⟨valid, _⟩ := run_success command fuel (State.init_valid _ _ _ _) ran
-  let ⟨proves, coherent, _, empty⟩ := valid.filled
-  ⟨valid.settled.1, proves, coherent, empty⟩
+  ⟨valid.settled.1, valid.proves, valid.coherent, valid.complete⟩
 
--- A reference that no record resolves keeps a proof from being monotonic.
-example (obligation : Obligation Nat Nat Sym) (store : Store Nat Nat Sym) :
-    ¬ (⟨0, obligation, .deferred 0 obligation, [], store⟩ : CompletedProof Nat Nat Sym Unit Nat).Monotonic :=
-  fun monotonic => by
-    have empty := monotonic.1
-    simp [CompletedProof.filled, ProofTree.fillAll, ProofTree.refs] at empty
+-- A tree with a reference is never monotonic: the reference may stand for a
+-- proof with closed-world evidence.
+example (obligation : Obligation Nat Nat Sym) : ¬ (ProofTree.deferred (Certificate := Unit) 0 obligation).Monotonic :=
+  fun monotonic => List.cons_ne_nil _ _ monotonic.1
 
--- A run's success is monotonic exactly when it retains no closed-world evidence.
+-- A run's success is monotonic exactly when its tree retains no closed-world
+-- evidence.
 example (command : Command Nat Nat Sym Unit) (fuel : Nat) (proof : CompletedProof Nat Nat Sym Unit Nat)
     (next : State Nat Nat Sym Unit Nat)
     (ran : run command fuel (query [X] [atom .p [k .a]] (atom .r [.var X])) = .success proof next) :
-    proof.Monotonic ↔ proof.closedWorld = [] :=
+    proof.tree.Monotonic ↔ proof.tree.closedWorld = [] :=
   (run_success command fuel (State.init_valid _ _ _ _) ran).1.monotonic_iff
 
 -- Once a branch floundered, the run never reports exhaustion.
