@@ -23,14 +23,23 @@ def Expansion.rigids (expansion : Expansion Variable Literal Symbol Certificate)
 /-- What a command answers for a focused obligation and the current store.
 `candidates []` is a miss for this path. `unsupported` means the command has no
 capability for this focus: the path is abandoned and recorded as a gap, and is
-never treated as failure of the goal. `delay names` means the obligation cannot
+never treated as failure of the goal. `incomplete alternatives` is both: the
+alternatives are tried as for `candidates`, and the focus is recorded as an
+`unsupported` gap for the candidates the command could not build, so the run
+never reports exhaustion. `delay names` means the obligation cannot
 proceed until one of `names` is bound: it is suspended and the enclosing frame
 continues as if it were proved. Every name must be a declared, unbound flexible
 name, and there must be one; otherwise the answer breaks the contract. -/
 inductive Response (Variable Literal Symbol Certificate : Type) where
   | candidates (alternatives : List (Expansion Variable Literal Symbol Certificate))
   | unsupported
+  | incomplete (alternatives : List (Expansion Variable Literal Symbol Certificate))
   | delay (names : List Variable)
+
+/-- The candidates a response offers: those of `candidates` and `incomplete`. -/
+def Response.alternatives : Response Variable Literal Symbol Certificate → List (Expansion Variable Literal Symbol Certificate)
+  | .candidates alternatives | .incomplete alternatives => alternatives
+  | .unsupported | .delay _ => []
 
 /-- A command reads the focused obligation and the shared store. Concrete
 commands (S06 onward) choose clauses, matches, and fresh names; the machine
@@ -628,6 +637,10 @@ def step (command : Command Variable Literal Symbol Certificate) (state : State 
       | .candidates (expansion :: rest) => .running (state.enter obligation expansion rest)
       | .unsupported =>
           .running { state with focus := .failed, gaps := ⟨.unsupported, obligation⟩ :: state.gaps }
+      | .incomplete [] =>
+          .running { state with focus := .failed, gaps := ⟨.unsupported, obligation⟩ :: state.gaps }
+      | .incomplete (expansion :: rest) =>
+          .running ({ state with gaps := ⟨.unsupported, obligation⟩ :: state.gaps }.enter obligation expansion rest)
       | .delay names =>
           if state.store.delayable names then
             .running
@@ -1126,6 +1139,10 @@ theorem step_valid (command : Command Variable Literal Symbol Certificate)
     · cases stepped; exact ⟨⟨branch.fail, valid.choices⟩, rfl⟩
     · cases stepped; exact ⟨State.enter_valid branch valid.choices, State.enter_root _ _ _ _⟩
     · cases stepped; exact ⟨⟨branch.fail, valid.choices⟩, rfl⟩
+    · cases stepped; exact ⟨⟨branch.fail, valid.choices⟩, rfl⟩
+    · cases stepped
+      exact ⟨State.enter_valid (state := { state with gaps := _ :: state.gaps }) branch valid.choices,
+        State.enter_root _ _ _ _⟩
     · split at stepped
       · rename_i delayable
         cases stepped
@@ -1379,6 +1396,12 @@ theorem step_gaps (command : Command Variable Literal Symbol Certificate)
     · cases stepped; exact ⟨[], rfl⟩
     · cases stepped; exact State.enter_gaps _ _ _ _
     · cases stepped; exact ⟨[_], rfl⟩
+    · cases stepped; exact ⟨[_], rfl⟩
+    · cases stepped
+      rename_i obligation _ _ expansion rest _
+      obtain ⟨added, addedEq⟩ :=
+        State.enter_gaps { state with gaps := ⟨.unsupported, obligation⟩ :: state.gaps } obligation expansion rest
+      exact ⟨added ++ [⟨.unsupported, obligation⟩], by rw [addedEq]; simp⟩
     · split at stepped
       · cases stepped; exact ⟨[], rfl⟩
       · cases stepped; exact ⟨[_], rfl⟩

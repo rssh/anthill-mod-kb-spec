@@ -5,8 +5,8 @@ existing `Term`, `ProofContext`, and `HornClause` representations. It defines on
 abstract machine for every profile: the state, its continuations and choice
 points, the shared answer store, the proof trees built by successful commands,
 and the outcomes of a run. It does not choose clauses, match terms, or decide
-when to stop. Concrete commands supply those choices ([S05 matching](machine-matching.md), S06 positive
-execution, S07 P0 evaluation); the machine checks their names and bindings and
+when to stop. Concrete commands supply those choices ([S05 matching](machine-matching.md),
+[S06 positive execution](machine-positive.md), S07 P0 evaluation); the machine checks their names and bindings and
 owns completion and rollback. S18 adds [delayed goals](machine-delay.md):
 suspensions in the store, woken continuations, deferred proofs filled at the
 end, and floundering.
@@ -105,6 +105,7 @@ A command maps the focused obligation and the store to a `Response`:
 | `candidates (e :: rest)` | OR alternatives. `e` is tried now; `rest` is saved with the current store, continuations, and deferred proofs |
 | `candidates []` | A miss on this path. The newest choice point resumes |
 | `unsupported` | No capability for this focus. The path is abandoned and recorded as a gap, never as failure |
+| `incomplete alternatives` | Both: the alternatives are tried as for `candidates`, and the focus is recorded as an unsupported gap for the candidates the command could not build (S06), so the run never reports exhaustion |
 | `delay names` | The obligation waits until one of `names`, declared unbound flexible names, is bound ([delayed goals](machine-delay.md)) |
 
 Each candidate (`Expansion`) fixes a rule application and its explicit
@@ -159,6 +160,7 @@ freshening every template name is the command's responsibility.
 | `solve ob` | committed, premises `p :: ps` | push frame, focus `solve (ob.premise p)` |
 | `solve ob` | committed, suspensions woken | they run first, oldest first, each under a `woken` continuation; then the focus above |
 | `solve ob` | `unsupported` | `failed`, unsupported gap |
+| `solve ob` | `incomplete alternatives` | unsupported gap, then as for `candidates alternatives` |
 | `solve ob` | `delay names` | suspend `ob`, focus `proved (deferred id ob)`; an invalid delay is a contract gap |
 | `proved t` | no continuation, nothing pending | finished: `success` with `t`'s references filled by the deferred proofs, and a resume state |
 | `proved t` | no continuation, goals still delayed | `failed`, one `floundered` gap per residual item |
@@ -338,9 +340,10 @@ hold for every command and need no trace.
   rebinding. S05's matcher (`Store.unify`) computes bindings the commit replays.
 - `Store.resolve` renames a binder on a capture hazard (S05); a hazard is never
   failure.
-- The test driver here is not the S05 matcher or the S06 command set. In
-  particular, it does not reconstruct `Derives` for answers. S05 supplies
-  `Expansion.SoundUnder` for that.
+- The test driver here is not the S05 matcher or the S06 command set, and does
+  not reconstruct `Derives` for answers. S05 supplies the per-node contracts
+  (`Expansion.SoundUnder`); S06 composes them along a run for every sound
+  command (`run_reconstructs`, [S06](machine-positive.md)).
 - The store has a slot for unresolved constraints and no solver; solver jobs
   and checked success evidence (S08) are not part of this state.
 - No termination, fairness, or completeness is claimed. `exhausted` and

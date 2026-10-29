@@ -3,9 +3,9 @@
 - id: WI-20261026-9CQKX-s06-implement-ordinary-clause
 - created: 2026-10-26T08:32:23Z
 
-- status: Open
-- status_agent: user
-- status_at: 2026-10-26T08:32:23Z
+- status: Delivered
+- status_agent: claude
+- status_at: 2026-10-29T18:26:40Z
 
 - acceptance: lake build
 

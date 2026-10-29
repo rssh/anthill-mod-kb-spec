@@ -185,8 +185,9 @@ resolve the goal before choosing the rule.
 | `forallElim binder body witness` (new) | `forallElim_soundUnder` | The goal reads as the body's instance; this instantiates local rules with fresh witnesses |
 | `clause head body fresh bindings` (new) | `clause_soundUnder` | The renamed head reads as the goal; the read renaming is the clause instance |
 
-These are per-node lemmas. Composing them along a whole successful run belongs to
-S06 and S16. That composition uses `Store.Refines` from each commit to the final
+These are per-node lemmas. [S06](machine-positive.md) composes them along a whole
+successful run (`run_reconstructs`); S16 composes that with elaboration and the
+declarative calculus. The composition uses `Store.Refines` from each commit to the final
 store, `Store.Refines.resolve_eq` for matched readings, and
 `Store.commit_fresh_resolved` for opened names. That lemma needs the name
 invariant at the commit, which `State.Valid` carries at that step. The final
@@ -228,7 +229,8 @@ freshened clauses, each matched against the prepared store.
   operation calls, or convert `ho_apply`: those report `unsupported`.
   Higher-order patterns remain with the Miller certificates.
 - No completeness: `mismatch` and `exhausted` carry no negative evidence.
-- The test driver is not S06's command set. Whole-run reconstruction is S06/S16.
+- The test driver is not S06's command set ([S06](machine-positive.md) supplies it and
+  whole-run reconstruction).
 - Delayed goals (S18) attach to names in the same store. The matcher reads and
   commits there and does not see deferred proofs; the commit that replays a
   match wakes the suspensions waiting on a name it bound (`Store.commit_unify`).

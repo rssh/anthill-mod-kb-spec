@@ -36,3 +36,9 @@ Acceptance:
 
 Validation: lake build and focused Lean tests/examples appropriate to the changed definitions and proofs. Documentation-only work is checked against its stated deliverables; a build alone does not establish them.
 Design references: docs/resolution-state-machine.md and docs/resolution-implementation-plan.md.
+## Changes
+
+### 2026-10-29T22:48:34Z — feedback — user
+
+From S06 (docs/machine-positive.md): a static profile under which the positive command never answers incomplete or unsupported, for Machine.progress / Admission.ready_no_missing_capability. incomplete arises only for atom and falsity goals (compositeResponse never matches). Conditions: (1) every atom argument in program, context, and query is ordinary (no binders, calls, or ho_apply), so Store.unify_supported applies; needs an invariant that readings stay ordinary (bindings come from unify on ordinary readings; Ordinary.instantiate exists); (2) violated matches excluded by an invariant that every rigid name of an obligation is in its scope's rigids (the commit checks it for premises via Store.Admits; Branch.Valid does not yet carry it); (3) no ho_apply in atom-head positions, or ho_apply only against ho_apply (hoMixed); (4) every assumption, from the query context or a premise of an implication goal in the query or a clause body, is a handled shape: an atom, false, forall-x. H, or forall-x. (B -> H) with H an atom or false, and no bare variable in a goal or premise position (mayConclude). Adding: no goal is an equality, NAF, call, rigid name, or literal, excludes unsupported. Floundering is not excluded by syntax; it needs a mode analysis, or groundness as in P0. P0 meets the conditions trivially.
+

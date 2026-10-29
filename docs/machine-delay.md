@@ -33,8 +33,8 @@ enumerates a recursive type forever before the body can prune it. A primitive
 type's `fill` is its waiting check, so it delays rather than enumerates.
 
 The binding a delayed goal waits for can come from any later goal, including
-goals of the caller after the clause returns. Reordering a clause body (the S06
-fallback) therefore does not cover it. The machine needs suspension across the
+goals of the caller after the clause returns. Reordering a clause body therefore
+does not cover it. The machine needs suspension across the
 whole remaining resolvent, as in Prolog's `freeze` and λProlog's suspended
 goals.
 
@@ -193,9 +193,11 @@ when it retains no closed-world evidence (`CompletedProof.Valid.monotonic_iff`).
 
 ## Effects on later tickets
 
-- **S06**: a range guard on an unbound variable delays instead of enumerating
-  ahead of the body. The generated `fill` or member goal is appended after the
-  body. Reconstruction reads `CompletedProof.tree`, already complete.
+- **S06** ([implemented](machine-positive.md)): a range guard on an unbound
+  variable delays instead of enumerating ahead of the body (`positive_guard`).
+  The generated `fill` or member goal is appended after the body and enumerates
+  by ordinary candidates. Reconstruction reads `CompletedProof.tree`, already
+  complete (`run_reconstructs`).
 - **S07**: P0 is ground and never delays.
 - **S08**: machine output has no reference, so the completed tree is what it
   encodes, and the records need no encoding. A supplied tree (manual, external,
@@ -209,8 +211,9 @@ when it retains no closed-world evidence (`CompletedProof.Valid.monotonic_iff`).
 - Commands decide when to delay (S06 for guards, S10 for NAF); the machine
   checks the names and owns waking, recording, and floundering.
 - No constraint solver: S18 adds the slot only.
-- The test driver is not S06's command set. Rebuilding `Derives` from a completed
-  tree read through the final answers is S06/S16.
+- The test driver is not S06's command set. S06 rebuilds `Derives` from a
+  completed tree read through the final answers ([S06](machine-positive.md));
+  S16 composes it through elaboration.
 - No fairness or termination is claimed: woken goals run oldest first, before
   the waking candidate's continuation.
 

@@ -302,6 +302,37 @@ theorem impElim_soundUnder {premise goal : Formula Variable Literal Symbol} :
     simp only [Store.resolve_imp, List.map_nil, List.nil_append] at rule argument
     exact .impElim rule argument
 
+/-- `impElim premise conclusion` for a goal that only reads as `conclusion` (S06):
+a local rule's instance `premise → conclusion` is the first premise as built,
+and the match makes the goal read as its conclusion. -/
+theorem impElim_soundUnder_matched {premise conclusion goal : Formula Variable Literal Symbol}
+    (matched : store.resolve goal = store.resolve conclusion) :
+    (impElim (Certificate := Certificate) premise conclusion).SoundUnder hoApplySymbol kb naf store ⟨scope, goal⟩ :=
+  fun proofs => by
+    have rule := read_premise.mp (proofs { goal := .imp premise conclusion } (by simp [impElim]))
+    have argument := read_premise.mp (proofs { goal := premise } (by simp [impElim]))
+    simp only [Store.resolve_imp, List.map_nil, List.nil_append] at rule argument
+    simp only [ReadDerives, Obligation.context, matched]
+    exact .impElim rule argument
+
+/-- Use a denial clause `⊥ :- body` for a goal reading as falsity (S06): its
+template names renamed to fresh flexible names, its renamed body the one premise. -/
+def goalClause (body : List (Term Variable Literal Symbol)) (fresh : List (Variable × Variable)) :
+    Expansion Variable Literal Symbol Certificate :=
+  { rule := .goalClause (.goal body) (fresh.map fun pair => (pair.1, .var pair.2))
+    flexibles := fresh.map Prod.snd
+    premises := [{ goal := (Term.conjunction body).instantiate (Substitution.rename fresh) }] }
+
+theorem goalClause_soundUnder {goal : Formula Variable Literal Symbol} {body : List (Term Variable Literal Symbol)}
+    {fresh : List (Variable × Variable)} (member : HornClause.goal body ∈ kb) (read : store.resolve goal = .falsity) :
+    (goalClause (Certificate := Certificate) body fresh).SoundUnder hoApplySymbol kb naf store ⟨scope, goal⟩ :=
+  fun proofs => by
+    have premise := read_premise.mp
+      (proofs { goal := (Term.conjunction body).instantiate (Substitution.rename fresh) } (by simp [goalClause]))
+    simp only [List.map_nil, List.nil_append] at premise
+    simp only [ReadDerives, Obligation.context, read]
+    exact .goalClause member (store.resolve_substitutes ((Term.conjunction body).instantiate_substitutes _)) premise
+
 theorem falsityElim_soundUnder {goal : Formula Variable Literal Symbol} :
     (falsityElim (Certificate := Certificate)).SoundUnder hoApplySymbol kb naf store ⟨scope, goal⟩ :=
   fun proofs => by
