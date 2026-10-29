@@ -78,7 +78,8 @@ example {kb : LogicalKb Nat Nat Sym} {opened : T} (computed : localRule.instanti
 
 /-- Flexible 0 and 1 may take the rigid 5; flexible 2 depends on nothing. -/
 def store₀ : Store Nat Nat Sym :=
-  ⟨[(0, .flexible [5]), (1, .flexible [5]), (2, .flexible []), (5, .rigid), (6, .rigid)], []⟩
+  { names := [(0, .flexible [5]), (1, .flexible [5]), (2, .flexible []), (5, .rigid), (6, .rigid)], bindings := []
+    wakeups := [], constraints := [] }
 def scope₀ : Scope Nat Nat Sym := ⟨[5, 6], []⟩
 
 def outcome : Unification Nat Nat Sym → String
@@ -150,7 +151,7 @@ def after : Unification Nat Nat Sym → Option (Store Nat Nat Sym)
 #guard match unify (atom .p [.var 0, k .b]) (atom .p [k .a, .var 1]) with
   | .unified final bindings =>
       match store₀.bindAll scope₀ bindings with
-      | .committed replayed =>
+      | .bound replayed =>
           same (replayed.resolve (atom .p [.var 0, .var 1])) (final.resolve (atom .p [.var 0, .var 1]))
       | _ => false
   | _ => false
@@ -218,7 +219,7 @@ def resume (program : Program) : Outcome Nat Nat Sym Unit Nat → Outcome Nat Na
   | other => other
 
 def rulesOf (outcome : Outcome Nat Nat Sym Unit Nat) : Option (List RuleId) :=
-  outcome.proof?.map (·.tree.rules)
+  outcome.proof?.map (·.rules)
 
 def answerIs (outcome : Outcome Nat Nat Sym Unit Nat) (name : Nat) (expected : T) : Bool :=
   match outcome.proof? with
@@ -230,6 +231,7 @@ mutual
 def clauseUses : ProofTree Nat Nat Sym Unit → List (HornClause Nat Nat Sym × List (Nat × T))
   | .node (.clause clause instantiation) _ _ subproofs => (clause, instantiation) :: clauseUsesOf subproofs
   | .node _ _ _ subproofs => clauseUsesOf subproofs
+  | .deferred _ _ => []
 
 def clauseUsesOf : List (ProofTree Nat Nat Sym Unit) → List (HornClause Nat Nat Sym × List (Nat × T))
   | [] => []
@@ -299,7 +301,7 @@ def clauseRollback := solve rProgram
 -- The proof keeps only the second clause; its renaming reads as b.
 #guard match clauseRollback.proof? with
   | some proof =>
-      match clauseUses proof.tree with
+      match clauseUses proof.filled with
       | [(.definite _ [.app .t _], [(50, fresh)])] => same (proof.store.resolve fresh) (k .b)
       | _ => false
   | none => false
@@ -457,7 +459,8 @@ example {kb : LogicalKb Nat Nat Sym} (member : HornClause.definite ruleHead rule
 -- any later scoped store.
 example {store next later : Store Nat Nat Sym} (valid : store.Scoped) {obligation : Obligation Nat Nat Sym}
     {flexibles rigids : List Nat} {premises : List (Premise Nat Nat Sym)} {bindings : List (Nat × T)}
-    (committed : store.commit obligation flexibles rigids premises bindings = .committed next)
+    {woken : List (Suspension Nat Nat Sym)}
+    (committed : store.commit obligation flexibles rigids premises bindings = .committed next woken)
     (refines : next.Refines later) (laterScoped : later.Scoped) {opened : Nat} (member : opened ∈ rigids)
     {name : Nat} {dependencies : List Nat} (existing : store.info? name = some (.flexible dependencies)) :
     opened ∉ (later.resolve (.var name)).freeVars :=
@@ -468,8 +471,9 @@ example {store next later : Store Nat Nat Sym} (valid : store.Scoped) {obligatio
 -- for the read existential in every later scoped store.
 example {store next later : Store Nat Nat Sym} (valid : store.Scoped) {scope : Scope Nat Nat Sym}
     {goal body : T} {binder eigen : Nat} (declared : (⟨scope, goal⟩ : Obligation Nat Nat Sym).Declared store)
+    {woken : List (Suspension Nat Nat Sym)}
     (committed : store.commit ⟨scope, goal⟩ [] [eigen]
-      (Expansion.forallIntro (Certificate := Unit) binder body eigen).premises [] = .committed next)
+      (Expansion.forallIntro (Certificate := Unit) binder body eigen).premises [] = .committed next woken)
     (refines : next.Refines later) (laterScoped : later.Scoped)
     (read : later.resolve goal = later.resolve (.forallVar binder body)) {kb : LogicalKb Nat Nat Sym} :
     (Expansion.forallIntro (Certificate := Unit) binder body eigen).SoundUnder Sym.ha kb NafFailure.disabled
@@ -479,8 +483,9 @@ example {store next later : Store Nat Nat Sym} (valid : store.Scoped) {scope : S
 
 example {store next later : Store Nat Nat Sym} (valid : store.Scoped) {scope : Scope Nat Nat Sym}
     {goal body : T} {binder eigen : Nat} (declared : (⟨scope, goal⟩ : Obligation Nat Nat Sym).Declared store)
+    {woken : List (Suspension Nat Nat Sym)}
     (committed : store.commit ⟨scope, goal⟩ [] [eigen]
-      (Expansion.existsElim (Certificate := Unit) binder body eigen goal).premises [] = .committed next)
+      (Expansion.existsElim (Certificate := Unit) binder body eigen goal).premises [] = .committed next woken)
     (refines : next.Refines later) (laterScoped : later.Scoped) {kb : LogicalKb Nat Nat Sym} :
     (Expansion.existsElim (Certificate := Unit) binder body eigen goal).SoundUnder Sym.ha kb NafFailure.disabled
       later ⟨scope, goal⟩ :=

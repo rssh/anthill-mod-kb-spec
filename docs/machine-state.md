@@ -7,22 +7,25 @@ points, the shared answer store, the proof trees built by successful commands,
 and the outcomes of a run. It does not choose clauses, match terms, or decide
 when to stop. Concrete commands supply those choices ([S05 matching](machine-matching.md), S06 positive
 execution, S07 P0 evaluation); the machine checks their names and bindings and
-owns completion and rollback.
+owns completion and rollback. S18 adds [delayed goals](machine-delay.md):
+suspensions in the store, woken continuations, deferred proofs filled at the
+end, and floundering.
 
 | Module | Contents |
 | --- | --- |
-| [Store](../AnthillModKbSpec/Resolution/Machine/Store.lean) | Rigid and flexible names with dependencies, triangular answer bindings, scopes and obligations, binding and commit checks, the `Scoped` invariant, declared names (`Obligation.Declared`) |
-| [Evidence](../AnthillModKbSpec/Resolution/Machine/Evidence.lean) | Rule identities and parameters, proof trees, scope coherence, completed proofs, evidence classes |
-| [State](../AnthillModKbSpec/Resolution/Machine/State.lean) | Candidates, frames, choice points, gaps, `step`, `run`, the machine invariant and its theorems |
+| [Store](../AnthillModKbSpec/Resolution/Machine/Store.lean) | Rigid and flexible names with dependencies, triangular answer bindings, scopes and obligations, binding and commit checks, the `Scoped` invariant, declared names (`Obligation.Declared`), suspensions and constraints, waking (S18) |
+| [Evidence](../AnthillModKbSpec/Resolution/Machine/Evidence.lean) | Rule identities and parameters, proof trees with deferred references, scope coherence, deferred proofs and filling, completed proofs, evidence classes |
+| [State](../AnthillModKbSpec/Resolution/Machine/State.lean) | Candidates, frames and woken continuations, choice points, gaps, `step`, `run`, the branch invariant and its theorems |
 | [Commands](../AnthillModKbSpec/Resolution/Machine/Commands.lean) | Named command contracts for the logical rules and their `Derives` completion lemmas |
 | [Monotonicity](../AnthillModKbSpec/Foundation/Monotonicity.lean) | `Derives.mono`: KB growth preserves derivations whose NAF evidence transfers |
 
 ## State
 
 ```text
-State = snapshot, root obligation, store, focus, frames, choices, gaps
+State = snapshot, root obligation, store, focus, frames, choices, gaps, deferred, nextHole
 Obligation = Scope; goal          Scope = rigid names, assumptions
 Focus = solve(obligation) | proved(tree) | failed
+Continuation = frame(Frame) | woken(id, obligation, next focus)
 ```
 
 | Component | Meaning |
@@ -32,9 +35,12 @@ Focus = solve(obligation) | proved(tree) | failed
 | `Premise`, `Discharge` | A premise goal and what it adds to the parent scope: assumptions and rigid names discharged at the parent's node |
 | `Store.names` | Every declared name: rigid (the query's parameters, eigenvariables, opened existential witnesses) or flexible (answer metavariables) with its dependencies |
 | `Store.bindings` | Triangular, newest first. Each right-hand side was resolved against the older bindings when committed |
+| `Store.wakeups`, `Store.constraints` | Delayed goals and unresolved constraints attached to the names they concern; restored with the store ([delayed goals](machine-delay.md)) |
 | `Frame` | A partially completed rule application: parent obligation, rule, proved premises with their subproofs in order, the current premise, pending premises. This is the AND continuation |
-| `ChoicePoint` | Remaining candidates for an obligation, with the store and frames to restore. This is the OR continuation |
+| `frames` | The success continuation: rule frames and woken entries (`Continuation.woken id obligation next`: record the woken goal's proof under `id`, then resume `next`) |
+| `ChoicePoint` | Remaining candidates for an obligation, with the store, continuations, and deferred proofs to restore. This is the OR continuation |
 | `gaps` | Paths abandoned without evidence. Not restored on backtracking |
+| `deferred`, `nextHole` | Proofs of woken goals, restored on backtracking; the id counter, never restored |
 
 A premise's obligation is computed from its parent's scope alone
 (`Obligation.premise`): `Scope.enter` prepends the premise's assumptions and
@@ -49,16 +55,20 @@ parameters, and all other free names as those rigid parameters.
 Every free name of every committed obligation is declared in the store it is
 read through (`Obligation.Declared`: `store.info? name ≠ none` for the free
 names of the goal and the assumptions). This covers the focus, every frame's
-parent, premises, and completed subproofs (`Frame.Declared`), and every choice
-point's obligation and frames under its saved store. Bound names are not
+parent, premises, and completed subproofs (`Frame.Declared`), every woken entry
+and the focus it resumes (`Continuation.Declared`), every suspended obligation
+and constraint the store holds (`Store.Declared`), every deferred proof, and
+every choice point's obligation, continuations, and deferred proofs under its
+saved store. Bound names are not
 constrained. Neither are the parameters a rule application records (witness
 terms, clause instantiations, templates): the commit does not see them, and
 S08's checker validates them.
 
 `State.init` establishes the invariant, and the commit enforces it for every
 premise (below). Commits only add declarations, so it survives each commit
-(`Store.Refines.declared`). Rollback restores a saved store together with the
-frames declared under it.
+(`Store.Refines.declared`). A delay suspends the focus, already declared.
+Rollback restores a saved store together with the continuations and deferred
+proofs declared under it.
 
 A name the store has not declared is therefore fresh for every obligation the
 store reads (`Obligation.Declared.fresh`). Store freshness replaces S04's check
@@ -92,9 +102,10 @@ A command maps the focused obligation and the store to a `Response`:
 
 | Response | Meaning |
 | --- | --- |
-| `candidates (e :: rest)` | OR alternatives. `e` is tried now; `rest` is saved with the current store and frames |
+| `candidates (e :: rest)` | OR alternatives. `e` is tried now; `rest` is saved with the current store, continuations, and deferred proofs |
 | `candidates []` | A miss on this path. The newest choice point resumes |
 | `unsupported` | No capability for this focus. The path is abandoned and recorded as a gap, never as failure |
+| `delay names` | The obligation waits until one of `names`, declared unbound flexible names, is bound ([delayed goals](machine-delay.md)) |
 
 Each candidate (`Expansion`) fixes a rule application and its explicit
 parameters, the fresh flexible names it introduces, the answer bindings it
@@ -104,7 +115,9 @@ commits, and its premises. All premises must be proved; they are an AND list.
 
 `Store.commit` checks the candidate's names, declares its flexible names
 depending on the obligation's rigid names, declares its premises' rigid names,
-then binds each proposed answer.
+then binds each proposed answer (`Store.bindAll`, returning `Bound`). Once all
+are bound, it wakes the suspensions waiting on a name now bound: it returns
+them and removes them from the store (`Commit.committed store woken`).
 
 | Check | Failure |
 | --- | --- |
@@ -144,11 +157,15 @@ freshening every template name is the command's responsibility.
 | `solve ob` | commit `violated` | `failed`, contract gap, `rest` saved |
 | `solve ob` | committed, `e` has no premises | `proved (node e.rule ob [] [])` |
 | `solve ob` | committed, premises `p :: ps` | push frame, focus `solve (ob.premise p)` |
+| `solve ob` | committed, suspensions woken | they run first, oldest first, each under a `woken` continuation; then the focus above |
 | `solve ob` | `unsupported` | `failed`, unsupported gap |
-| `proved t` | no frames | finished: `success`, with a resume state |
+| `solve ob` | `delay names` | suspend `ob`, focus `proved (deferred id ob)`; an invalid delay is a contract gap |
+| `proved t` | no continuation, nothing pending | finished: `success`, with a resume state |
+| `proved t` | no continuation, goals still delayed | `failed`, one `floundered` gap per residual item |
 | `proved t` | top frame has pending premises | frame records `t`, focus its next premise; the store is unchanged |
 | `proved t` | top frame has no pending premise | frame removed, focus `proved (node rule parent premises subproofs)` |
-| `failed` | a choice point with alternatives | restore its store and frames, try the next alternative |
+| `proved t` | top entry `woken id ob next` | record `(id, ob, t)` as a deferred proof, focus `next` |
+| `failed` | a choice point with alternatives | restore its store, continuations, and deferred proofs, try the next alternative |
 | `failed` | no choice point | finished: `exhausted` if there are no gaps, otherwise `unknown gaps` |
 
 `run` takes a step budget; running out of it is `interrupted`.
@@ -157,15 +174,15 @@ freshening every template name is the command's responsibility.
 
 | Property | Theorem |
 | --- | --- |
-| An AND parent completes exactly once, after all its premises: `step` passes each returning subproof to `receive`; fewer subproofs leave the frame waiting, exactly one per premise completes it, more are refused | `step_waiting`, `step_complete`, `Frame.feed_partial`, `Frame.feed_exact`, `Frame.feed_overfull` |
-| Every transition keeps every frame, focus, and choice point linked to the obligation it continues, every store scoped, and every free name of every committed obligation declared in its store, including after rollback to a saved store, whatever the command answers | `State.init_valid`, `step_valid`, `Store.commit_declared` |
-| A successful run proves the root obligation, each subproof proves exactly its premise under the parent scope extended only by that premise, the final answers are scoped, and every obligation of the tree names only names the final store declares | `run_success`, `ProofTree.CoherentPremises.subproof_context`, `ProofTree.Declared` |
+| An AND parent completes exactly once, after all its premises: `step` passes each subproof returning to a frame to `receive`; fewer subproofs leave the frame waiting, exactly one per premise completes it, more are refused | `step_waiting`, `step_complete`, `Frame.feed_partial`, `Frame.feed_exact`, `Frame.feed_overfull` |
+| Every transition keeps every branch valid (`Branch.Valid`, for the state and each choice point): every continuation, focus, and choice point linked to the obligation it continues, every store scoped, and every free name of every committed obligation, suspension, and deferred proof declared in its store, including after rollback to a saved store, whatever the command answers | `State.init_valid`, `step_valid`, `Store.commit_declared` |
+| A successful run proves the root obligation, each subproof proves exactly its premise under the parent scope extended only by that premise, the final answers are scoped, every obligation of the tree names only names the final store declares, and no goal is still delayed | `run_success` (`CompletedProof.Valid`), `ProofTree.CoherentPremises.subproof_context`, `ProofTree.Declared` |
 | AND siblings share answers in sequence: a sibling starts from the store the previous one left, commits only add the candidate's bindings, and a bound answer is never rebound | `step_proved_store`, `Store.commit_extends`, `Store.bind_bound` |
-| OR alternatives start from the saved store: bindings of a failed alternative are discarded | `step_backtrack`, `State.enter_store` |
+| OR alternatives start from the saved store: bindings, suspensions, and deferred proofs of a failed alternative are discarded | `step_backtrack`, `State.enter_store` |
 | Opened names are new to the store, which by the name invariant gives the freshness `Derives` checks; for read obligations, `Store.commit_fresh_resolved` gives it in every later store | `Store.commit_fresh`, `Obligation.Declared.fresh`, `Store.commit_fresh_resolved` |
 | `Store.Scoped`: every answer mentions only rigid names among its name's dependencies, and flexible names whose dependencies are among them | `Store.commit_scoped`, `Store.Scoped.answer_rigid` |
 | A rigid name a commit opens is never a dependency of a flexible name, old or new, so it never enters an older name's answer | `Store.commit_no_escape`, `Store.commit_independent`, `Store.bind_respects_scope` |
-| Only `success` carries a proof; exhaustion is reported only when no state of the run recorded a gap | `Outcome.proof?_eq_some`, `run_exhausted` |
+| Only `success` carries a proof; exhaustion is reported only when no state of the run recorded a gap, so a floundered run is never exhausted | `Outcome.proof?_eq_some`, `run_exhausted`, `run_not_exhausted` |
 | Resolution by the committed bindings is a chain of capture-avoiding substitutions, renaming a binder on a capture hazard ([S05](machine-matching.md)) | `Store.resolve_sound` |
 
 Local assumptions cannot escape because no transition copies a child's scope
@@ -182,8 +199,13 @@ fully resolved answers (`Store.Scoped.resolve_answer`,
 A `ProofTree` node records its rule application (`RuleApp`), the obligation it
 proves (scope, context, and conclusion), the premises the rule required, and one
 subproof per premise in order. Coherence (`ProofTree.Coherent`) states that each
-subproof proves its premise's obligation. There is no hole constructor; frames
-are the only partial nodes and are never exported.
+subproof proves its premise's obligation. Frames are partial nodes and are never
+exported. The one leaf that is not a rule application is a reference
+`deferred id obligation` to the separately recorded proof of a delayed
+obligation, so a successful run's tree is complete only together with its
+deferred proofs. `CompletedProof.filled` substitutes the records, and that
+filled tree is what a consumer reads and exports
+([delayed goals](machine-delay.md#proof-evidence-fill-at-the-end)).
 
 `RuleApp` names one `Derives` rule or an `extension` and carries the parameters
 that the conclusion and premises do not determine:
@@ -200,9 +222,10 @@ that the conclusion and premises do not determine:
 
 Discharged assumptions and rigid names are each premise's `Discharge`.
 `RuleApp.id` gives the rule identity alone. A `CompletedProof` holds the snapshot,
-the root obligation, the tree, and the final store; `answer` reads a root name
-through the bindings. Together these are what S08's Term encoding and checker
-need. Exporting a proof replays no search.
+the root obligation, the tree, the deferred proofs, and the final store; `answer`
+reads a root name through the bindings, and `CompletedProof.rules` lists the
+rules of the filled tree. Together these are what S08's Term encoding and
+checker need. Exporting a proof replays no search.
 
 ### Monotonic and snapshot-indexed evidence
 
@@ -220,7 +243,15 @@ evidence from two snapshots.
 | Snapshot-indexed | `defaultNegIntro`; extensions using closed-world evidence: complete failure, finite absence, enumeration | Valid only for the run's snapshot. `GroundSearch.failureEvidence` names its exact KB and context (`groundFailure_exact`, `groundFailure_stale`) |
 
 `RuleApp.evidenceClass` classifies one node; `ProofTree.closedWorld` lists the
-closed-world evidence a tree retains, and `ProofTree.Monotonic` means there is none.
+closed-world evidence a tree retains, and `ProofTree.Monotonic` means there is none
+and no reference is left.
+A reference retains none itself: a delayed NAF goal keeps its certificate in its
+deferred proof. A tree with references is therefore never `Monotonic`, and a completed proof is
+classified through its filled tree (`CompletedProof.closedWorld`,
+`CompletedProof.Monotonic`). A successful run's filled tree has no reference, so
+it is monotonic exactly when it retains no closed-world evidence
+(`CompletedProof.Valid.monotonic_iff`); without deferred proofs the filled tree
+is the tree (`CompletedProof.filled_of_nil`).
 An extension's class is the one it declares: `Derives.mono` covers only
 `Derives` rules, so S08 must prove that an extension declared monotonic
 survives growth. Lowered formulas carry no snapshot dependency: elaboration
@@ -230,9 +261,9 @@ reads only the signature naming.
 
 | Outcome | Meaning |
 | --- | --- |
-| `success proof resume` | A coherent tree for the root obligation, the final store, and a state from which search resumes for further answers |
+| `success proof resume` | A coherent tree for the root obligation with the deferred proofs its references stand for (`CompletedProof.filled` substitutes them), the final store with no goal still delayed, and a state from which search resumes for further answers |
 | `exhausted` | Every alternative of this command strategy was tried, and no path was abandoned. Not complete failure (P0 needs `GroundSearch.Fails`, S07), non-derivability, or refutation |
-| `unknown gaps` | Some path was abandoned for lack of capability or a contract breach. No evidence either way |
+| `unknown gaps` | Some path was abandoned for lack of capability or a contract breach, or floundered with goals still delayed. No evidence either way |
 | `interrupted state` | The step budget ran out |
 
 ## Named command contracts
@@ -288,7 +319,7 @@ outcome is checked by `#guard`.
 | `p(1) → ∀x. p(x)` | Exhausted: the free name 1 is a declared parameter, so opening `∀x` does not reuse it |
 | `∀x. (p(x) → p(x))`, a command opening `∀x` with `x` itself | Success: a binder name of the obligation is a new name of the store |
 | `naf p`; `naf q ∨ p` under `p` | Unknown; success, then unknown on resume (the gap persists) |
-| `p ∧ naf q` under `p`, with a command producing a toy certificate | Success; the NAF node retains its certificate, read back from `ProofTree.closedWorld` |
+| `p ∧ naf q` under `p`, with a command producing a toy certificate | Success; the NAF node retains its certificate, read back from `CompletedProof.closedWorld` |
 | Small budget | Interrupted |
 | A command binding a rigid name, or opening a name free in the obligation | Contract gap, outcome unknown |
 | A command whose premise goal or discharged assumption names an undeclared name | Contract gap on the expanded obligation, outcome unknown |
@@ -314,10 +345,10 @@ hold for every command and need no trace.
 - The test driver here is not the S05 matcher or the S06 command set. In
   particular, it does not reconstruct `Derives` for answers. S05 supplies
   `Expansion.SoundUnder` for that.
-- Residual constraints, solver jobs, and checked success evidence (S08) are not
-  part of this state.
+- The store has a slot for unresolved constraints and no solver; solver jobs
+  and checked success evidence (S08) are not part of this state.
 - No termination, fairness, or completeness is claimed. `exhausted` and
   `unknown` carry no negative evidence.
-- There is no delay yet: goal order is fixed by each candidate's premise order.
-  Suspension, waking, and floundering are designed in
-  [delayed goals](machine-delay.md) for S18.
+- Goal order is fixed by each candidate's premise order, except that woken
+  goals run before the waking candidate's continuation
+  ([delayed goals](machine-delay.md)).

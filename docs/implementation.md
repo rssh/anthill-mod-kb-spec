@@ -33,7 +33,10 @@ alpha-renaming, clause freshening that keeps captured parameters, reading of
 pending goals through committed answers, and a matcher that separates a
 mismatch from a capability the profile does not admit. S19 makes
 [declared free names](machine-state.md#declared-names) a machine invariant, so
-fresh names need only be new to the store.
+fresh names need only be new to the store. [S18 delayed goals](machine-delay.md)
+suspend an obligation in the store until a name it waits on is bound, wake it
+exactly once at the binding commit, record its proof separately and fill the
+references at the end, and flounder as a gap when it is still delayed.
 
 ## Resolution steps and their justification
 

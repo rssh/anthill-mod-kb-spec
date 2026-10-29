@@ -280,9 +280,16 @@ structure Store.Refines (store later : Store Variable Literal Symbol) : Prop whe
     ∃ narrowed, later.info? name = some (.flexible narrowed) ∧ ∀ rigid ∈ narrowed, rigid ∈ dependencies
   bindings : ∃ added, later.bindings = added ++ store.bindings
 
-theorem Store.Refines.refl (store : Store Variable Literal Symbol) : store.Refines store :=
-  ⟨fun _ rigid => rigid, fun _ dependencies flexible => ⟨dependencies, flexible, fun _ member => member⟩,
-    ⟨[], rfl⟩⟩
+/-- A store with the same names and bindings refines it, whatever suspensions
+and constraints either holds. -/
+theorem Store.Refines.of_same {store later : Store Variable Literal Symbol} (names : later.names = store.names)
+    (bindings : later.bindings = store.bindings) : store.Refines later := by
+  have info : ∀ name, later.info? name = store.info? name := fun name => by simp only [Store.info?, names]
+  exact ⟨fun name rigid => (info name).trans rigid,
+    fun name dependencies flexible => ⟨dependencies, (info name).trans flexible, fun _ member => member⟩,
+    ⟨[], by rw [bindings]; rfl⟩⟩
+
+theorem Store.Refines.refl (store : Store Variable Literal Symbol) : store.Refines store := .of_same rfl rfl
 
 theorem Store.Refines.trans {first second third : Store Variable Literal Symbol}
     (earlier : first.Refines second) (later : second.Refines third) : first.Refines third := by
@@ -304,7 +311,7 @@ theorem Store.Refines.resolve_eq [FreshNames Variable] {store later : Store Vari
 
 theorem Store.bind_refines {store next : Store Variable Literal Symbol} {scope : Scope Variable Literal Symbol}
     {name : Variable} {value : Term Variable Literal Symbol}
-    (committed : store.bind scope name value = .committed next) : store.Refines next := by
+    (committed : store.bind scope name value = .bound next) : store.Refines next := by
   refine ⟨fun other rigid => ?_, fun other dependencies flexible => Store.bind_flexible committed flexible, ?_⟩
   · obtain ⟨dependencies, _, _, outcome⟩ := Store.bind_committed committed
     rcases outcome with ⟨_, rfl⟩ | ⟨rfl, _, _⟩
@@ -318,7 +325,7 @@ theorem Store.bind_refines {store next : Store Variable Literal Symbol} {scope :
 
 theorem Store.bindAll_refines {store next : Store Variable Literal Symbol} {scope : Scope Variable Literal Symbol}
     {bindings : List (Variable × Term Variable Literal Symbol)}
-    (committed : store.bindAll scope bindings = .committed next) : store.Refines next := by
+    (committed : store.bindAll scope bindings = .bound next) : store.Refines next := by
   induction bindings generalizing store with
   | nil => cases committed; exact .refl _
   | cons binding rest ih =>
@@ -329,6 +336,13 @@ theorem Store.bindAll_refines {store next : Store Variable Literal Symbol} {scop
         exact (Store.bind_refines bound).trans (ih committed)
       · cases committed
       · cases committed
+
+/-- Waking removes suspensions only: the store's names and bindings stay. -/
+theorem Store.Refines.wake (store : Store Variable Literal Symbol) : store.Refines store.wake := .of_same rfl rfl
+
+/-- Suspending a goal changes no name or binding. -/
+theorem Store.Refines.suspend (store : Store Variable Literal Symbol) (suspension : Suspension Variable Literal Symbol) :
+    store.Refines (store.suspend suspension) := .of_same rfl rfl
 
 theorem Store.declare_refines (store : Store Variable Literal Symbol) (info : NameInfo Variable)
     {names : List Variable} (fresh : ∀ name ∈ names, store.info? name = none) :
@@ -352,18 +366,21 @@ theorem Store.prepare_refines (store : Store Variable Literal Symbol) {obligatio
 theorem Store.commit_refines {store next : Store Variable Literal Symbol}
     {obligation : Obligation Variable Literal Symbol} {flexibles rigids : List Variable}
     {premises : List (Premise Variable Literal Symbol)} {bindings : List (Variable × Term Variable Literal Symbol)}
-    (committed : store.commit obligation flexibles rigids premises bindings = .committed next) :
+    {woken : List (Suspension Variable Literal Symbol)}
+    (committed : store.commit obligation flexibles rigids premises bindings = .committed next woken) :
     store.Refines next := by
-  obtain ⟨⟨distinct, fresh, _, _, _⟩, bound⟩ := Store.commit_checks committed
-  exact (store.prepare_refines distinct fresh).trans (Store.bindAll_refines bound)
+  obtain ⟨⟨distinct, fresh, _, _, _⟩, bound, boundEq, rfl, _⟩ := Store.commit_checks committed
+  exact ((store.prepare_refines distinct fresh).trans (Store.bindAll_refines boundEq)).trans (.wake bound)
 
 /-- A commit declares its premises' rigid names rigid. -/
 theorem Store.commit_rigid {store next : Store Variable Literal Symbol}
     {obligation : Obligation Variable Literal Symbol} {flexibles rigids : List Variable}
     {premises : List (Premise Variable Literal Symbol)} {bindings : List (Variable × Term Variable Literal Symbol)}
-    (committed : store.commit obligation flexibles rigids premises bindings = .committed next)
+    {woken : List (Suspension Variable Literal Symbol)}
+    (committed : store.commit obligation flexibles rigids premises bindings = .committed next woken)
     {opened : Variable} (member : opened ∈ rigids) : next.info? opened = some .rigid := by
-  apply (Store.bindAll_refines (Store.commit_checks committed).2).rigid
+  obtain ⟨_, bound, boundEq, rfl, _⟩ := Store.commit_checks committed
+  apply (Store.bindAll_refines boundEq).rigid
   simp only [Store.prepare, Store.info?_declare, member, ite_true]
 
 /-- A refinement declares every name the store declares. -/
@@ -390,7 +407,8 @@ opened eigenvariable or existential witness cannot escape its premise. -/
 theorem Store.commit_no_escape {store next : Store Variable Literal Symbol} (valid : store.Scoped)
     {obligation : Obligation Variable Literal Symbol} {flexibles rigids : List Variable}
     {premises : List (Premise Variable Literal Symbol)} {bindings : List (Variable × Term Variable Literal Symbol)}
-    (committed : store.commit obligation flexibles rigids premises bindings = .committed next)
+    {woken : List (Suspension Variable Literal Symbol)}
+    (committed : store.commit obligation flexibles rigids premises bindings = .committed next woken)
     {opened : Variable} (member : opened ∈ rigids) {name : Variable} {dependencies : List Variable}
     (existing : store.info? name = some (.flexible dependencies)) :
     ∃ narrowed, next.info? name = some (.flexible narrowed) ∧ opened ∉ narrowed := by
@@ -403,14 +421,16 @@ the parent's assumptions were declared before. -/
 theorem Store.commit_declared {store next : Store Variable Literal Symbol}
     {obligation : Obligation Variable Literal Symbol} {flexibles rigids : List Variable}
     {premises : List (Premise Variable Literal Symbol)} {bindings : List (Variable × Term Variable Literal Symbol)}
-    (committed : store.commit obligation flexibles rigids premises bindings = .committed next)
+    {woken : List (Suspension Variable Literal Symbol)}
+    (committed : store.commit obligation flexibles rigids premises bindings = .committed next woken)
     (declared : obligation.Declared store) :
     obligation.Declared next ∧ ∀ premise ∈ premises, (obligation.premise premise).Declared next := by
-  obtain ⟨⟨_, _, _, _, admitted⟩, bound⟩ := Store.commit_checks committed
+  obtain ⟨⟨_, _, _, _, admitted⟩, bound, boundEq, rfl, _⟩ := Store.commit_checks committed
   have whole := Store.commit_refines committed
   refine ⟨declared.refines whole, fun premise member name inside => ?_⟩
   rcases Obligation.mem_premise_freeVars.mp inside with own | context
-  · exact (Store.bindAll_refines bound).declared (Store.inScope_within (admitted premise member name own)).declared
+  · exact ((Store.bindAll_refines boundEq).trans (.wake bound)).declared
+      (Store.inScope_within (admitted premise member name own)).declared
   · exact whole.declared (declared name (List.mem_append_right _ context))
 
 theorem Store.Within.mono {store : Store Variable Literal Symbol} {small large : List Variable}
@@ -517,7 +537,8 @@ does not name it itself. -/
 private theorem commit_fresh_term {store next later : Store Variable Literal Symbol}
     (valid : store.Scoped) {obligation : Obligation Variable Literal Symbol} {flexibles rigids : List Variable}
     {premises : List (Premise Variable Literal Symbol)} {bindings : List (Variable × Term Variable Literal Symbol)}
-    (committed : store.commit obligation flexibles rigids premises bindings = .committed next)
+    {woken : List (Suspension Variable Literal Symbol)}
+    (committed : store.commit obligation flexibles rigids premises bindings = .committed next woken)
     (refines : next.Refines later) (laterScoped : later.Scoped)
     {opened : Variable} (member : opened ∈ rigids) {term : Term Variable Literal Symbol}
     (names : ∀ name ∈ term.freeVars, name ≠ opened ∧ next.info? name ≠ none) :
@@ -541,7 +562,8 @@ through any chain of answers. -/
 theorem Store.commit_no_escape_resolved {store next later : Store Variable Literal Symbol}
     (valid : store.Scoped) {obligation : Obligation Variable Literal Symbol} {flexibles rigids : List Variable}
     {premises : List (Premise Variable Literal Symbol)} {bindings : List (Variable × Term Variable Literal Symbol)}
-    (committed : store.commit obligation flexibles rigids premises bindings = .committed next)
+    {woken : List (Suspension Variable Literal Symbol)}
+    (committed : store.commit obligation flexibles rigids premises bindings = .committed next woken)
     (refines : next.Refines later) (laterScoped : later.Scoped)
     {opened : Variable} (member : opened ∈ rigids) {name : Variable} {dependencies : List Variable}
     (existing : store.info? name = some (.flexible dependencies)) :
@@ -563,11 +585,12 @@ theorem Store.commit_fresh_resolved {store next later : Store Variable Literal S
     (valid : store.Scoped) {obligation : Obligation Variable Literal Symbol} {flexibles rigids : List Variable}
     {premises : List (Premise Variable Literal Symbol)} {bindings : List (Variable × Term Variable Literal Symbol)}
     (declared : obligation.Declared store)
-    (committed : store.commit obligation flexibles rigids premises bindings = .committed next)
+    {woken : List (Suspension Variable Literal Symbol)}
+    (committed : store.commit obligation flexibles rigids premises bindings = .committed next woken)
     (refines : next.Refines later) (laterScoped : later.Scoped) {opened : Variable} (member : opened ∈ rigids) :
     obligation.FreshUnder later opened ∧
       ∀ premise ∈ premises, opened ∉ premise.discharge.rigids → (obligation.premise premise).FreshUnder later opened := by
-  obtain ⟨⟨_, fresh, _, _, admitted⟩, bound⟩ := Store.commit_checks committed
+  obtain ⟨⟨_, fresh, _, _, admitted⟩, bound, boundEq, nextEq, _⟩ := Store.commit_checks committed
   have undeclared := fresh opened (List.mem_append_right _ member)
   have rigid := refines.rigid opened (Store.commit_rigid committed member)
   have old : ∀ name, store.info? name ≠ none → name ≠ opened ∧ next.info? name ≠ none :=
@@ -585,7 +608,8 @@ theorem Store.commit_fresh_resolved {store next later : Store Variable Literal S
     fun premise premiseMember outside => freshUnder _ fun name inside => ?_⟩
   rcases Obligation.mem_premise_freeVars.mp inside with own | context
   · exact ⟨fun same => Store.commit_fresh_premise committed member premiseMember outside (same ▸ own),
-      (Store.bindAll_refines bound).declared (Store.inScope_within (admitted premise premiseMember name own)).declared⟩
+      nextEq ▸ ((Store.bindAll_refines boundEq).trans (.wake bound)).declared
+        (Store.inScope_within (admitted premise premiseMember name own)).declared⟩
   · exact old name (declared name (List.mem_append_right _ context))
 
 end Scope

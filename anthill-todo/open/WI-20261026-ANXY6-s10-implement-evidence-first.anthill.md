@@ -30,6 +30,7 @@ Acceptance:
 - NAF and absence certificates are snapshot-indexed closed-world evidence. Registering a predicate, adding a domain, or adding a clause invalidates them; lowered formulas stay unchanged.
 - Supply Term proof-tree nodes and known terminating rule-checking procedures through S08 for every enabled NAF route, including its negative-evidence certificate. Prove successful nodes pass checking; Unknown or incomplete absence searches cannot export a completed NAF proof.
 - Logical-not and NAF remain distinct. If contradiction elimination for proved P plus naf-not P is added, prove its semantic soundness explicitly.
+- NAF on a flexible operand delays until the operand is bound (`Response.delay`, S18, docs/machine-delay.md: retain a dependency and retry after instantiation). Still delayed at the end it flounders as a gap, never as NAF evidence. Waiting cannot help a rigid operand, which needs a scoped certificate. Constructive-negation answers kept as unresolved constraints (`Store.constraints`) come with their solver: a check at each binding, a discharge rule, and evidence for export.
 Reuse CertifiedRefutation and CounterexampleSearch; do not claim existing ground-only Derives already admits scoped NAF.
 
 Validation: lake build and focused Lean tests/examples appropriate to the changed definitions and proofs. Documentation-only work is checked against its stated deliverables; a build alone does not establish them.

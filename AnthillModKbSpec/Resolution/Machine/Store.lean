@@ -20,15 +20,6 @@ inductive NameInfo (Variable : Type) where
 
 variable {Variable Literal Symbol : Type}
 
-/-- Shared answer state, threaded through AND branches and restored on
-backtracking. `names` declares every name introduced so far, including the
-query's own. `bindings` is triangular, newest first: each right-hand side was
-resolved against the older bindings when committed, so it mentions no name
-bound before it. Commits only prepend; rollback restores a saved store. -/
-structure Store (Variable Literal Symbol : Type) where
-  names : List (Variable × NameInfo Variable)
-  bindings : List (Variable × Term Variable Literal Symbol)
-
 /-- The local scope of one obligation. Assumptions are formulas with fixed free
 names, not clause templates; `rigids` lists the rigid names in scope. -/
 structure Scope (Variable Literal Symbol : Type) where
@@ -52,6 +43,40 @@ structure Obligation (Variable Literal Symbol : Type) where
   scope : Scope Variable Literal Symbol
   goal : Formula Variable Literal Symbol
 
+/-- A delayed obligation: its id, the obligation with its own scope, and the
+names it waits on. It is one store entry keyed by its id, attached to every
+name it waits on; a per-name index would only be a view of it. -/
+structure Suspension (Variable Literal Symbol : Type) where
+  id : Nat
+  obligation : Obligation Variable Literal Symbol
+  names : List Variable
+
+/-- An unresolved constraint on flexible names: a condition the store tracks
+until the solver that introduced it discharges it with evidence (disequalities,
+constructive-negation answers in S10, an under-determined type check). Each
+solver specifies its check at every binding, when the constraint is discharged,
+and its evidence for export. S18 adds the slot and no solver. Unlike a
+restriction (a dependency set, checked at every commit and never residual), a
+constraint left at the end blocks success. -/
+structure Constraint (Variable Literal Symbol : Type) where
+  obligation : Obligation Variable Literal Symbol
+  names : List Variable
+
+/-- Shared answer state, threaded through AND branches and restored on
+backtracking. `names` declares every name introduced so far, including the
+query's own. `bindings` is triangular, newest first: each right-hand side was
+resolved against the older bindings when committed, so it mentions no name
+bound before it. Commits only prepend; rollback restores a saved store.
+Delayed goals (`wakeups`, newest first) and unresolved constraints attach to
+the names they concern, as attributed variables do in Prolog: rollback restores
+them with the bindings, and the commit that binds a name wakes what waits on
+it. -/
+structure Store (Variable Literal Symbol : Type) where
+  names : List (Variable × NameInfo Variable)
+  bindings : List (Variable × Term Variable Literal Symbol)
+  wakeups : List (Suspension Variable Literal Symbol)
+  constraints : List (Constraint Variable Literal Symbol)
+
 def Scope.enter (scope : Scope Variable Literal Symbol) (discharge : Discharge Variable Literal Symbol) :
     Scope Variable Literal Symbol :=
   ⟨discharge.rigids ++ scope.rigids, discharge.assumptions ++ scope.assumptions⟩
@@ -73,15 +98,24 @@ def Obligation.root (rigids : List Variable) (context : ProofContext Variable Li
     (premise : Premise Variable Literal Symbol) :
     (obligation.premise premise).context = premise.discharge.assumptions ++ obligation.context := rfl
 
-/-- Result of committing a candidate's names and bindings. `rejected` is a
-candidate miss: the binding fails the occurs check or would let a rigid name
-escape the scope of the name it is bound to. `violated` means the command broke
-the machine contract (a name that is not fresh, a premise naming an undeclared
-name or a rigid name outside its scope, an unresolved value, a rigid name
-outside the scope, an assigned rigid, a rebound answer); it also abandons the
-candidate but is recorded as a gap, never as failure. -/
+/-- Result of committing a candidate's names and bindings. `committed` also
+returns the suspensions the commit woke, removed from the new store. `rejected`
+is a candidate miss: the binding fails the occurs check or would let a rigid
+name escape the scope of the name it is bound to. `violated` means the command
+broke the machine contract (a name that is not fresh, a premise naming an
+undeclared name or a rigid name outside its scope, an unresolved value, a rigid
+name outside the scope, an assigned rigid, a rebound answer); it also abandons
+the candidate but is recorded as a gap, never as failure. -/
 inductive Commit (Variable Literal Symbol : Type) where
-  | committed (store : Store Variable Literal Symbol)
+  | committed (store : Store Variable Literal Symbol) (woken : List (Suspension Variable Literal Symbol))
+  | rejected
+  | violated
+
+/-- Result of binding answers inside a commit; `rejected` and `violated` as for
+`Commit`. Binding wakes nothing by itself: the commit wakes after all its
+bindings. -/
+inductive Bound (Variable Literal Symbol : Type) where
+  | bound (store : Store Variable Literal Symbol)
   | rejected
   | violated
 
@@ -166,6 +200,24 @@ def Store.usable (store : Store Variable Literal Symbol) (scope : Scope Variable
   | some (.flexible _) => (store.binding? name).isNone
   | none => false
 
+/-- An unbound flexible name: the only kind a match binds and a delay waits on. -/
+def Store.assignable (store : Store Variable Literal Symbol) (name : Variable) : Bool :=
+  match store.info? name with
+  | some (.flexible _) => (store.binding? name).isNone
+  | _ => false
+
+theorem Store.assignable_eq_true {store : Store Variable Literal Symbol} {name : Variable} :
+    store.assignable name = true ↔
+      (∃ dependencies, store.info? name = some (.flexible dependencies)) ∧ store.binding? name = none := by
+  unfold Store.assignable
+  split
+  · rename_i dependencies infoEq
+    simp only [Option.isNone_iff_eq_none, infoEq]
+    exact ⟨fun unbound => ⟨⟨dependencies, rfl⟩, unbound⟩, fun both => both.2⟩
+  · rename_i notFlexible
+    simp only [Bool.false_eq_true, false_iff, not_and]
+    exact fun ⟨dependencies, flexible⟩ => absurd flexible (notFlexible dependencies)
+
 /-- A rigid name may enter an answer only if the bound name depends on it. -/
 def Store.allowed (store : Store Variable Literal Symbol) (dependencies : List Variable) (name : Variable) : Bool :=
   match store.info? name with
@@ -180,25 +232,25 @@ def isName : Term Variable Literal Symbol → Variable → Bool
 changes nothing. Otherwise the occurs and dependency checks apply, and the
 flexible names in the value inherit the bound name's dependencies. -/
 def Store.bind (store : Store Variable Literal Symbol) (scope : Scope Variable Literal Symbol)
-    (name : Variable) (value : Term Variable Literal Symbol) : Commit Variable Literal Symbol :=
+    (name : Variable) (value : Term Variable Literal Symbol) : Bound Variable Literal Symbol :=
   match store.info? name, store.binding? name with
   | some (.flexible dependencies), none =>
-      if isName value name then .committed store
+      if isName value name then .bound store
       else
         let free := value.freeVars
         if free.all (store.usable scope) then
           if name ∉ free ∧ free.all (store.allowed dependencies) then
-            .committed { (store.narrow free dependencies) with bindings := (name, value) :: store.bindings }
+            .bound { (store.narrow free dependencies) with bindings := (name, value) :: store.bindings }
           else .rejected
         else .violated
   | _, _ => .violated
 
 def Store.bindAll (store : Store Variable Literal Symbol) (scope : Scope Variable Literal Symbol) :
-    List (Variable × Term Variable Literal Symbol) → Commit Variable Literal Symbol
-  | [] => .committed store
+    List (Variable × Term Variable Literal Symbol) → Bound Variable Literal Symbol
+  | [] => .bound store
   | (name, value) :: rest =>
       match store.bind scope name value with
-      | .committed next => next.bindAll scope rest
+      | .bound next => next.bindAll scope rest
       | .rejected => .rejected
       | .violated => .violated
 
@@ -263,16 +315,34 @@ instance (store : Store Variable Literal Symbol) (obligation : Obligation Variab
     Decidable (store.Accepts obligation flexibles rigids premises) := by
   unfold Store.Accepts; infer_instance
 
+/-- A suspension wakes once the store binds a name it waits on. -/
+def Store.wakes (store : Store Variable Literal Symbol) (suspension : Suspension Variable Literal Symbol) : Bool :=
+  suspension.names.any fun name => (store.binding? name).isSome
+
+/-- The suspensions the store wakes, in store order (newest first). -/
+def Store.woken (store : Store Variable Literal Symbol) : List (Suspension Variable Literal Symbol) :=
+  store.wakeups.filter store.wakes
+
+/-- The store without the suspensions it wakes. Each is removed as a whole, so
+no attachment remains on the names it waits on that are still unbound. -/
+def Store.wake (store : Store Variable Literal Symbol) : Store Variable Literal Symbol :=
+  { store with wakeups := store.wakeups.filter fun suspension => !store.wakes suspension }
+
 /-- Commit one candidate for an obligation: check its names and premises
 (`Store.Accepts`); declare the new flexible names, depending on the
 obligation's rigid names, and the premises' rigid names; then bind. Bindings
 may use the new flexible names but not the premises' rigid names. A new name
-may equal a binder name of the obligation: openings rename binders. -/
+may equal a binder name of the obligation: openings rename binders. Once all
+bindings are made, the suspensions waiting on a name now bound are woken: the
+commit returns them and removes them from the store, each once. -/
 def Store.commit (store : Store Variable Literal Symbol) (obligation : Obligation Variable Literal Symbol)
     (flexibles rigids : List Variable) (premises : List (Premise Variable Literal Symbol))
     (bindings : List (Variable × Term Variable Literal Symbol)) : Commit Variable Literal Symbol :=
   if store.Accepts obligation flexibles rigids premises then
-    (store.prepare obligation flexibles rigids).bindAll obligation.scope bindings
+    match (store.prepare obligation flexibles rigids).bindAll obligation.scope bindings with
+    | .bound next => .committed next.wake next.woken
+    | .rejected => .rejected
+    | .violated => .violated
   else .violated
 
 /-- Resolution by the binding chain, oldest binding applied first. -/
@@ -413,6 +483,16 @@ theorem Store.info?_narrow (store : Store Variable Literal Symbol) (targets allo
     (store.narrow targets allowed).info? name = (store.info? name).map (narrowInfo targets allowed name) :=
   lookup_map_keyed store.names (narrowInfo targets allowed) name
 
+/-- Narrowing keeps every flexible name flexible. -/
+theorem Store.narrow_flexible {store : Store Variable Literal Symbol} {targets allowed : List Variable}
+    {name : Variable} {own : List Variable} (flexible : store.info? name = some (.flexible own)) :
+    ∃ narrowed, (store.narrow targets allowed).info? name = some (.flexible narrowed) := by
+  rw [Store.info?_narrow, flexible]
+  unfold narrowInfo
+  split
+  · exact ⟨_, rfl⟩
+  · exact ⟨own, rfl⟩
+
 theorem narrowInfo_flexible {targets allowed : List Variable} {name : Variable} {info : NameInfo Variable}
     {narrowed : List Variable} (equal : narrowInfo targets allowed name info = .flexible narrowed) :
     ∃ own, info = .flexible own ∧ ∀ rigid ∈ narrowed, rigid ∈ own := by
@@ -430,7 +510,7 @@ theorem narrowInfo_flexible {targets allowed : List Variable} {name : Variable} 
 
 theorem Store.bind_committed {store next : Store Variable Literal Symbol} {scope : Scope Variable Literal Symbol}
     {name : Variable} {value : Term Variable Literal Symbol}
-    (committed : store.bind scope name value = .committed next) :
+    (committed : store.bind scope name value = .bound next) :
     ∃ dependencies, store.info? name = some (.flexible dependencies) ∧ store.binding? name = none ∧
       ((isName value name = true ∧ next = store) ∨
         (next = { (store.narrow value.freeVars dependencies) with bindings := (name, value) :: store.bindings } ∧
@@ -461,7 +541,7 @@ scope and among the bound name's dependencies: a rigid name cannot escape into
 the answer of a name created outside its scope. -/
 theorem Store.bind_respects_scope {store next : Store Variable Literal Symbol}
     {scope : Scope Variable Literal Symbol} {name : Variable} {value : Term Variable Literal Symbol}
-    (committed : store.bind scope name value = .committed next) :
+    (committed : store.bind scope name value = .bound next) :
     ∃ dependencies, store.info? name = some (.flexible dependencies) ∧
       ∀ other ∈ value.freeVars, store.info? other = some .rigid →
         other ∈ scope.rigids ∧ other ∈ dependencies := by
@@ -496,7 +576,7 @@ theorem Store.bind_bound {store : Store Variable Literal Symbol} {scope : Scope 
 
 theorem Store.bindAll_extends {store next : Store Variable Literal Symbol}
     {scope : Scope Variable Literal Symbol} {bindings : List (Variable × Term Variable Literal Symbol)}
-    (committed : store.bindAll scope bindings = .committed next) :
+    (committed : store.bindAll scope bindings = .bound next) :
     ∃ added, next.bindings = added ++ store.bindings ∧ ∀ binding ∈ added, binding ∈ bindings := by
   induction bindings generalizing store with
   | nil => cases committed; exact ⟨[], rfl, by simp⟩
@@ -517,17 +597,26 @@ theorem Store.bindAll_extends {store next : Store Variable Literal Symbol}
       · cases committed
       · cases committed
 
-/-- A committed candidate passed every check of the commit, and its bindings
-were committed against the prepared store. -/
+/-- A committed candidate passed every check of the commit, its bindings were
+committed against the prepared store, and the commit woke the suspensions
+waiting on a name those bindings bound. -/
 theorem Store.commit_checks {store next : Store Variable Literal Symbol}
     {obligation : Obligation Variable Literal Symbol} {flexibles rigids : List Variable}
     {premises : List (Premise Variable Literal Symbol)} {bindings : List (Variable × Term Variable Literal Symbol)}
-    (committed : store.commit obligation flexibles rigids premises bindings = .committed next) :
+    {woken : List (Suspension Variable Literal Symbol)}
+    (committed : store.commit obligation flexibles rigids premises bindings = .committed next woken) :
     store.Accepts obligation flexibles rigids premises ∧
-      (store.prepare obligation flexibles rigids).bindAll obligation.scope bindings = .committed next := by
+      ∃ bound, (store.prepare obligation flexibles rigids).bindAll obligation.scope bindings = .bound bound ∧
+        next = bound.wake ∧ woken = bound.woken := by
   unfold Store.commit at committed
   split at committed
-  · rename_i checks; exact ⟨checks, committed⟩
+  · rename_i checks
+    split at committed
+    · rename_i bound boundEq
+      cases committed
+      exact ⟨checks, bound, boundEq, rfl, rfl⟩
+    · cases committed
+    · cases committed
   · cases committed
 
 /-- Commits only add bindings, each one proposed by the candidate: the answers
@@ -535,16 +624,19 @@ of earlier AND siblings survive. -/
 theorem Store.commit_extends {store next : Store Variable Literal Symbol}
     {obligation : Obligation Variable Literal Symbol} {flexibles rigids : List Variable}
     {premises : List (Premise Variable Literal Symbol)} {bindings : List (Variable × Term Variable Literal Symbol)}
-    (committed : store.commit obligation flexibles rigids premises bindings = .committed next) :
+    {woken : List (Suspension Variable Literal Symbol)}
+    (committed : store.commit obligation flexibles rigids premises bindings = .committed next woken) :
     ∃ added, next.bindings = added ++ store.bindings ∧ ∀ binding ∈ added, binding ∈ bindings := by
-  simpa [Store.prepare, Store.declare] using Store.bindAll_extends (Store.commit_checks committed).2
+  obtain ⟨_, bound, boundEq, rfl, _⟩ := Store.commit_checks committed
+  simpa [Store.prepare, Store.declare, Store.wake] using Store.bindAll_extends boundEq
 
 /-- Every name a commit opens is new to the store. By the name invariant it is
 then fresh for the obligation's free names; binder names impose nothing. -/
 theorem Store.commit_fresh {store next : Store Variable Literal Symbol}
     {obligation : Obligation Variable Literal Symbol} {flexibles rigids : List Variable}
     {premises : List (Premise Variable Literal Symbol)} {bindings : List (Variable × Term Variable Literal Symbol)}
-    (committed : store.commit obligation flexibles rigids premises bindings = .committed next) :
+    {woken : List (Suspension Variable Literal Symbol)}
+    (committed : store.commit obligation flexibles rigids premises bindings = .committed next woken) :
     ∀ name ∈ flexibles ++ rigids, store.info? name = none :=
   (Store.commit_checks committed).1.2.1
 
@@ -563,13 +655,48 @@ inductive Triangular : List (Variable × Term Variable Literal Symbol) → Prop 
 
 /-- Every flexible name depends only on declared rigid names, every committed
 answer mentions only names within its bound name's dependencies, and the
-bindings are triangular. -/
+bindings are triangular. Suspensions and constraints wait only on declared
+flexible names, and suspensions are kept newest first, so their ids are
+strictly decreasing and in particular distinct. -/
 structure Store.Scoped (store : Store Variable Literal Symbol) : Prop where
   dependencies : ∀ name dependencies, store.info? name = some (.flexible dependencies) →
     ∀ rigid ∈ dependencies, store.info? rigid = some .rigid
   answers : ∀ name value, (name, value) ∈ store.bindings → ∃ dependencies,
     store.info? name = some (.flexible dependencies) ∧ ∀ other ∈ value.freeVars, store.Within dependencies other
   triangular : Triangular store.bindings
+  wakeups : ∀ suspension ∈ store.wakeups, ∀ name ∈ suspension.names,
+    ∃ dependencies, store.info? name = some (.flexible dependencies)
+  newestFirst : (store.wakeups.map Suspension.id).Pairwise (· > ·)
+  constraints : ∀ constraint ∈ store.constraints, ∀ name ∈ constraint.names,
+    ∃ dependencies, store.info? name = some (.flexible dependencies)
+
+theorem Store.Scoped.distinct {store : Store Variable Literal Symbol} (valid : store.Scoped) :
+    (store.wakeups.map Suspension.id).Nodup :=
+  valid.newestFirst.imp fun newer => Nat.ne_of_gt newer
+
+/-- The suspensions and constraints of a scoped store stay attached to flexible
+names in a store that keeps them and keeps every flexible name flexible. -/
+theorem Store.Scoped.attached {store later : Store Variable Literal Symbol} (valid : store.Scoped)
+    (flexible : ∀ name dependencies, store.info? name = some (.flexible dependencies) →
+      ∃ narrowed, later.info? name = some (.flexible narrowed))
+    (wakeups : later.wakeups = store.wakeups) (constraints : later.constraints = store.constraints) :
+    (∀ suspension ∈ later.wakeups, ∀ name ∈ suspension.names,
+      ∃ dependencies, later.info? name = some (.flexible dependencies)) ∧
+    (later.wakeups.map Suspension.id).Pairwise (· > ·) ∧
+    ∀ constraint ∈ later.constraints, ∀ name ∈ constraint.names,
+      ∃ dependencies, later.info? name = some (.flexible dependencies) := by
+  rw [wakeups, constraints]
+  refine ⟨fun suspension member name inside => ?_, valid.newestFirst, fun constraint member name inside => ?_⟩
+  · obtain ⟨dependencies, flexibleEq⟩ := valid.wakeups suspension member name inside
+    exact flexible name dependencies flexibleEq
+  · obtain ⟨dependencies, flexibleEq⟩ := valid.constraints constraint member name inside
+    exact flexible name dependencies flexibleEq
+
+/-- Removing the woken suspensions keeps the store scoped. -/
+theorem Store.Scoped.wake {store : Store Variable Literal Symbol} (valid : store.Scoped) : store.wake.Scoped :=
+  ⟨valid.dependencies, valid.answers, valid.triangular,
+    fun suspension member => valid.wakeups suspension (List.mem_filter.mp member).1,
+    valid.newestFirst.sublist (List.filter_sublist.map _), valid.constraints⟩
 
 theorem Store.Within.declared {store : Store Variable Literal Symbol} {dependencies : List Variable}
     {other : Variable} (within : store.Within dependencies other) : store.info? other ≠ none := by
@@ -597,7 +724,10 @@ theorem Store.declare_scoped {store : Store Variable Literal Symbol} (valid : st
     (store.declare info names).Scoped := by
   have old : ∀ name, store.info? name ≠ none → (store.declare info names).info? name = store.info? name :=
     fun _ present => Store.info?_declare_of_ne_none fresh present
-  constructor
+  have attached := valid.attached (later := store.declare info names)
+    (fun name dependencies flexible =>
+      ⟨dependencies, by rw [old name (by rw [flexible]; exact Option.some_ne_none _), flexible]⟩) rfl rfl
+  refine ⟨?_, ?_, ?_, attached.1, attached.2.1, attached.2.2⟩
   · intro name dependencies infoEq rigid member
     rw [Store.info?_declare] at infoEq
     split at infoEq
@@ -617,7 +747,7 @@ theorem Store.declare_scoped {store : Store Variable Literal Symbol} (valid : st
 
 theorem Store.bind_scoped {store next : Store Variable Literal Symbol} (valid : store.Scoped)
     {scope : Scope Variable Literal Symbol} {name : Variable} {value : Term Variable Literal Symbol}
-    (committed : store.bind scope name value = .committed next) : next.Scoped := by
+    (committed : store.bind scope name value = .bound next) : next.Scoped := by
   obtain ⟨dependencies, infoEq, boundEq, outcome⟩ := Store.bind_committed committed
   rcases outcome with ⟨_, rfl⟩ | ⟨rfl, occurs, checks⟩
   · exact valid
@@ -625,6 +755,9 @@ theorem Store.bind_scoped {store next : Store Variable Literal Symbol} (valid : 
         bindings := (name, value) :: store.bindings } : Store Variable Literal Symbol).info? other =
         (store.info? other).map (narrowInfo value.freeVars dependencies other) :=
       fun other => Store.info?_narrow store _ _ other
+    have attached := valid.attached (later := { (store.narrow value.freeVars dependencies) with
+        bindings := (name, value) :: store.bindings })
+      (fun _ _ flexible => Store.narrow_flexible flexible) rfl rfl
     have unchanged : ∀ other, other ∉ value.freeVars → ∀ own, store.info? other = some (.flexible own) →
         ({ (store.narrow value.freeVars dependencies) with
           bindings := (name, value) :: store.bindings } : Store Variable Literal Symbol).info? other =
@@ -672,10 +805,13 @@ theorem Store.bind_scoped {store next : Store Variable Literal Symbol} (valid : 
         valid.triangular
       · exact lookup_eq_none.mp boundEq bound
       · exact valueUnbound other free bound
+    · exact attached.1
+    · exact attached.2.1
+    · exact attached.2.2
 
 theorem Store.bindAll_scoped {store next : Store Variable Literal Symbol} (valid : store.Scoped)
     {scope : Scope Variable Literal Symbol} {bindings : List (Variable × Term Variable Literal Symbol)}
-    (committed : store.bindAll scope bindings = .committed next) : next.Scoped := by
+    (committed : store.bindAll scope bindings = .bound next) : next.Scoped := by
   induction bindings generalizing store with
   | nil => cases committed; exact valid
   | cons binding rest ih =>
@@ -702,26 +838,24 @@ theorem Store.prepare_scoped {store : Store Variable Literal Symbol} (valid : st
 theorem Store.commit_scoped {store next : Store Variable Literal Symbol} (valid : store.Scoped)
     {obligation : Obligation Variable Literal Symbol} {flexibles rigids : List Variable}
     {premises : List (Premise Variable Literal Symbol)} {bindings : List (Variable × Term Variable Literal Symbol)}
-    (committed : store.commit obligation flexibles rigids premises bindings = .committed next) : next.Scoped := by
-  obtain ⟨⟨distinct, fresh, declared, _, _⟩, bound⟩ := Store.commit_checks committed
-  exact Store.bindAll_scoped (Store.prepare_scoped valid distinct fresh declared) bound
+    {woken : List (Suspension Variable Literal Symbol)}
+    (committed : store.commit obligation flexibles rigids premises bindings = .committed next woken) : next.Scoped := by
+  obtain ⟨⟨distinct, fresh, declared, _, _⟩, bound, boundEq, rfl, _⟩ := Store.commit_checks committed
+  exact (Store.bindAll_scoped (Store.prepare_scoped valid distinct fresh declared) boundEq).wake
 
 /-- A candidate whose names pass the commit's checks commits exactly the
-bindings it computed against the prepared store. -/
+bindings it computed against the prepared store, and wakes what they wake. -/
 theorem Store.commit_prepared {store next : Store Variable Literal Symbol}
     {obligation : Obligation Variable Literal Symbol} {flexibles rigids : List Variable}
     {premises : List (Premise Variable Literal Symbol)} {bindings : List (Variable × Term Variable Literal Symbol)}
     (accepted : store.Accepts obligation flexibles rigids premises)
-    (committed : (store.prepare obligation flexibles rigids).bindAll obligation.scope bindings = .committed next) :
-    store.commit obligation flexibles rigids premises bindings = .committed next := by
-  unfold Store.commit
-  split
-  · exact committed
-  · rename_i failed; exact absurd accepted failed
+    (committed : (store.prepare obligation flexibles rigids).bindAll obligation.scope bindings = .bound next) :
+    store.commit obligation flexibles rigids premises bindings = .committed next.wake next.woken := by
+  simp only [Store.commit, accepted, ↓reduceIte, committed]
 
 theorem Store.bind_flexible {store next : Store Variable Literal Symbol}
     {scope : Scope Variable Literal Symbol} {name : Variable} {value : Term Variable Literal Symbol}
-    (committed : store.bind scope name value = .committed next) {other : Variable} {own : List Variable}
+    (committed : store.bind scope name value = .bound next) {other : Variable} {own : List Variable}
     (flexible : store.info? other = some (.flexible own)) :
     ∃ narrowed, next.info? other = some (.flexible narrowed) ∧ ∀ rigid ∈ narrowed, rigid ∈ own := by
   obtain ⟨dependencies, _, _, outcome⟩ := Store.bind_committed committed
@@ -736,7 +870,7 @@ theorem Store.bind_flexible {store next : Store Variable Literal Symbol}
 
 theorem Store.bindAll_flexible {store next : Store Variable Literal Symbol}
     {scope : Scope Variable Literal Symbol} {bindings : List (Variable × Term Variable Literal Symbol)}
-    (committed : store.bindAll scope bindings = .committed next) {other : Variable} {own : List Variable}
+    (committed : store.bindAll scope bindings = .bound next) {other : Variable} {own : List Variable}
     (flexible : store.info? other = some (.flexible own)) :
     ∃ narrowed, next.info? other = some (.flexible narrowed) ∧ ∀ rigid ∈ narrowed, rigid ∈ own := by
   induction bindings generalizing store own with
@@ -756,7 +890,7 @@ theorem Store.bindAll_flexible {store next : Store Variable Literal Symbol}
 dependencies: binding only narrows. -/
 theorem Store.bind_flexible_of {store next : Store Variable Literal Symbol}
     {scope : Scope Variable Literal Symbol} {name : Variable} {value : Term Variable Literal Symbol}
-    (committed : store.bind scope name value = .committed next) {other : Variable} {narrowed : List Variable}
+    (committed : store.bind scope name value = .bound next) {other : Variable} {narrowed : List Variable}
     (flexible : next.info? other = some (.flexible narrowed)) :
     ∃ own, store.info? other = some (.flexible own) ∧ ∀ rigid ∈ narrowed, rigid ∈ own := by
   obtain ⟨dependencies, _, _, outcome⟩ := Store.bind_committed committed
@@ -770,7 +904,7 @@ theorem Store.bind_flexible_of {store next : Store Variable Literal Symbol}
 
 theorem Store.bindAll_flexible_of {store next : Store Variable Literal Symbol}
     {scope : Scope Variable Literal Symbol} {bindings : List (Variable × Term Variable Literal Symbol)}
-    (committed : store.bindAll scope bindings = .committed next) {other : Variable} {narrowed : List Variable}
+    (committed : store.bindAll scope bindings = .bound next) {other : Variable} {narrowed : List Variable}
     (flexible : next.info? other = some (.flexible narrowed)) :
     ∃ own, store.info? other = some (.flexible own) ∧ ∀ rigid ∈ narrowed, rigid ∈ own := by
   induction bindings generalizing store with
@@ -792,12 +926,13 @@ opens. -/
 theorem Store.commit_independent {store next : Store Variable Literal Symbol} (valid : store.Scoped)
     {obligation : Obligation Variable Literal Symbol} {flexibles rigids : List Variable}
     {premises : List (Premise Variable Literal Symbol)} {bindings : List (Variable × Term Variable Literal Symbol)}
-    (committed : store.commit obligation flexibles rigids premises bindings = .committed next)
+    {woken : List (Suspension Variable Literal Symbol)}
+    (committed : store.commit obligation flexibles rigids premises bindings = .committed next woken)
     {opened : Variable} (member : opened ∈ rigids) {name : Variable} {dependencies : List Variable}
     (flexible : next.info? name = some (.flexible dependencies)) : opened ∉ dependencies := by
-  obtain ⟨⟨_, fresh, declared, _, _⟩, bound⟩ := Store.commit_checks committed
+  obtain ⟨⟨_, fresh, declared, _, _⟩, bound, boundEq, rfl, _⟩ := Store.commit_checks committed
   have undeclared := fresh opened (List.mem_append_right _ member)
-  obtain ⟨own, ownEq, contained⟩ := Store.bindAll_flexible_of bound flexible
+  obtain ⟨own, ownEq, contained⟩ := Store.bindAll_flexible_of boundEq flexible
   intro inside
   have dependsOn := contained opened inside
   simp only [Store.prepare, Store.info?_declare] at ownEq
@@ -816,7 +951,8 @@ does not mention its eigenvariable. -/
 theorem Store.commit_fresh_premise {store next : Store Variable Literal Symbol}
     {obligation : Obligation Variable Literal Symbol} {flexibles rigids : List Variable}
     {premises : List (Premise Variable Literal Symbol)} {bindings : List (Variable × Term Variable Literal Symbol)}
-    (committed : store.commit obligation flexibles rigids premises bindings = .committed next)
+    {woken : List (Suspension Variable Literal Symbol)}
+    (committed : store.commit obligation flexibles rigids premises bindings = .committed next woken)
     {opened : Variable} (member : opened ∈ rigids) {premise : Premise Variable Literal Symbol}
     (premiseMember : premise ∈ premises) (outside : opened ∉ premise.discharge.rigids) :
     opened ∉ premise.freeVars := by
@@ -844,5 +980,132 @@ theorem Store.Scoped.answer_rigid {store : Store Variable Literal Symbol} (valid
   rcases within other free with ⟨_, member⟩ | ⟨_, flexibleEq, _⟩
   · exact member
   · rw [rigid] at flexibleEq; cases flexibleEq
+
+/-! ## Delayed goals -/
+
+/-- A delay may wait only on declared flexible names that are still unbound,
+and on at least one. A rigid name is never assigned, so waiting on it is
+useless; waiting on a bound name, or on nothing, would never wake. -/
+def Store.delayable (store : Store Variable Literal Symbol) (names : List Variable) : Bool :=
+  !names.isEmpty && names.all store.assignable
+
+theorem Store.delayable_spec {store : Store Variable Literal Symbol} {names : List Variable}
+    (delayable : store.delayable names = true) :
+    names ≠ [] ∧ ∀ name ∈ names,
+      (∃ dependencies, store.info? name = some (.flexible dependencies)) ∧ store.binding? name = none := by
+  simp only [Store.delayable, Bool.and_eq_true, Bool.not_eq_true', List.isEmpty_eq_false_iff,
+    List.all_eq_true] at delayable
+  exact ⟨delayable.1, fun name member => Store.assignable_eq_true.mp (delayable.2 name member)⟩
+
+/-- Suspend an obligation: one new entry, attached to every name it waits on. -/
+def Store.suspend (store : Store Variable Literal Symbol) (suspension : Suspension Variable Literal Symbol) :
+    Store Variable Literal Symbol :=
+  { store with wakeups := suspension :: store.wakeups }
+
+/-- A suspension newer than every pending one keeps the store scoped. -/
+theorem Store.Scoped.suspend {store : Store Variable Literal Symbol} (valid : store.Scoped)
+    {suspension : Suspension Variable Literal Symbol}
+    (flexible : ∀ name ∈ suspension.names, ∃ dependencies, store.info? name = some (.flexible dependencies))
+    (newer : ∀ other ∈ store.wakeups, other.id < suspension.id) : (store.suspend suspension).Scoped := by
+  refine ⟨valid.dependencies, valid.answers, valid.triangular, fun other member => ?_,
+    List.pairwise_cons.mpr ⟨fun id inside => ?_, valid.newestFirst⟩, valid.constraints⟩
+  · rcases List.mem_cons.mp member with rfl | member
+    · exact flexible
+    · exact valid.wakeups other member
+  · obtain ⟨other, member, rfl⟩ := List.mem_map.mp inside
+    exact newer other member
+
+/-- What a branch still owes when it would finish: every pending suspension's
+and every unresolved constraint's obligation. Success requires none;
+restrictions (dependency sets) are not counted. -/
+def Store.residual (store : Store Variable Literal Symbol) : List (Obligation Variable Literal Symbol) :=
+  store.wakeups.map (·.obligation) ++ store.constraints.map (·.obligation)
+
+omit [DecidableEq Variable] in
+theorem Store.residual_eq_nil {store : Store Variable Literal Symbol} :
+    store.residual = [] ↔ store.wakeups = [] ∧ store.constraints = [] := by
+  simp [Store.residual]
+
+/-- Every pending suspension waits on names that are all still unbound: the
+commit that binds one of them removes it. Intermediate stores of a commit do
+not satisfy this; every committed store does (`Store.commit_wakes`). -/
+def Store.Waiting (store : Store Variable Literal Symbol) : Prop :=
+  ∀ suspension ∈ store.wakeups, ∀ name ∈ suspension.names, store.binding? name = none
+
+theorem Store.bind_attached {store next : Store Variable Literal Symbol} {scope : Scope Variable Literal Symbol}
+    {name : Variable} {value : Term Variable Literal Symbol}
+    (committed : store.bind scope name value = .bound next) :
+    next.wakeups = store.wakeups ∧ next.constraints = store.constraints := by
+  obtain ⟨_, _, _, outcome⟩ := Store.bind_committed committed
+  rcases outcome with ⟨_, rfl⟩ | ⟨rfl, _, _⟩ <;> exact ⟨rfl, rfl⟩
+
+/-- Binding keeps the suspensions and constraints; the commit wakes afterwards. -/
+theorem Store.bindAll_attached {store next : Store Variable Literal Symbol} {scope : Scope Variable Literal Symbol}
+    {bindings : List (Variable × Term Variable Literal Symbol)}
+    (committed : store.bindAll scope bindings = .bound next) :
+    next.wakeups = store.wakeups ∧ next.constraints = store.constraints := by
+  induction bindings generalizing store with
+  | nil => cases committed; exact ⟨rfl, rfl⟩
+  | cons binding rest ih =>
+      obtain ⟨name, value⟩ := binding
+      simp only [Store.bindAll] at committed
+      split at committed
+      · rename_i middle bound
+        obtain ⟨wakeups, constraints⟩ := ih committed
+        obtain ⟨wakeupsBefore, constraintsBefore⟩ := Store.bind_attached bound
+        exact ⟨wakeups.trans wakeupsBefore, constraints.trans constraintsBefore⟩
+      · cases committed
+      · cases committed
+
+/-- A commit wakes only pending suspensions, in store order: newest first. -/
+theorem Store.commit_woken {store next : Store Variable Literal Symbol} (valid : store.Scoped)
+    {obligation : Obligation Variable Literal Symbol} {flexibles rigids : List Variable}
+    {premises : List (Premise Variable Literal Symbol)} {bindings : List (Variable × Term Variable Literal Symbol)}
+    {woken : List (Suspension Variable Literal Symbol)}
+    (committed : store.commit obligation flexibles rigids premises bindings = .committed next woken) :
+    woken.Sublist store.wakeups ∧ (woken.map Suspension.id).Pairwise (· > ·) := by
+  obtain ⟨_, bound, boundEq, _, rfl⟩ := Store.commit_checks committed
+  have same : bound.wakeups = store.wakeups := (Store.bindAll_attached boundEq).1
+  have sublist : bound.woken.Sublist store.wakeups := same ▸ List.filter_sublist
+  exact ⟨sublist, valid.newestFirst.sublist (sublist.map _)⟩
+
+/-- Exactly-once wakeup. The woken and the remaining suspensions partition the
+old ones, each id once: a commit returns each suspension it wakes once, even
+when it binds several of its names, and removes it as a whole, so no stale
+attachment remains on its other names. The woken list is newest first. Each
+woken suspension waits on a name this commit bound; every suspension none of
+whose names it bound stays. The committed store is waiting again. Constraints
+are kept for their solver. -/
+theorem Store.commit_wakes {store next : Store Variable Literal Symbol} (valid : store.Scoped)
+    (waiting : store.Waiting) {obligation : Obligation Variable Literal Symbol} {flexibles rigids : List Variable}
+    {premises : List (Premise Variable Literal Symbol)} {bindings : List (Variable × Term Variable Literal Symbol)}
+    {woken : List (Suspension Variable Literal Symbol)}
+    (committed : store.commit obligation flexibles rigids premises bindings = .committed next woken) :
+    (woken ++ next.wakeups).Perm store.wakeups ∧ ((woken ++ next.wakeups).map Suspension.id).Nodup ∧
+      (woken.map Suspension.id).Pairwise (· > ·) ∧
+      (∀ suspension ∈ woken, ∃ name ∈ suspension.names,
+        store.binding? name = none ∧ (next.binding? name).isSome) ∧
+      (∀ suspension ∈ store.wakeups, (∀ name ∈ suspension.names, next.binding? name = none) →
+        suspension ∈ next.wakeups) ∧
+      next.Waiting ∧ next.constraints = store.constraints := by
+  obtain ⟨_, bound, boundEq, rfl, rfl⟩ := Store.commit_checks committed
+  obtain ⟨same, constraints⟩ := Store.bindAll_attached boundEq
+  change bound.wakeups = store.wakeups at same
+  have partition : (bound.woken ++ bound.wake.wakeups).Perm store.wakeups := by
+    rw [← same]; exact List.filter_append_perm _ _
+  refine ⟨partition, (partition.map _).nodup_iff.mpr valid.distinct, (Store.commit_woken valid committed).2,
+    fun suspension member => ?_,
+    fun suspension member unbound => ?_, fun suspension member name inside => ?_, constraints⟩
+  · obtain ⟨inside, wakes⟩ := List.mem_filter.mp member
+    obtain ⟨name, nameMember, isBound⟩ := List.any_eq_true.mp wakes
+    exact ⟨name, nameMember, waiting suspension (same ▸ inside) name nameMember, isBound⟩
+  · refine List.mem_filter.mpr ⟨same ▸ member, ?_⟩
+    simp only [Store.wakes, Bool.not_eq_true', List.any_eq_false, Option.isSome_iff_ne_none, ne_eq,
+      Decidable.not_not]
+    exact unbound
+  · obtain ⟨_, keep⟩ := List.mem_filter.mp member
+    simp only [Store.wakes, Bool.not_eq_true', List.any_eq_false, Option.isSome_iff_ne_none, ne_eq,
+      Decidable.not_not] at keep
+    exact keep name inside
 
 end AnthillModKbSpec.Machine

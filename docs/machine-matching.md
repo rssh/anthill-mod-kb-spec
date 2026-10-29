@@ -230,6 +230,7 @@ freshened clauses, each matched against the prepared store.
 - No completeness: `mismatch` and `exhausted` carry no negative evidence.
 - The test driver is not S06's command set. Whole-run reconstruction is S06/S16.
 - Delayed goals (S18) attach to names in the same store. The matcher reads and
-  commits there and does not see deferred proofs.
+  commits there and does not see deferred proofs; the commit that replays a
+  match wakes the suspensions waiting on a name it bound (`Store.commit_unify`).
 - `#guard` checks evaluate compiled code: `Term.instantiate`, `Term.freeVars`,
   and `unifyPairs` are well-founded definitions that the kernel does not reduce.

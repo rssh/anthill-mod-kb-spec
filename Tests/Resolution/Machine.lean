@@ -130,7 +130,7 @@ def solve (state : State Nat Nat Sym Absent Nat) (fuel : Nat := 200) : Outcome N
   run logical fuel state
 
 def rulesOf (outcome : Outcome Nat Nat Sym Absent Nat) : Option (List RuleId) :=
-  outcome.proof?.map (·.tree.rules)
+  outcome.proof?.map (·.rules)
 
 def answerIs (outcome : Outcome Nat Nat Sym Absent Nat) (name : Nat) (expected : T) : Bool :=
   match outcome.proof? with
@@ -146,6 +146,7 @@ mutual
 def leaves : Tree → List (RuleId × List T)
   | .node rule obligation _ [] => [(rule.id, obligation.context)]
   | .node _ _ _ subproofs => leavesOf subproofs
+  | .deferred _ _ => []
 
 def leavesOf : List Tree → List (RuleId × List T)
   | [] => []
@@ -155,7 +156,7 @@ end
 def leavesAre (outcome : Outcome Nat Nat Sym Absent Nat) (expected : List (RuleId × List T)) : Bool :=
   match outcome.proof? with
   | some proof =>
-      let actual := leaves proof.tree
+      let actual := leaves proof.filled
       actual.length == expected.length &&
         (actual.zip expected).all (fun (found, wanted) => found.1 == wanted.1 && sameArgs found.2 wanted.2)
   | none => false
@@ -417,13 +418,13 @@ def withNaf : Command Nat Nat Sym Absent := fun obligation store =>
   | _ => logical obligation store
 
 -- p ∧ naf q under p: the NAF node keeps its certificate, so the exported proof
--- needs no new failure search, and the tree is snapshot-indexed.
+-- needs no new failure search, and the proof is snapshot-indexed.
 def negation := run withNaf 100 (query [] [k .p] (.conj (k .p) (.defaultNeg (k .q))))
 #guard negation.kind = .success
 #guard rulesOf negation = some [.conjIntro, .assumption, .defaultNegIntro]
 #guard match negation.proof? with
   | some proof =>
-      match proof.tree.closedWorld with
+      match proof.closedWorld with
       | [⟨.completeFailure, certificate⟩] => same certificate.operand (k .q) && sameArgs certificate.context [k .p]
       | _ => false
   | none => false
@@ -460,8 +461,8 @@ example (command : Command Nat Nat Sym Absent) (fuel : Nat) (proof : CompletedPr
     (next : State Nat Nat Sym Absent Nat) (ran : run command fuel (query [X] [k .p] (atom .p [.var X])) = .success proof next) :
     proof.tree.obligation = (query [X] [k .p] (atom .p [.var X])).root ∧ proof.tree.Coherent ∧ proof.store.Scoped ∧
       proof.tree.Declared proof.store :=
-  let ⟨_, root, coherent, answers, declared, _⟩ := run_success command fuel (State.init_valid _ _ _ _) ran
-  ⟨root, coherent, answers, declared⟩
+  let ⟨valid, _⟩ := run_success command fuel (State.init_valid _ _ _ _) ran
+  ⟨valid.proves, valid.coherent, valid.answers, valid.declared⟩
 
 -- Clause and logical evidence is monotonic; closed-world evidence is not.
 example {kb grown : LogicalKb Nat Nat Sym} (larger : ∀ clause, clause ∈ kb → clause ∈ grown)

@@ -146,12 +146,6 @@ def matchParts : Term Variable Literal Symbol → Term Variable Literal Symbol �
   | .defaultNeg a, .defaultNeg b => some [(a, b)]
   | _, _ => none
 
-/-- An unbound flexible name: the only kind a match binds. -/
-def Store.assignable (store : Store Variable Literal Symbol) (name : Variable) : Bool :=
-  match store.info? name with
-  | some (.flexible _) => (store.binding? name).isNone
-  | _ => false
-
 def assignableName? (store : Store Variable Literal Symbol) : Term Variable Literal Symbol → Option Variable
   | .var name => if store.assignable name then some name else none
   | _ => none
@@ -246,7 +240,7 @@ theorem Store.assignable_bind {store : Store Variable Literal Symbol} {name : Va
 omit [DecidableEq Literal] [DecidableEq Symbol] in
 theorem Store.bind_openCount {store next : Store Variable Literal Symbol} {scope : Scope Variable Literal Symbol}
     {name : Variable} {value : Term Variable Literal Symbol}
-    (committed : store.bind scope name value = .committed next) (nontrivial : isName value name = false) :
+    (committed : store.bind scope name value = .bound next) (nontrivial : isName value name = false) :
     next.openCount < store.openCount := by
   obtain ⟨dependencies, infoEq, boundEq, outcome⟩ := Store.bind_committed committed
   rcases outcome with ⟨trivial, _⟩ | ⟨rfl, _, _⟩
@@ -345,7 +339,7 @@ def unifyPairs (hoApplySymbol : Symbol) (scope : Scope Variable Literal Symbol) 
       | .split parts => unifyPairs hoApplySymbol scope store (parts ++ rest) done
       | .bind name value =>
           match _bound : store.bind scope name value with
-          | .committed next => unifyPairs hoApplySymbol scope next (substPairs name value rest) (done ++ [(name, value)])
+          | .bound next => unifyPairs hoApplySymbol scope next (substPairs name value rest) (done ++ [(name, value)])
           | .rejected => .mismatch
           | .violated => .violated
       | .mismatch => .mismatch
@@ -393,7 +387,7 @@ theorem unifyPairs_cons (store : Store Variable Literal Symbol) (left right : Te
       | .split parts => unifyPairs hoApplySymbol scope store (parts ++ rest) done
       | .bind name value =>
           match store.bind scope name value with
-          | .committed next => unifyPairs hoApplySymbol scope next (substPairs name value rest) (done ++ [(name, value)])
+          | .bound next => unifyPairs hoApplySymbol scope next (substPairs name value rest) (done ++ [(name, value)])
           | .rejected => .mismatch
           | .violated => .violated
       | .mismatch => .mismatch
@@ -421,7 +415,7 @@ theorem unifyPairs_bindAll {store : Store Variable Literal Symbol}
     {done : List (Variable × Term Variable Literal Symbol)} :
     ∀ {final : Store Variable Literal Symbol} {bindings : List (Variable × Term Variable Literal Symbol)},
       unifyPairs hoApplySymbol scope store pairs done = .unified final bindings →
-        ∃ added, bindings = done ++ added ∧ store.bindAll scope added = .committed final := by
+        ∃ added, bindings = done ++ added ∧ store.bindAll scope added = .bound final := by
   induction store, pairs, done using unifyPairs.induct hoApplySymbol scope with
   | case1 store done =>
       intro final bindings computed
@@ -822,7 +816,7 @@ omit [DecidableEq Literal] [DecidableEq Symbol] [FreshNames Variable] in
 /-- A binding keeps every other name usable as it was. -/
 theorem Store.usable_bind {store next : Store Variable Literal Symbol} {scope : Scope Variable Literal Symbol}
     {name : Variable} {value : Term Variable Literal Symbol}
-    (committed : store.bind scope name value = .committed next) {other : Variable} (different : other ≠ name) :
+    (committed : store.bind scope name value = .bound next) {other : Variable} (different : other ≠ name) :
     next.usable scope other = store.usable scope other := by
   obtain ⟨dependencies, _, _, outcome⟩ := Store.bind_committed committed
   rcases outcome with ⟨_, rfl⟩ | ⟨rfl, _, _⟩
@@ -917,7 +911,7 @@ both terms read the same there and in every later refinement. -/
 theorem Store.unify_sound {store final : Store Variable Literal Symbol} (valid : store.Scoped)
     {left right : Term Variable Literal Symbol} {bindings : List (Variable × Term Variable Literal Symbol)}
     (computed : store.unify scope hoApplySymbol left right = .unified final bindings) :
-    store.bindAll scope bindings = .committed final ∧ store.Refines final ∧ final.Scoped ∧
+    store.bindAll scope bindings = .bound final ∧ store.Refines final ∧ final.Scoped ∧
       final.resolve left = final.resolve right := by
   unfold Store.unify at computed
   split at computed
@@ -991,7 +985,8 @@ theorem Store.unify_violated (store : Store Variable Literal Symbol) {left right
 
 /-- A match for a candidate is computed against the store its commit prepares.
 When the candidate's names and premises pass the commit's checks, the
-machine's commit replays the match exactly. -/
+machine's commit replays the match exactly and wakes the suspensions waiting on
+a name the match bound. -/
 theorem Store.commit_unify {store final : Store Variable Literal Symbol} (valid : store.Scoped)
     {obligation : Obligation Variable Literal Symbol} {flexibles rigids : List Variable}
     {premises : List (Premise Variable Literal Symbol)}
@@ -999,7 +994,7 @@ theorem Store.commit_unify {store final : Store Variable Literal Symbol} (valid 
     {left right : Term Variable Literal Symbol} {bindings : List (Variable × Term Variable Literal Symbol)}
     (computed : (store.prepare obligation flexibles rigids).unify obligation.scope hoApplySymbol left right =
       .unified final bindings) :
-    store.commit obligation flexibles rigids premises bindings = .committed final ∧
+    store.commit obligation flexibles rigids premises bindings = .committed final.wake final.woken ∧
       final.resolve left = final.resolve right := by
   have ⟨distinct, fresh, declared, _, _⟩ := accepted
   have ⟨committed, _, _, same⟩ := Store.unify_sound (Store.prepare_scoped valid distinct fresh declared) computed
