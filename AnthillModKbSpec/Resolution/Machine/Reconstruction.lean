@@ -1,4 +1,5 @@
 import AnthillModKbSpec.Resolution.Machine.Commands
+import AnthillModKbSpec.Resolution.Machine.Unification
 
 namespace AnthillModKbSpec.Machine
 
@@ -18,15 +19,6 @@ its answer instance (`run_reconstructs`, `run_init_reconstructs`). -/
 
 variable {Variable Literal Symbol Certificate Snapshot : Type} [DecidableEq Variable] [FreshNames Variable]
 
-/-- The completion contract of one node read through `store`: derivations of its
-read premises, each in its own scope, give a derivation of its read obligation.
-For a candidate it is `Expansion.SoundUnder`. -/
-def NodeSound (hoApplySymbol : Symbol) (kb : LogicalKb Variable Literal Symbol)
-    (naf : NafFailure Variable Literal Symbol) (store : Store Variable Literal Symbol)
-    (obligation : Obligation Variable Literal Symbol) (premises : List (Premise Variable Literal Symbol)) : Prop :=
-  (∀ premise ∈ premises, ReadDerives hoApplySymbol kb naf store (obligation.premise premise)) →
-    ReadDerives hoApplySymbol kb naf store obligation
-
 /-- The node's contract holds in every scoped store refining `store`: in every
 store the rest of the branch reads. -/
 def SoundFrom (hoApplySymbol : Symbol) (kb : LogicalKb Variable Literal Symbol)
@@ -37,11 +29,6 @@ def SoundFrom (hoApplySymbol : Symbol) (kb : LogicalKb Variable Literal Symbol)
 section Contracts
 
 variable {hoApplySymbol : Symbol} {kb : LogicalKb Variable Literal Symbol} {naf : NafFailure Variable Literal Symbol}
-
-theorem Expansion.soundUnder_iff {store : Store Variable Literal Symbol} {obligation : Obligation Variable Literal Symbol}
-    {expansion : Expansion Variable Literal Symbol Certificate} :
-    expansion.SoundUnder hoApplySymbol kb naf store obligation ↔
-      NodeSound hoApplySymbol kb naf store obligation expansion.premises := Iff.rfl
 
 theorem SoundFrom.refines {store next : Store Variable Literal Symbol} {obligation : Obligation Variable Literal Symbol}
     {premises : List (Premise Variable Literal Symbol)} (sound : SoundFrom hoApplySymbol kb naf store obligation premises)
@@ -78,6 +65,79 @@ theorem Store.Scoped.read_refines {store later : Store Variable Literal Symbol} 
   refines.resolve_eq (by rw [← reads, valid.resolve_resolve])
 
 end Contracts
+
+/-! ## Building sound candidates
+
+Commands build candidates by matching against the store a candidate's commit
+prepares. These are the pieces every command needs to prove `Command.Sound`. -/
+
+/-- A computed candidate: `some (some e)` a candidate, `some none` a miss, `none`
+a gap (an unsupported or violated match, or a capability the command lacks). -/
+abbrev Attempt (Variable Literal Symbol Certificate : Type) := Option (Option (Expansion Variable Literal Symbol Certificate))
+
+/-- A match as a candidate. -/
+def attempt (result : Unification Variable Literal Symbol)
+    (make : List (Variable × Term Variable Literal Symbol) → Expansion Variable Literal Symbol Certificate) :
+    Attempt Variable Literal Symbol Certificate :=
+  match result with
+  | .unified _ bindings => some (some (make bindings))
+  | .mismatch => some none
+  | .unsupported | .violated => none
+
+/-- The candidates of the attempts; any gap makes the response incomplete. -/
+def respond (attempts : List (Attempt Variable Literal Symbol Certificate)) : Response Variable Literal Symbol Certificate :=
+  if attempts.any Option.isNone then .incomplete (attempts.filterMap Option.join)
+  else .candidates (attempts.filterMap Option.join)
+
+section Candidates
+
+variable {hoApplySymbol : Symbol} {kb : LogicalKb Variable Literal Symbol} {naf : NafFailure Variable Literal Symbol}
+  {obligation : Obligation Variable Literal Symbol} {store : Store Variable Literal Symbol}
+
+def AttemptSound (hoApplySymbol : Symbol) (kb : LogicalKb Variable Literal Symbol) (naf : NafFailure Variable Literal Symbol)
+    (store : Store Variable Literal Symbol) (obligation : Obligation Variable Literal Symbol)
+    (candidate : Attempt Variable Literal Symbol Certificate) : Prop :=
+  ∀ expansion, candidate = some (some expansion) → CandidateSound hoApplySymbol kb naf store obligation expansion
+
+/-- A candidate is sound when its contract holds in every refinement of the
+store it was computed against. -/
+theorem fixed_sound {expansion : Expansion Variable Literal Symbol Certificate}
+    (holds : ∀ later : Store Variable Literal Symbol, store.Refines later →
+      NodeSound hoApplySymbol kb naf later obligation expansion.premises) :
+    CandidateSound hoApplySymbol kb naf store obligation expansion :=
+  fun _ _ committed later refines _ => holds later ((Store.commit_refines committed).trans refines)
+
+theorem respond_sound {attempts : List (Attempt Variable Literal Symbol Certificate)}
+    (attemptsSound : ∀ candidate ∈ attempts, AttemptSound hoApplySymbol kb naf store obligation candidate) :
+    ∀ expansion ∈ (respond attempts).alternatives, CandidateSound hoApplySymbol kb naf store obligation expansion := by
+  intro expansion member
+  have found : expansion ∈ attempts.filterMap Option.join := by
+    unfold respond at member; split at member <;> exact member
+  obtain ⟨candidate, inside, joined⟩ := List.mem_filterMap.mp found
+  exact attemptsSound candidate inside expansion (Option.join_eq_some_iff.mp joined)
+
+/-- A match-built candidate is sound when its contract holds wherever the
+matched sides read the same. -/
+theorem attempt_sound [DecidableEq Literal] [DecidableEq Symbol] (valid : store.Scoped) {flexibles : List Variable}
+    {left right : Term Variable Literal Symbol}
+    {make : List (Variable × Term Variable Literal Symbol) → Expansion Variable Literal Symbol Certificate}
+    (shape : ∀ bindings, (make bindings).flexibles = flexibles ∧ (make bindings).rigids = [] ∧
+      (make bindings).bindings = bindings)
+    (matched : ∀ bindings (later : Store Variable Literal Symbol), later.resolve left = later.resolve right →
+      NodeSound hoApplySymbol kb naf later obligation (make bindings).premises) :
+    AttemptSound hoApplySymbol kb naf store obligation
+      (attempt ((store.prepare obligation flexibles []).unify obligation.scope hoApplySymbol left right) make) := by
+  intro expansion found next woken committed later refines _
+  unfold attempt at found
+  split at found
+  · rename_i final bindings computed
+    cases found
+    obtain ⟨sameFlexibles, noRigids, sameBindings⟩ := shape bindings
+    rw [sameFlexibles, noRigids, sameBindings] at committed
+    exact matched bindings later (refines.resolve_eq (Store.commit_matched valid computed committed))
+  all_goals cases found
+
+end Candidates
 
 /-! ## Every node of a tree -/
 
@@ -149,30 +209,11 @@ theorem Nodes.readDerives {store : Store Variable Literal Symbol} {tree : ProofT
       intro coherent empty
       cases coherent with
       | node children =>
-          refine here ?_
-          have closed : ∀ child ∈ subproofs, child.refs = [] := fun child member =>
-            List.eq_nil_iff_forall_not_mem.mpr fun ref inside =>
-              (List.eq_nil_iff_forall_not_mem.mp empty) ref (mem_refsOf.mpr ⟨child, member, inside⟩)
-          -- Each premise is proved by the subproof in its position.
-          have each : ∀ (premises : List (Premise Variable Literal Symbol))
-              (trees : List (ProofTree Variable Literal Symbol Certificate)),
-              CoherentPremises obligation premises trees → (∀ child ∈ trees, child ∈ subproofs) →
-                ∀ premise ∈ premises, ReadDerives hoApplySymbol kb naf store (obligation.premise premise) := by
-            intro premises
-            induction premises with
-            | nil => intro _ _ _ premise member; cases member
-            | cons first rest restIh =>
-                intro trees coherent contained premise member
-                cases coherent with
-                | cons opened childCoherent tail =>
-                    rename_i child others
-                    rcases List.mem_cons.mp member with rfl | later
-                    · have inside := contained child List.mem_cons_self
-                      rw [← opened]
-                      exact ih child inside childCoherent (closed child inside)
-                    · exact restIh others tail (fun other inside => contained other (List.mem_cons_of_mem _ inside))
-                        premise later
-          exact each premises subproofs children (fun _ member => member)
+          refine here fun premise member => ?_
+          obtain ⟨child, inside, proves, childCoherent⟩ := children.exists_tree premise member
+          rw [← proves]
+          exact ih child inside childCoherent (List.eq_nil_iff_forall_not_mem.mpr fun ref found =>
+            (List.eq_nil_iff_forall_not_mem.mp empty) ref (mem_refsOf.mpr ⟨child, inside, found⟩))
   | deferred => intro _ empty; cases empty
 
 end ProofTree
@@ -310,15 +351,10 @@ theorem State.enter_sound {state : State Variable Literal Symbol Certificate Sna
     (candidate : CandidateSound hoApplySymbol kb naf state.store obligation expansion)
     (alternatives : ∀ other ∈ rest, CandidateSound hoApplySymbol kb naf state.store obligation other) :
     (state.enter obligation expansion rest).Sound hoApplySymbol kb naf := by
-  have saved : ∀ point ∈ state.save obligation rest, point.Sound hoApplySymbol kb naf := by
-    cases rest with
-    | nil => exact choices
-    | cons _ _ =>
-        intro point member
-        simp only [State.save, List.mem_cons] at member
-        rcases member with rfl | member
-        · exact ⟨branch, alternatives⟩
-        · exact choices point member
+  have saved : ∀ point ∈ state.save obligation rest, point.Sound hoApplySymbol kb naf := fun point member => by
+    rcases State.mem_save member with rfl | old
+    · exact ⟨branch, alternatives⟩
+    · exact choices point old
   unfold State.enter
   split
   · exact ⟨branch.fail, saved⟩
@@ -445,20 +481,10 @@ theorem step_reconstructs (command : Command Variable Literal Symbol Certificate
     proof.tree.Nodes (SoundFrom hoApplySymbol kb naf proof.store) ∧ resume.Sound hoApplySymbol kb naf := by
   have branch := sound.branch
   unfold step at stepped
-  split at stepped
-  · split at stepped <;> (try split at stepped) <;> cases stepped
-  · rename_i tree focusEq
-    rw [focusEq] at branch
-    split at stepped
-    · split at stepped
-      · cases stepped
-        exact ⟨ProofTree.Nodes.fillAll branch.records _ branch.focus, ⟨branch.fail, sound.choices⟩⟩
-      · cases stepped
-    · split at stepped <;> cases stepped
-    · cases stepped
-  · split at stepped
-    · split at stepped <;> cases stepped
-    · split at stepped <;> cases stepped
+  repeat' split at stepped
+  all_goals try cases stepped
+  rw [‹state.focus = .proved _›] at branch
+  exact ⟨ProofTree.Nodes.fillAll branch.records _ branch.focus, ⟨branch.fail, sound.choices⟩⟩
 
 /-- A successful run of a sound command reconstructs its answer instance: the
 root obligation read through the final answers is derivable. The resume state is

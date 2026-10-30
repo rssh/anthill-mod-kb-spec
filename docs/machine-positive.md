@@ -8,8 +8,9 @@ Traces are in [Tests/Resolution/Positive.lean](../Tests/Resolution/Positive.lean
 
 | Module | Contents |
 | --- | --- |
-| [Machine/Reconstruction](../AnthillModKbSpec/Resolution/Machine/Reconstruction.lean) | Node contracts in every later store (`SoundFrom`), sound commands (`Command.Sound`), the sound-state invariant and its preservation, reconstruction of a successful run |
-| [Machine/Positive](../AnthillModKbSpec/Resolution/Machine/Positive.lean) | The effective program and its lowering, the `positive` command, its soundness, clause selection and guard theorems |
+| [Machine/Reconstruction](../AnthillModKbSpec/Resolution/Machine/Reconstruction.lean) | Node contracts in every later store (`SoundFrom`), sound commands (`Command.Sound`) and the pieces every command uses to prove it (`attempt`, `respond`, `attempt_sound`), the sound-state invariant and its preservation, reconstruction of a successful run |
+| [Machine/Program](../AnthillModKbSpec/Resolution/Machine/Program.lean) | The effective program and its lowering |
+| [Machine/Positive](../AnthillModKbSpec/Resolution/Machine/Positive.lean) | The `positive` command, its soundness, clause selection and guard theorems |
 
 ## The effective program
 
@@ -49,7 +50,7 @@ compares again) and answers by the goal's form:
 
 | Goal, as read | Response |
 | --- | --- |
-| Identical to an assumption's reading, and otherwise waiting | `assumption` |
+| Closed by an exact candidate, and otherwise waiting | The exact candidates |
 | An unbound flexible name | `delay` on it |
 | A range guard on an unbound flexible name: a guard atom `m(X)`, or the disjunction `m₁(X) ∨ … ∨ false` an explicit domain list lowers to (`guardSubject?`) | `delay` on it |
 | Another atom, or falsity | Identity, ex falso, local rules, then program clauses, each matched against the store its commit prepares |
@@ -75,9 +76,10 @@ never failure. Gaps keep the other candidates: the response is
 `incomplete candidates`, which tries them and records an `unsupported` gap for
 the focus, so the run is never `exhausted`
 ([machine response](machine-state.md#commands-and-candidates)). Candidates are
-indexed by head symbol and arity (`sameHead`), or offered to falsity when they
-conclude it. A `ho_apply` application facing a direct one of the matching arity,
-either way round, needs conversion (S11): it is a gap (`hoMixed`). So is an
+selected by head symbol and arity (`sameHead`), or offered to falsity when they
+conclude it. A head that differs from the goal's only by `ho_apply` is matched
+too (`mayMatch`): the matcher reports it `unsupported`, since conversion is
+S11's, so it is a gap. So is an
 assumption from which the goal might follow by rules this slice lacks
 (`mayConclude`): a conjunction, disjunction, or existential (left rules), a rule
 with a compound or curried conclusion, or one concluding its own binder
@@ -126,7 +128,8 @@ Lowered clause bodies begin with their range guards. A guard on an unbound
 flexible name delays (`positive_guard`) instead of running ahead of the body as an
 enumerating generator. That holds for each guard shape: `D_all(X)`, `Pred_n(X)`,
 and an explicit domain list's `m₁(X) ∨ … ∨ false`, which delays as a whole. A
-guard identical to an assumption is closed by it instead. A later goal, possibly
+guard that an exact candidate closes, such as an identical assumption, is closed
+by it instead. A later goal, possibly
 the caller's after the clause returns, binds the name and wakes the guard, which
 then selects the generated signature clauses as an ordinary atom. Still delayed
 at the end, it flounders as a gap.
@@ -156,7 +159,11 @@ and are kept. Only its leading binders are instantiated (`Term.instantiateLeadin
 For an atom or falsity the command eliminates all binders of the rule as written
 with fresh flexible witnesses and matches the instance of the conclusion against
 the goal (`localAttempt`). The intermediate instances, built from the rule as
-written, are then proved by exact steps.
+written, are then proved by exact steps. The rule is classified and filtered by
+its reading: a conclusion written as a flexible name and bound later is matched
+by its reading. A rule or compound formula behind an assumption written as a
+flexible name cannot be instantiated as written, so it is a gap when its
+reading might conclude the goal; an atom behind one is identity's.
 
 An exact step (`exactStep`) proves a goal that, as written, is the rule after k
 binders. It reads the witnesses off the goal (`extract`), rebuilds the instance,
@@ -174,15 +181,13 @@ use: a candidate builds one node, and a premise carries no provenance. Building
 the chain at once would need either of these in the machine.
 
 S05's matcher compares binders only when identical, so it cannot match under the
-remaining binders of an intermediate instance. The exact steps need no match.
-For the same reason a non-atomic goal is closed only by exact candidates, never
-by a match.
-
-A non-atomic goal with an exact candidate gets only those candidates, not its
-introduction rule. A rule instance `B' → goal` is therefore proved from the rule
-and never reopened by implication introduction, which would prove the goal again
-under `B'` and recurse. A rule is available only inside the scope that assumed
-it, because a sibling premise's scope is computed from the parent's alone.
+remaining binders of an intermediate instance; the exact steps need no match,
+and a non-atomic goal is closed only by exact candidates, never by a match. Such
+a goal with an exact candidate gets only those candidates, not its introduction
+rule: a rule instance `B' → H'` reopened by implication introduction would prove
+the goal again under `B'` and recurse. A rule is available only inside the scope
+that assumed it, because a sibling premise's scope is computed from the
+parent's alone.
 
 ## Reconstruction along a run
 
@@ -241,6 +246,7 @@ The run-level theorems hold for every sound command, so later command sets
 | `∀1. (q(1, 7) → p(1))` under `q(a, 7)` / `q(a, 8)` | Success / exhausted: the captured 7 is kept |
 | `∀1. ∀2. (q(1, 2) → p(2, 1))` under `q(a, b)`; the fact `∀1. ∀2. r(1, 2, 1)` | `p(b, a)` and `r(a, b, a)` by two universal eliminations; `p(a, b)` and `r(a, b, b)` exhausted |
 | `∀1. ∀2. p(2)` for `p(a)` | The vacuous binder's witness is `true`; every witness names declared names |
+| `∀1. (q(1) → Z)` with `Z` bound to `p(c)`; an assumption `X` bound to a rule, to `p(c) ∧ q(c)`, to `p(c)` | Success through the read head; unknown; unknown; success by identity, then exhausted |
 | `∀1. (q(op(1)) → p(1))` under `q(op(a))` | Success: the instance with an operation call is found exactly |
 | `∀1. ((∀2. r(1, 2)) → p(1))`, `∀3. r(2, 3)`, goal `p(2)` with 2 a parameter | Success: reading the premise renames binder 2, but the instance is closed as written |
 | A curried rule `∀1. (q(1) → (r(1) → p(1)))`; a rule concluding `∀2. p(1, 2)`; the assumption `p ∧ q` for `p`; `∀1. 1` | Unknown: gaps |

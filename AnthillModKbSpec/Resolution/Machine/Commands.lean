@@ -209,6 +209,14 @@ def ReadDerives [FreshNames Variable] (hoApplySymbol : Symbol) (kb : LogicalKb V
     (obligation : Obligation Variable Literal Symbol) : Prop :=
   Derives hoApplySymbol kb (obligation.context.map store.resolve) (store.resolve obligation.goal) naf
 
+/-- The completion contract of one node read through `store`: derivations of its
+read premises, each in its own scope, give a derivation of its read obligation. -/
+def NodeSound [FreshNames Variable] (hoApplySymbol : Symbol) (kb : LogicalKb Variable Literal Symbol)
+    (naf : NafFailure Variable Literal Symbol) (store : Store Variable Literal Symbol)
+    (obligation : Obligation Variable Literal Symbol) (premises : List (Premise Variable Literal Symbol)) : Prop :=
+  (∀ premise ∈ premises, ReadDerives hoApplySymbol kb naf store (obligation.premise premise)) →
+    ReadDerives hoApplySymbol kb naf store obligation
+
 namespace Expansion
 
 section Reading
@@ -223,8 +231,7 @@ def SoundUnder (hoApplySymbol : Symbol) (kb : LogicalKb Variable Literal Symbol)
     (naf : NafFailure Variable Literal Symbol) (store : Store Variable Literal Symbol)
     (obligation : Obligation Variable Literal Symbol) (expansion : Expansion Variable Literal Symbol Certificate) :
     Prop :=
-  (∀ premise ∈ expansion.premises, ReadDerives hoApplySymbol kb naf store (obligation.premise premise)) →
-    ReadDerives hoApplySymbol kb naf store obligation
+  NodeSound hoApplySymbol kb naf store obligation expansion.premises
 
 private theorem read_premise {obligation : Obligation Variable Literal Symbol} {premise : Premise Variable Literal Symbol} :
     ReadDerives hoApplySymbol kb naf store (obligation.premise premise) ↔
@@ -294,14 +301,6 @@ theorem impIntro_soundUnder {goal premise conclusion : Formula Variable Literal 
   simp only [ReadDerives, read, Store.resolve_imp]
   exact .impIntro body
 
-theorem impElim_soundUnder {premise goal : Formula Variable Literal Symbol} :
-    (impElim (Certificate := Certificate) premise goal).SoundUnder hoApplySymbol kb naf store ⟨scope, goal⟩ :=
-  fun proofs => by
-    have rule := read_premise.mp (proofs { goal := .imp premise goal } (by simp [impElim]))
-    have argument := read_premise.mp (proofs { goal := premise } (by simp [impElim]))
-    simp only [Store.resolve_imp, List.map_nil, List.nil_append] at rule argument
-    exact .impElim rule argument
-
 /-- `impElim premise conclusion` for a goal that only reads as `conclusion` (S06):
 a local rule's instance `premise → conclusion` is the first premise as built,
 and the match makes the goal read as its conclusion. -/
@@ -314,6 +313,10 @@ theorem impElim_soundUnder_matched {premise conclusion goal : Formula Variable L
     simp only [Store.resolve_imp, List.map_nil, List.nil_append] at rule argument
     simp only [ReadDerives, Obligation.context, matched]
     exact .impElim rule argument
+
+theorem impElim_soundUnder {premise goal : Formula Variable Literal Symbol} :
+    (impElim (Certificate := Certificate) premise goal).SoundUnder hoApplySymbol kb naf store ⟨scope, goal⟩ :=
+  impElim_soundUnder_matched rfl
 
 /-- Use a denial clause `⊥ :- body` for a goal reading as falsity (S06): its
 template names renamed to fresh flexible names, its renamed body the one premise. -/

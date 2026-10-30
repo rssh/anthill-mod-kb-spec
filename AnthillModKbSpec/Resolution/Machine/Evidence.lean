@@ -314,6 +314,22 @@ theorem CoherentPremises.subproof_context {parent : Obligation Variable Literal 
           · exact ⟨by rw [opened]; rfl, by rw [opened]; rfl⟩
           · exact ih tail pair member
 
+/-- Every premise has a coherent subproof that proves it. -/
+theorem CoherentPremises.exists_tree {parent : Obligation Variable Literal Symbol}
+    {premises : List (Premise Variable Literal Symbol)} {trees : List (ProofTree Variable Literal Symbol Certificate)}
+    (coherent : CoherentPremises parent premises trees) :
+    ∀ premise ∈ premises, ∃ tree ∈ trees, tree.obligation = parent.premise premise ∧ tree.Coherent := by
+  induction premises generalizing trees with
+  | nil => intro _ member; cases member
+  | cons first rest ih =>
+      cases coherent with
+      | cons opened valid tail =>
+          intro premise member
+          rcases List.mem_cons.mp member with rfl | later
+          · exact ⟨_, List.mem_cons_self, opened, valid⟩
+          · obtain ⟨tree, inside, proves, treeValid⟩ := ih tail premise later
+            exact ⟨tree, List.mem_cons_of_mem _ inside, proves, treeValid⟩
+
 end ProofTree
 
 /-! ## Deferred proofs -/

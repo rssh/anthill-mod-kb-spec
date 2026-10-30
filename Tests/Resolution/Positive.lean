@@ -49,42 +49,29 @@ def floundered : Run → Bool
   | _ => false
 
 mutual
-/-- Clause applications in preorder, with the goal each one proves. -/
-def clauseNodes : ProofTree Nat Nat Sym Unit → List (Clause × T)
-  | .node (.clause clause _) obligation _ subproofs => (clause, obligation.goal) :: clauseNodesOf subproofs
-  | .node _ _ _ subproofs => clauseNodesOf subproofs
+/-- Rule applications in preorder, with the obligation each one proves. -/
+def nodes : ProofTree Nat Nat Sym Unit → List (RuleApp Nat Nat Sym Unit × Obligation Nat Nat Sym)
+  | .node rule obligation _ subproofs => (rule, obligation) :: nodesOf subproofs
   | .deferred _ _ => []
 
-def clauseNodesOf : List (ProofTree Nat Nat Sym Unit) → List (Clause × T)
+def nodesOf : List (ProofTree Nat Nat Sym Unit) → List (RuleApp Nat Nat Sym Unit × Obligation Nat Nat Sym)
   | [] => []
-  | tree :: trees => clauseNodes tree ++ clauseNodesOf trees
+  | tree :: trees => nodes tree ++ nodesOf trees
 end
+
+/-- Clause applications in preorder, with the goal each one proves. -/
+def clauseNodes (tree : ProofTree Nat Nat Sym Unit) : List (Clause × T) :=
+  (nodes tree).filterMap fun | (.clause clause _, obligation) => some (clause, obligation.goal) | _ => none
 
 def clausesOf (outcome : Run) : List (Clause × T) := (outcome.proof?.map (clauseNodes ·.tree)).getD []
 
-mutual
 /-- Witnesses of existential introductions in preorder. -/
-def witnesses : ProofTree Nat Nat Sym Unit → List T
-  | .node (.existsIntro witness) _ _ subproofs => witness :: witnessesOf subproofs
-  | .node _ _ _ subproofs => witnessesOf subproofs
-  | .deferred _ _ => []
+def witnesses (tree : ProofTree Nat Nat Sym Unit) : List T :=
+  (nodes tree).filterMap fun | (.existsIntro witness, _) => some witness | _ => none
 
-def witnessesOf : List (ProofTree Nat Nat Sym Unit) → List T
-  | [] => []
-  | tree :: trees => witnesses tree ++ witnessesOf trees
-end
-
-mutual
 /-- Witnesses of universal eliminations in preorder. -/
-def eliminations : ProofTree Nat Nat Sym Unit → List T
-  | .node (.forallElim witness) _ _ subproofs => witness :: eliminationsOf subproofs
-  | .node _ _ _ subproofs => eliminationsOf subproofs
-  | .deferred _ _ => []
-
-def eliminationsOf : List (ProofTree Nat Nat Sym Unit) → List T
-  | [] => []
-  | tree :: trees => eliminations tree ++ eliminationsOf trees
-end
+def eliminations (tree : ProofTree Nat Nat Sym Unit) : List T :=
+  (nodes tree).filterMap fun | (.forallElim witness, _) => some witness | _ => none
 
 /-- Every universal-elimination witness names only names the final store declares. -/
 def witnessesDeclared (outcome : Run) : Bool :=
@@ -264,6 +251,22 @@ def call (argument : T) : T := .dictionaryCall (k .c) [] .s [argument]
 #guard rulesOf (solve (plain []) (query [] [.falsity] (atom .p [k .a]))) = some [.falsityElim, .assumption]
 #guard rulesOf (solve (plain []) (query [] [.falsity] (.conj (k .p) (k .q)))) = some [.falsityElim, .assumption]
 
+-- Assumptions are classified by their reading. A rule whose conclusion is a
+-- flexible name, bound later to p(c), is gated by the read head and used as
+-- written. A rule or conjunction behind an assumption written as a flexible
+-- name cannot be instantiated as written: a gap, not a miss. An atom behind one
+-- is identity's: no gap.
+def hiddenHead : Program Nat Nat Sym := plain [fact (atom .s [atom .p [k .c]])]
+#guard rulesOf (solve hiddenHead (query [0] [.forallVar 1 (.imp (atom .q [.var 1]) (.var 0)), atom .q [k .c]]
+  (.conj (atom .s [.var 0]) (atom .p [k .c])))) =
+  some [.conjIntro, .clause, .truth, .impElim, .forallElim, .assumption, .assumption]
+def hidden (value : T) : Program Nat Nat Sym := plain [fact (atom .r [value])]
+def hiddenQuery : State Nat Nat Sym Unit Nat := query [0] [.var 0, atom .q [k .c]] (.conj (atom .r [.var 0]) (atom .p [k .c]))
+#guard (solve (hidden (.forallVar 1 (.imp (atom .q [.var 1]) (atom .p [.var 1])))) hiddenQuery).kind = .unknown
+#guard (solve (hidden (.conj (atom .p [k .c]) (atom .q [k .c]))) hiddenQuery).kind = .unknown
+#guard rulesOf (solve (hidden (atom .p [k .c])) hiddenQuery) = some [.conjIntro, .clause, .truth, .assumption]
+#guard (resume (hidden (atom .p [k .c])) (solve (hidden (atom .p [k .c])) hiddenQuery)).kind = .exhausted
+
 -- A local rule's answer binds a root name through a fresh witness.
 #guard answerIs (solve (plain []) (query [0] [localRule, atom .q [k .c]] (atom .p [.var 0]))) 0 (k .c)
 
@@ -294,10 +297,20 @@ theorem listed : ∀ rule ∈ rules, snapshot.signature.data.definitions rule :=
 def zero : T := k .zero
 def succ (n : T) : T := atom .succ [n]
 
-/-- KB clauses with generated ranges: unannotated variables range over D_all;
-the generator relation natDomain ranges over the carrier. -/
-def data (clause : Clause) : SourceClause Dom Nat Nat Sym := ⟨clause, Elaboration.defaultRanges, fun _ => .allData⟩
-def carrier (clause : Clause) : SourceClause Dom Nat Nat Sym := ⟨clause, Elaboration.defaultRanges, fun _ => .carrier⟩
+/-- A KB clause whose implicit variables all have the generated range `range`. -/
+def ranged (range : Range Dom) (clause : Clause) : SourceClause Dom Nat Nat Sym :=
+  ⟨clause, Elaboration.defaultRanges, fun _ => range⟩
+
+/-- Unannotated variables range over D_all; the generator relation natDomain
+ranges over the carrier. -/
+def data : Clause → SourceClause Dom Nat Nat Sym := ranged .allData
+def carrier : Clause → SourceClause Dom Nat Nat Sym := ranged .carrier
+
+/-- The program built from the sources, or the empty one if lowering rejects them. -/
+def buildOr (sources : List (SourceClause Dom Nat Nat Sym)) : Program Nat Nat Sym :=
+  match Program.build .ha snapshot names rules sources with
+  | .ok program => program
+  | .error _ => ⟨[], fun _ => false⟩
 
 def sources : List (SourceClause Dom Nat Nat Sym) :=
   [ data (rule (atom .v [.var 50]) []),                                -- v(X) :- true, guarded
@@ -306,10 +319,7 @@ def sources : List (SourceClause Dom Nat Nat Sym) :=
     carrier (rule (atom .natDomain [succ (.var 50)]) [atom .natDomain [.var 50]]) ]
 
 def built : Except LoweringError (Program Nat Nat Sym) := Program.build .ha snapshot names rules sources
-def guarded : Program Nat Nat Sym :=
-  match built with
-  | .ok program => program
-  | .error _ => ⟨[], fun _ => false⟩
+def guarded : Program Nat Nat Sym := buildOr sources
 
 #guard match built with | .ok _ => true | .error _ => false
 -- The guard symbols are the naming's membership symbols, not the generator's.
@@ -343,11 +353,8 @@ def vCaller := solve guarded (query [0] [atom .q [succ zero]] (.conj (atom .v [.
 -- An explicit domain list guards with the disjunction isNat(X) ∨ false. It
 -- delays as a whole; once bound, a value outside the domain refutes it, and the
 -- trailing false is a miss, not a gap: exhausted, also on resume.
-def explicitProgram : Program Nat Nat Sym :=
-  match Program.build .ha snapshot names rules [⟨rule (atom .w [.var 50]) [], Elaboration.defaultRanges,
-      fun _ => .data [.nat]⟩] with
-  | .ok program => program
-  | .error _ => ⟨[], fun _ => false⟩
+def explicitClause : SourceClause Dom Nat Nat Sym := ranged (.data [.nat]) (rule (atom .w [.var 50]) [])
+def explicitProgram : Program Nat Nat Sym := buildOr [explicitClause]
 #guard match explicitProgram.clauses with
   | ⟨.lowered 0, .definite (.app .w [.var 50]) [.disj (.app .isNat [.var 50]) .falsity]⟩ :: _ => true
   | _ => false
@@ -359,11 +366,7 @@ def explicitCaller (value : T) := solve explicitProgram (query [0] [atom .q [val
 #guard floundered (solve explicitProgram (query [0] [] (atom .w [.var 0])))
 
 -- A predicate range guards with isPred(P), proved from the registered fact.
-def predicateProgram : Program Nat Nat Sym :=
-  match Program.build .ha snapshot names rules [⟨rule (atom .w [.var 50]) [], Elaboration.defaultRanges,
-      fun _ => .predicate 1⟩] with
-  | .ok program => program
-  | .error _ => ⟨[], fun _ => false⟩
+def predicateProgram : Program Nat Nat Sym := buildOr [ranged (.predicate 1) (rule (atom .w [.var 50]) [])]
 #guard (solve predicateProgram (query [0] [atom .e [k .p]] (.conj (atom .w [.var 0]) (atom .e [.var 0])))).kind
   = .success
 #guard (solve predicateProgram (query [0] [atom .e [k .q]] (.conj (atom .w [.var 0]) (atom .e [.var 0])))).kind
@@ -386,11 +389,7 @@ def explicitQuery : T :=
 
 -- The trailing false of an explicit domain guard is never tried, even with a
 -- denial clause in the KB that would loop: the out-of-domain value is a miss.
-def denialGuard : Program Nat Nat Sym :=
-  match Program.build .ha snapshot names rules [⟨rule (atom .w [.var 50]) [], Elaboration.defaultRanges,
-      fun _ => .data [.nat]⟩, carrier (.goal [k .r]), carrier (rule (k .r) [k .r])] with
-  | .ok program => program
-  | .error _ => ⟨[], fun _ => false⟩
+def denialGuard : Program Nat Nat Sym := buildOr [explicitClause, carrier (.goal [k .r]), carrier (rule (k .r) [k .r])]
 #guard (solve denialGuard (query [0] [atom .q [k .b]] (.conj (atom .w [.var 0]) (atom .q [.var 0])))).kind = .exhausted
 
 -- num(X) :- natDomain(X): the guard waits, and the member goal appended after
@@ -407,7 +406,7 @@ def callClause : Clause := rule (atom .u [.var 60]) [.hoApply .ha (.var 60) [zer
   | .error (.clause 4) => true
   | _ => false
 #guard match Program.build (Literal := Nat) .ha snapshot names rules
-    (sources ++ [⟨callClause, Elaboration.defaultRanges, fun _ => .predicate 1⟩]) with
+    (sources ++ [ranged (.predicate 1) callClause]) with
   | .ok program => program.clauses.length == 9
   | .error _ => false
 -- So is a query goal: ∀P. ho_apply(P, zero) under the data default.
@@ -494,12 +493,13 @@ example {fuel : Nat} {state resume : State Nat Nat Sym Unit Nat} {proof : Comple
       resume.Sound Sym.ha pFacts.kb NafFailure.disabled :=
   run_reconstructs _ (positive_sound pFacts) fuel valid sound ran
 
--- A guard on an unbound flexible name delays, validly, unless an assumption it
--- reads as closes it.
+-- A guard on an unbound flexible name delays, validly, unless an exact candidate
+-- closes it.
 example {obligation : Obligation Nat Nat Sym} {store : Store Nat Nat Sym}
     (reads : store.resolve obligation.goal = (.app .allData [.var 0] : T)) (unbound : store.assignable 0 = true)
-    (unassumed : identities (Certificate := Unit) (.app .allData [.var 0]) (store.readContext obligation) = []) :
+    (unclosed : exactCandidates (Certificate := Unit) obligation (.app .allData [.var 0])
+      (store.readContext obligation) = []) :
     positive (Certificate := Unit) .ha guarded obligation store = .delay [0] ∧ store.delayable [0] = true :=
-  positive_guard reads (by decide) unbound unassumed
+  positive_guard reads (by decide) unbound unclosed
 
 end PositiveTests

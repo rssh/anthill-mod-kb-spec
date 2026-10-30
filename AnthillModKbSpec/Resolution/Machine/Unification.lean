@@ -989,6 +989,21 @@ theorem Store.commit_unify {store final : Store Variable Literal Symbol} (valid 
   have ⟨committed, _, _, same⟩ := Store.unify_sound (Store.prepare_scoped valid distinct fresh declared) computed
   exact ⟨Store.commit_prepared accepted committed, same⟩
 
+/-- A commit replaying a match against its prepared store makes the two sides
+read the same in the committed store. -/
+theorem Store.commit_matched {store final next : Store Variable Literal Symbol} (valid : store.Scoped)
+    {obligation : Obligation Variable Literal Symbol} {flexibles rigids : List Variable}
+    {premises : List (Premise Variable Literal Symbol)} {left right : Term Variable Literal Symbol}
+    {bindings : List (Variable × Term Variable Literal Symbol)} {woken : List (Suspension Variable Literal Symbol)}
+    (computed : (store.prepare obligation flexibles rigids).unify obligation.scope hoApplySymbol left right =
+      .unified final bindings)
+    (committed : store.commit obligation flexibles rigids premises bindings = .committed next woken) :
+    next.resolve left = next.resolve right := by
+  obtain ⟨replayed, same⟩ := Store.commit_unify valid (Store.commit_checks committed).1 computed
+  rw [committed] at replayed
+  cases replayed
+  exact same
+
 end Correctness
 
 end AnthillModKbSpec.Machine

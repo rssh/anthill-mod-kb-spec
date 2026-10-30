@@ -635,9 +635,7 @@ def step (command : Command Variable Literal Symbol Certificate) (state : State 
       match command obligation state.store with
       | .candidates [] => .running { state with focus := .failed }
       | .candidates (expansion :: rest) => .running (state.enter obligation expansion rest)
-      | .unsupported =>
-          .running { state with focus := .failed, gaps := ⟨.unsupported, obligation⟩ :: state.gaps }
-      | .incomplete [] =>
+      | .unsupported | .incomplete [] =>
           .running { state with focus := .failed, gaps := ⟨.unsupported, obligation⟩ :: state.gaps }
       | .incomplete (expansion :: rest) =>
           .running ({ state with gaps := ⟨.unsupported, obligation⟩ :: state.gaps }.enter obligation expansion rest)
@@ -1016,19 +1014,25 @@ theorem State.init_valid (snapshot : Snapshot) (flexibles : List Variable)
         · exact absurd (List.mem_filter.mpr ⟨member, by simpa using inside⟩) rigid
       exact lookup_isSome_of_mem (List.mem_append_right _ (List.mem_map.mpr ⟨name, flexible, rfl⟩))
 
+omit [DecidableEq Variable] in
+/-- The saved choice points are the old ones and, when candidates remain, one
+for them with the current store, continuations, and deferred proofs. -/
+theorem State.mem_save {state : State Variable Literal Symbol Certificate Snapshot}
+    {obligation : Obligation Variable Literal Symbol} {rest : List (Expansion Variable Literal Symbol Certificate)}
+    {point : ChoicePoint Variable Literal Symbol Certificate} (member : point ∈ state.save obligation rest) :
+    point = ⟨obligation, rest, state.store, state.frames, state.deferred⟩ ∨ point ∈ state.choices := by
+  cases rest with
+  | nil => exact .inr member
+  | cons _ _ => exact List.mem_cons.mp member
+
 theorem State.save_valid {state : State Variable Literal Symbol Certificate Snapshot}
     {obligation : Obligation Variable Literal Symbol} {rest : List (Expansion Variable Literal Symbol Certificate)}
     (branch : Branch.Valid state.root state.store (.solve obligation) state.frames state.deferred state.nextHole)
     (choices : ∀ point ∈ state.choices, point.Valid state.root state.nextHole) :
-    ∀ point ∈ state.save obligation rest, point.Valid state.root state.nextHole := by
-  cases rest with
-  | nil => exact choices
-  | cons _ _ =>
-      intro point member
-      simp only [State.save, List.mem_cons] at member
-      rcases member with rfl | member
-      · exact branch
-      · exact choices point member
+    ∀ point ∈ state.save obligation rest, point.Valid state.root state.nextHole := fun point member => by
+  rcases State.mem_save member with rfl | old
+  · exact branch
+  · exact choices point old
 
 /-- Entering a candidate from a branch focused on its obligation keeps the
 state valid, whatever the commit answers. -/
