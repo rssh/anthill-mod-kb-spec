@@ -198,7 +198,10 @@ when it retains no closed-world evidence (`CompletedProof.Valid.monotonic_iff`).
   The generated `fill` or member goal is appended after the body and enumerates
   by ordinary candidates. Reconstruction reads `CompletedProof.tree`, already
   complete (`run_reconstructs`).
-- **S07**: P0 is ground and never delays.
+- **S07**: P0 is ground and never delays (`Ground.strategy_eq`, [P0 evaluation](machine-p0.md)).
+  Outside P0, ground NAF does not decide an operand whose search delays any
+  goal: the NAF obligation is a gap, also when the delayed goals woke and were
+  proved inside the operand.
 - **S08**: machine output has no reference, so the completed tree is what it
   encodes, and the records need no encoding. A supplied tree (manual, external,
   P2) that still holds a reference is an unresolved hole and is rejected.

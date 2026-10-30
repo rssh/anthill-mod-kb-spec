@@ -140,6 +140,29 @@ theorem Member.derives {sigma : Definitions Domain Symbol} {membershipSymbol : D
           obtain ⟨i, rfl⟩ := List.mem_ofFn.mp member
           exact ih i))
 
+/-- One use of a generated membership clause on arbitrary argument terms:
+derivations of the fields' memberships of the arguments derive the result's
+membership of the constructor application. `Member.derives` iterates this over
+generated trees; a derivation may also take an argument's membership from an
+assumption. -/
+theorem membershipClause_derives {sigma : Definitions Domain Symbol} {membershipSymbol : Domain → Symbol}
+    {names : Nat → Variable} (distinct : DistinctNames sigma names) {kb : LogicalKb Variable Literal Symbol}
+    {rule : Rule Domain Symbol} (declared : sigma rule) (contains : membershipClause membershipSymbol names rule ∈ kb)
+    {context : ProofContext Variable Literal Symbol} {naf : NafFailure Variable Literal Symbol}
+    (children : Fin rule.fields.length → Term Variable Literal Symbol)
+    (each : ∀ i, Derives hoApplySymbol kb context (.app (membershipSymbol rule.fields[i]) [children i]) naf) :
+    Derives hoApplySymbol kb context (.app (membershipSymbol rule.result) [.app rule.symbol (List.ofFn children)]) naf := by
+  have image := childSubstitution_name (children := children) (distinct rule declared)
+  have argument (i : Fin rule.fields.length) :
+      Substitutes (childSubstitution names children) (.var (names i)) (children i) := by
+    rw [← image i]; exact .var
+  exact .clause contains
+    (.app (.cons (.app (substitutesList_ofFn argument)) .nil))
+    (substitutesList_ofFn (fun i => .app (.cons (argument i) .nil))).conjunction
+    (Derives.conjunctionIntro (fun goal member => by
+      obtain ⟨i, rfl⟩ := List.mem_ofFn.mp member
+      exact each i))
+
 theorem guard_derives {kb : LogicalKb Variable Literal Symbol}
     {context : ProofContext Variable Literal Symbol} {naf : NafFailure Variable Literal Symbol}
     (membershipSymbol : Domain → Symbol) {domains : List Domain} {domain : Domain}

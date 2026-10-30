@@ -56,7 +56,7 @@ Use exactly these existing syntactic classes:
 
 | Component | P0 condition |
 | --- | --- |
-| Data | `GroundSearch.IsData`: literals and finite application trees |
+| Data | `GroundSearch.IsData`: literals and finite application trees; S07 also excludes the reserved `ho_apply` symbol inside data (`P0.Plain`), since the shared matcher defers that comparison to S11 |
 | Atom | `GroundSearch.IsAtom ha`: ordinary symbol applied to ground data |
 | Goal | `GroundSearch.IsGoal ha`: atom, truth, falsity, conjunction, nested NAF |
 | Clause | `GroundSearch.IsClause ha`: ground atomic head and a list of P0 goals |
@@ -484,7 +484,11 @@ S18 adds delayed goals: suspensions and a constraint slot in the store, woken
 continuations beside frames, and deferred proofs. `State.Valid` covers every
 branch (`Branch.Valid`), `Store.commit_wakes` wakes each suspension exactly
 once, and `run_success` gives a completed proof with nothing pending whose
-tree has no reference ([details](machine-delay.md)).
+tree has no reference ([details](machine-delay.md)). S07 adds negation as
+failure in the same run (`Response.negate`, NAF barriers and entries), the P0
+command set (`positive` with `Strategy.withNegation`), the checker, and total,
+correct P0 runs whose NAF nodes keep finite, checkable failure witnesses
+([details](machine-p0.md)).
 
 ### P0 commands
 
@@ -551,6 +555,16 @@ this ticket. `P`, `C`, `G` refer to the same program, context, and goal througho
 | `Machine.exportProof`, `exportProof_checked` | Successful P2 execution exports a Term tree accepted by P1 for the same answer instance, snapshot/context, and NAF provider | S04 interfaces; S06-S14 construction/checking; S15-S16 composition; S17 regressions |
 | `Machine.p0_model_exists`, `Machine.sound` | Supply the model witness and compose with existing soundness, distinguishing new certificate rules | S16 |
 
+S07 implements its rows as `Admission.P0Input` and `Acyclic` (with the rank
+witness carried by the plan's run input), `Admission.check`,
+`check_ready_sound`, `check_p0_complete`, `Machine.run_total_of_p0`,
+`Machine.run_correct_of_p0`, and, for P0 plans, `ready_no_missing_capability`
+(the no-missing-capability invariant along every reached state) and `step_inv`
+(preservation with a decreasing measure). A plan carries its admission
+(`Admits`), so no plan pairs one input with another's run, and `check` answers
+`invalid` for a program that is not the snapshot's effective program (a forged
+or a missing generated clause). The composed P1/P2 forms remain S15's.
+
 For general answer substitutions the reconstruction conclusion is derivability
 of the permitted instantiated query under the correspondingly tracked context,
 not derivability of an uninstantiated existential placeholder. Frame invariants
@@ -568,15 +582,16 @@ cannot establish Ready. Proof checking and proof discovery are distinct tasks.
 | `Syntax`, `LogicalKb`, `Derivation` | Common terms, clauses, contexts, introduction/elimination and equality rules | Admission/signature layer and machine transitions |
 | `AdmissionSignature` (S02) | Data/predicate range contracts, finite arity declarations, snapshot-indexed reference evidence, ho_apply/dictionary compatibility laws | Machine scope enforcement and operational admission; no automatic induction validity |
 | `Elaboration` (S03) | Recursive range guards, universal/existential semantics, free-name preservation, capture-safe substitution/opening, context and clause-template contracts, rejection of data ranges at `ho_apply` heads, symbolic guards that read only the signature naming, generated signature clauses (`signatureKb`) deriving every guard ([details](guarded-elaboration.md)) | Admitted quantifier strategies and machine reconstruction |
-| `Machine` (S04) | State, AND frames, OR choice points with rollback, answer store with dependency sets and triangular bindings, commit checks, proof trees with rule parameters and scope coherence, evidence classes, outcomes, logical command contracts; `step_valid`, `run_success`, `Frame.feed_exact`, `Store.commit_no_escape`, `run_exhausted`, `Derives.mono` ([details](machine-state.md)) | P0 termination and failure certificates (S07), Term encoding and checker (S08) |
+| `Machine` (S04) | State, AND frames, OR choice points with rollback, answer store with dependency sets and triangular bindings, commit checks, proof trees with rule parameters and scope coherence, evidence classes, outcomes, logical command contracts; `step_valid`, `run_success`, `Frame.feed_exact`, `Store.commit_no_escape`, `run_exhausted`, `Derives.mono` ([details](machine-state.md)) | Term encoding and checker (S08) |
 | `Machine` matching (S05) | Total `Store.resolve` with alpha-renaming, triangular bindings, store refinement and the scope of resolved answers, clause and local-rule freshening, the matcher with `unified`/`mismatch`/`unsupported`/`violated` outcomes, read-through contracts; `Store.unify_sound`, `Store.commit_unify`, `Store.unify_supported`, `Store.commit_no_escape_resolved`, `Store.commit_fresh_resolved`, `Expansion.clause_soundUnder` ([details](machine-matching.md)) | Matching up to alpha-equivalence, operation evaluation (S14), `ho_apply` conversion (S11); no completeness of the matcher |
 | `Machine` declared names (S19) | Every free name of every committed obligation is declared in its store: the commit checks that every name a premise mentions is within its scope, store freshness replaces obligation-name freshness, and one lemma gives opened names their freshness for read obligations; `State.Valid`, `Store.commit_declared`, `Store.commit_fresh_resolved`, `run_success` ([details](machine-state.md#declared-names)) | — |
 | `Machine` delayed goals (S18) | Delay responses, suspensions and constraint slots in the store, exactly-once wakeup at the binding commit, woken continuations under their own scopes, deferred proofs filled at the end, floundering as gaps; suspended and woken obligations declared; `Store.commit_wakes`, `step_valid`, `run_success`, `ProofTree.fillAll_complete`, `run_not_exhausted` ([details](machine-delay.md)) | Constraint solvers (S10 and later); rejection of references in supplied trees (S08) |
-| `Machine` positive execution (S06) | Effective programs with generated signature clauses and reported lowering rejections, the `positive` strategy (introductions, identity, local rules by exact universal elimination, clause and denial-clause selection, falsity as an ordinary goal, delaying guards, gaps recorded beside the remaining candidates by `Response.incomplete`), sound strategies and their reconstruction along a run; `Program.build_sound`, `positive_sound`, `run_reconstructs`, `positive_reconstructs_elaborated` ([details](machine-positive.md)) | Compound heads, curried rules, and left rules (S09), NAF and exhaustive failure (S07, S10), `ho_apply` conversion (S11); no termination or completeness |
+| `Machine` positive execution (S06) | Effective programs with generated signature clauses and reported lowering rejections, the `positive` strategy (introductions, identity, local rules by exact universal elimination, clause and denial-clause selection, falsity as an ordinary goal, delaying guards, gaps recorded beside the remaining candidates by `Response.incomplete`), sound strategies and their reconstruction along a run; `Program.build_sound`, `positive_sound`, `run_reconstructs`, `positive_reconstructs_elaborated` ([details](machine-positive.md)) | Compound heads, curried rules, and left rules (S09), scoped and evidence-first NAF (S10), `ho_apply` conversion (S11); termination and completeness only for P0 (S07) |
 | `Substitution`, `Opening` | Capture-avoiding substitution and rigid-name opening proofs; free names of instances, agreement, and cancellation (S05) | — |
 | `ClauseInstantiation` | `instantiate?_sound` validates a partial computed instance; `Term.instantiate` (S05) renames binders on capture hazards, agrees with `instantiate?` when it succeeds, and composes | — |
 | `Freshening` (S05) | Clause template names, fresh names, renaming with captured names kept, local-rule binder instantiation | — |
-| `GroundSearch.Program`, `Context`, `Succeeds`, `Fails` | P0 finite presentation and evidence judgments | No terminating evaluator, rank checker, or totality theorem |
+| `GroundSearch.Program`, `Context`, `Succeeds`, `Fails` | P0 finite presentation and evidence judgments | — (S07 adds ranks, `decided`, and the evaluator on the machine) |
+| `Machine` P0 evaluation (S07) | `Response.negate` with NAF barriers and entries, `Strategy.withNegation`, rank construction (`topoRank_decreases`), certificate totality under a rank (`GroundSearch.decided`), the P0 command set and its exact answers (`Ground.strategy_eq`), the run invariant and measure (`step_inv`), `Admission.check` with requests and exact guard decisions (`guardHolds_iff`), failure witnesses with a structural checker (`checkFailure_sound`, `NegativeCertificate.check`), `check_ready_sound`, `check_p0_complete`, `ready_no_missing_capability`, `run_total_of_p0`, `run_correct_of_p0`, `P0.run_semantic` ([details](machine-p0.md)) | A completed-model witness for admitted inputs (S16); composition into `E(KB)` with the guard facts (S16) |
 | `GroundSearch.succeeds_toDerives`, `succeeds_not_fails` | Reconstruction and certificate consistency | No general `Derives` completeness conclusion |
 | `CompletedGround` | `ground_certificates_sound`, `ground_failure_adequate`, `ground_completed_sound` | Completion is a hypothesis, not generic model existence or search termination |
 | `VariableSearch`, `ScopedSearch` | Instances, answers, freshness, `LocalInstance.toDerives`, `answers_toDerives` | Exhaustive-instance covers are evidence, not a general enumeration algorithm; raw scoped failure is inadequate |

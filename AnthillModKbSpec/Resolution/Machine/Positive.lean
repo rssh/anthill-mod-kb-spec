@@ -74,6 +74,11 @@ def Store.readContext (store : Store Variable Literal Symbol) (obligation : Obli
   obligation.scope.assumptions.map fun assumption => (assumption, store.resolve assumption)
 
 omit [DecidableEq Symbol] [DecidableEq Literal] in
+theorem Store.empty_readContext (obligation : Obligation Variable Literal Symbol) :
+    (Store.empty : Store Variable Literal Symbol).readContext obligation =
+      obligation.scope.assumptions.map fun assumption => (assumption, assumption) := rfl
+
+omit [DecidableEq Symbol] [DecidableEq Literal] in
 theorem Store.mem_readContext {store : Store Variable Literal Symbol} {obligation : Obligation Variable Literal Symbol}
     {assumption read : Term Variable Literal Symbol} (member : (assumption, read) ∈ store.readContext obligation) :
     assumption ∈ obligation.scope.assumptions ∧ read = store.resolve assumption := by

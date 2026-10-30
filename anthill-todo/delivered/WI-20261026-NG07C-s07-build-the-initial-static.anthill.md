@@ -3,9 +3,9 @@
 - id: WI-20261026-NG07C-s07-build-the-initial-static
 - created: 2026-10-26T08:32:25Z
 
-- status: Open
-- status_agent: user
-- status_at: 2026-10-26T08:32:25Z
+- status: Delivered
+- status_agent: claude
+- status_at: 2026-10-30T15:19:48Z
 
 - acceptance: lake build
 
@@ -36,6 +36,7 @@ Acceptance:
 
 Validation: lake build and focused Lean tests/examples appropriate to the changed definitions and proofs. Documentation-only work is checked against its stated deliverables; a build alone does not establish them.
 Design references: docs/resolution-state-machine.md and docs/resolution-implementation-plan.md.
+
 ## Changes
 
 ### 2026-10-29T22:48:34Z — feedback — user

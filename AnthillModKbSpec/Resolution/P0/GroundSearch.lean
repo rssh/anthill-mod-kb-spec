@@ -202,7 +202,7 @@ private theorem goalIdentity (proof : IsGoal hoApplySymbol (Variable := Variable
   | defaultNeg body ih => exact .defaultNeg ih
 
 omit [DecidableEq Variable] in
-private theorem conjunction_isGoal {goals : List (Term Variable Literal Symbol)}
+theorem conjunction_isGoal {goals : List (Term Variable Literal Symbol)}
     (proof : ∀ goal ∈ goals, IsGoal hoApplySymbol goal) :
     IsGoal hoApplySymbol (.conjunction goals) := by
   induction goals with

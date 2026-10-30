@@ -36,12 +36,13 @@ Modules are grouped under `AnthillModKbSpec/`:
 | `Models/` | Concrete Boolean, constructor-key, induction, and ordering model witnesses |
 | `Deriving/` | Generation of constructor-domain presentations from Lean inductive data |
 | `Resolution/` | Shared matching, search certificates, admission signatures, and reconstruction proofs |
-| `Resolution/P0/` | Ground success/failure certificates and completed-model semantics used by P0 |
+| `Resolution/P0/` | Ground success/failure certificates and completed-model semantics, ranks, the P0 command set, total P0 runs, and the P0 admission checker |
 | `Archive/` | Opt-in historical approaches |
 
 `import AnthillModKbSpec.Foundation` loads the generic logic independently of
 resolution. `AnthillModKbSpec.Models` adds concrete witnesses, and
-`AnthillModKbSpec.Resolution.P0` loads the ground layer. The primary
+`AnthillModKbSpec.Resolution.P0` loads the ground layer with P0 evaluation on
+the shared machine and the P0 admission checker. The primary
 `import AnthillModKbSpec` still loads all current modules. Declaration namespaces
 such as `Semantics.Model` and `GroundSearch` are unchanged.
 
@@ -64,6 +65,7 @@ class is in the foundation; its generation metaprogram is imported separately.
 | Delayed goals: suspension, exactly-once wakeup, deferred proofs, floundering | [State](AnthillModKbSpec/Resolution/Machine/State.lean), [delayed goals](docs/machine-delay.md), [traces](Tests/Resolution/Delay.lean) |
 | Alpha-renaming instantiation, clause freshening, and scope-safe matching | [Freshening](AnthillModKbSpec/Foundation/Freshening.lean), [Unification](AnthillModKbSpec/Resolution/Machine/Unification.lean), [matching contracts](docs/machine-matching.md) |
 | Ordinary clause selection and positive execution; reconstruction of successful runs | [Positive](AnthillModKbSpec/Resolution/Machine/Positive.lean), [Reconstruction](AnthillModKbSpec/Resolution/Machine/Reconstruction.lean), [strategy and guarantees](docs/machine-positive.md), [traces](Tests/Resolution/Positive.lean) |
+| P0 admission and total evaluation: NAF in the same run, guard decisions, ranks, Ready plans, runs from the query that end in `Succeeds` or `Fails` | [Admission](AnthillModKbSpec/Resolution/P0/Admission.lean), [Run](AnthillModKbSpec/Resolution/P0/Run.lean), [Negation](AnthillModKbSpec/Resolution/Machine/Negation.lean), [design and guarantees](docs/machine-p0.md), [traces](Tests/Resolution/P0/Admission.lean) |
 | Lawful Nat and Bool order dictionaries | [OrderDictionaries](AnthillModKbSpec/Models/OrderDictionaries.lean) |
 | Conditional operation equations and replacement | [Equation rule note](docs/conditional-equations.md), [examples](Tests/Foundation/EquationRules.lean) |
 | Soundness with an equation oracle | [EquationOracle](AnthillModKbSpec/Foundation/EquationOracle.lean), [theorem and examples](docs/equation-oracle.md) |

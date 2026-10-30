@@ -77,6 +77,9 @@ structure Store (Variable Literal Symbol : Type) where
   wakeups : List (Suspension Variable Literal Symbol)
   constraints : List (Constraint Variable Literal Symbol)
 
+/-- The store with no names, bindings, suspensions, or constraints. -/
+def Store.empty : Store Variable Literal Symbol := ⟨[], [], [], []⟩
+
 def Scope.enter (scope : Scope Variable Literal Symbol) (discharge : Discharge Variable Literal Symbol) :
     Scope Variable Literal Symbol :=
   ⟨discharge.rigids ++ scope.rigids, discharge.assumptions ++ scope.assumptions⟩
@@ -206,6 +209,39 @@ def Store.assignable (store : Store Variable Literal Symbol) (name : Variable) :
   | some (.flexible _) => (store.binding? name).isNone
   | _ => false
 
+theorem Store.empty_assignable (name : Variable) :
+    (Store.empty : Store Variable Literal Symbol).assignable name = false := rfl
+
+/-- The names a term's reading through `bindings` mentions, computed without
+reading it: a bound name gives way to its value's names, newest binding last,
+as `resolveWith` applies them (`Store.readClosed_resolve`). -/
+def readNames : List (Variable × Term Variable Literal Symbol) → List Variable → List Variable
+  | [], names => names
+  | (name, value) :: rest, names =>
+      (readNames rest names).flatMap fun other => if other = name then value.freeVars else [other]
+
+/-- The term as read names no free name: a name bound before is read through
+its value. -/
+def Store.readClosed (store : Store Variable Literal Symbol) (term : Term Variable Literal Symbol) : Bool :=
+  (readNames store.bindings term.freeVars).isEmpty
+
+/-- A NAF obligation is ground as read: its operand and its assumptions, read
+through the bindings, name no free name. An unbound flexible name could be
+bound by the operand's search, deciding the NAF for that binding only; a rigid
+parameter stands for every value, which one failed search for the parameter
+does not cover. -/
+def Store.groundNegation (store : Store Variable Literal Symbol) (obligation : Obligation Variable Literal Symbol)
+    (operand : Formula Variable Literal Symbol) : Bool :=
+  store.readClosed operand && obligation.context.all store.readClosed
+
+theorem Store.empty_groundNegation {obligation : Obligation Variable Literal Symbol}
+    {operand : Formula Variable Literal Symbol} (closed : operand.freeVars = [])
+    (contextClosed : ∀ assumption ∈ obligation.context, assumption.freeVars = []) :
+    (Store.empty : Store Variable Literal Symbol).groundNegation obligation operand = true := by
+  simp only [Store.groundNegation, Store.readClosed, Store.empty, readNames, closed, List.isEmpty_nil,
+    Bool.true_and, List.all_eq_true, List.isEmpty_iff]
+  exact contextClosed
+
 theorem Store.assignable_eq_true {store : Store Variable Literal Symbol} {name : Variable} :
     store.assignable name = true ↔
       (∃ dependencies, store.info? name = some (.flexible dependencies)) ∧ store.binding? name = none := by
@@ -260,6 +296,10 @@ names. A strategy matching for a candidate matches against this store. -/
 def Store.prepare (store : Store Variable Literal Symbol) (obligation : Obligation Variable Literal Symbol)
     (flexibles rigids : List Variable) : Store Variable Literal Symbol :=
   (store.declare (.flexible obligation.scope.rigids) flexibles).declare .rigid rigids
+
+omit [DecidableEq Variable] in
+@[simp] theorem Store.empty_prepare (obligation : Obligation Variable Literal Symbol) :
+    (Store.empty : Store Variable Literal Symbol).prepare obligation [] [] = Store.empty := rfl
 
 /-- `other` is within a set of rigid names: a rigid name among them, or a
 flexible name depending only on them. An answer mentions only names within its
@@ -386,6 +426,9 @@ theorem resolveWith_sound (bindings : List (Variable × Term Variable Literal Sy
 theorem Store.resolve_sound (store : Store Variable Literal Symbol) (term : Term Variable Literal Symbol) :
     Resolves store.bindings term (store.resolve term) :=
   resolveWith_sound store.bindings term
+
+@[simp] theorem Store.empty_resolve (term : Term Variable Literal Symbol) :
+    (Store.empty : Store Variable Literal Symbol).resolve term = term := rfl
 
 end Resolution
 

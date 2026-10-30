@@ -104,6 +104,20 @@ def Program.build (hoApplySymbol : Symbol) (snapshot : SignatureSnapshot Domain 
       .ok ⟨lowered ++ (signatureClauses snapshot names rules).map (⟨.signature, ·⟩), fun symbol => symbols.contains symbol⟩
   | .error error => .error error
 
+theorem guardSymbol_iff {snapshot : SignatureSnapshot Domain Symbol} {symbol : Symbol} :
+    guardSymbol snapshot symbol = true ↔ symbol ∈ guardSymbols snapshot := by
+  simp [guardSymbol]
+
+/-- A built program marks exactly the snapshot's guard symbols. -/
+theorem Program.build_guard {hoApplySymbol : Symbol} {snapshot : SignatureSnapshot Domain Symbol}
+    {names : Nat → Variable} {rules : List (Rule Domain Symbol)} {sources : List (SourceClause Domain Variable Literal Symbol)}
+    {program : Program Variable Literal Symbol} (built : Program.build hoApplySymbol snapshot names rules sources = .ok program) :
+    ∀ symbol, program.guard symbol = true ↔ symbol ∈ guardSymbols snapshot := by
+  unfold Program.build at built
+  split at built
+  · cases built; exact fun _ => guardSymbol_iff
+  · cases built
+
 /-- `E(KB)`: the lowered KB clauses and the generated signature clauses. -/
 def elaboratedKb (snapshot : SignatureSnapshot Domain Symbol) (names : Nat → Variable)
     (sources : List (SourceClause Domain Variable Literal Symbol)) : LogicalKb Variable Literal Symbol :=

@@ -133,6 +133,21 @@ theorem identical_eq (left : Term Variable Literal Symbol) :
     obtain ⟨first, rest⟩ := Bool.and_eq_true_iff.mp same
     rw [ihX _ first, ihXs _ rest]
 
+theorem identical_self (term : Term Variable Literal Symbol) : identical term term = true := by
+  refine Term.rec
+    (motive_1 := fun term => identical term term = true)
+    (motive_2 := fun terms => identicalArgs terms terms = true)
+    ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ term
+  all_goals intros
+  all_goals simp_all [identical, identicalArgs]
+
+theorem identical_iff {left right : Term Variable Literal Symbol} : identical left right = true ↔ left = right :=
+  ⟨identical_eq left right, fun same => same ▸ identical_self left⟩
+
+/-- Equality of terms, decided by `identical`. -/
+@[reducible] def termEq : DecidableEq (Term Variable Literal Symbol) :=
+  fun left right => decidable_of_iff (identical left right = true) identical_iff
+
 /-- Corresponding immediate parts of two terms with the same structural
 constructor. An application splits into its first argument and the application
 to the rest, so every split shrinks the problem. -/

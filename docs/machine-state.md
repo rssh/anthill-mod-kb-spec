@@ -6,10 +6,11 @@ abstract machine for every profile: the state, its continuations and choice
 points, the shared answer store, the proof trees built by successful rule applications,
 and the outcomes of a run. It does not choose clauses, match terms, or decide
 when to stop. Concrete strategies supply those choices ([S05 matching](machine-matching.md),
-[S06 positive execution](machine-positive.md), S07 P0 evaluation); the machine checks their names and bindings and
+[S06 positive execution](machine-positive.md), [S07 P0 evaluation](machine-p0.md)); the machine checks their names and bindings and
 owns completion and rollback. S18 adds [delayed goals](machine-delay.md):
 suspensions in the store, woken continuations, deferred proofs filled at the
-end, and floundering.
+end, and floundering. S07 adds negation as failure evaluated in the same run:
+NAF barriers among the choice points and NAF entries among the continuations.
 
 | Module | Contents |
 | --- | --- |
@@ -25,7 +26,7 @@ end, and floundering.
 State = snapshot, root obligation, store, focus, frames, choices, gaps, deferred, nextHole
 Obligation = Scope; goal          Scope = rigid names, assumptions
 Focus = solve(obligation) | proved(tree) | failed
-Continuation = frame(Frame) | woken(id, obligation, next focus)
+Continuation = frame(Frame) | woken(id, obligation, next focus) | negation(obligation, operand, holes)
 ```
 
 | Component | Meaning |
@@ -37,8 +38,8 @@ Continuation = frame(Frame) | woken(id, obligation, next focus)
 | `Store.bindings` | Triangular, newest first. Each right-hand side was resolved against the older bindings when committed |
 | `Store.wakeups`, `Store.constraints` | Delayed goals and unresolved constraints attached to the names they concern; restored with the store ([delayed goals](machine-delay.md)) |
 | `Frame` | A partially completed rule application: parent obligation, rule, proved premises with their subproofs in order, the current premise, pending premises. This is the AND continuation |
-| `frames` | The success continuation: rule frames and woken entries (`Continuation.woken id obligation next`: record the woken goal's proof under `id`, then resume `next`) |
-| `ChoicePoint` | Remaining candidates for an obligation, with the store, continuations, and deferred proofs to restore. This is the OR continuation |
+| `frames` | The success continuation: rule frames, woken entries (`Continuation.woken id obligation next`: record the woken goal's proof under `id`, then resume `next`), and NAF entries (`Continuation.negation obligation operand`: a proof of the operand fails the NAF obligation, S07) |
+| `ChoicePoint` | Remaining candidates for an obligation, with the store, continuations, and deferred proofs to restore. This is the OR continuation. A NAF barrier (`barrier = some marks`) holds the NAF node, tried once the operand's search is exhausted and only if no gap was recorded and no goal delayed since (S07) |
 | `gaps` | Paths abandoned without evidence. Not restored on backtracking |
 | `deferred`, `nextHole` | Proofs of woken goals, restored on backtracking; the id counter, never restored |
 
@@ -107,6 +108,7 @@ A strategy maps the focused obligation and the store to a `Response`:
 | `unsupported` | No capability for this focus. The path is abandoned and recorded as a gap, never as failure |
 | `incomplete alternatives` | Both: the alternatives are tried as for `candidates`, and the focus is recorded as an unsupported gap for the candidates the strategy could not build (S06), so the run never reports exhaustion |
 | `delay names` | The obligation waits until one of `names`, declared unbound flexible names, is bound ([delayed goals](machine-delay.md)) |
+| `negate certificate` | Negation as failure for a goal written `naf operand`, ground as read (`Store.groundNegation`): the operand runs in the same run behind a barrier; exhausted with no new gap and no delay, the obligation is proved by `defaultNegIntro certificate`; proved, the obligation fails; any delay in the operand's search makes it a gap ([S07](machine-p0.md#naf-in-the-machine)) |
 
 Each candidate (`Expansion`) fixes a rule application and its explicit
 parameters, the fresh flexible names it introduces, the answer bindings it
@@ -162,12 +164,14 @@ freshening every template name is the strategy's responsibility.
 | `solve ob` | `unsupported` | `failed`, unsupported gap |
 | `solve ob` | `incomplete alternatives` | unsupported gap, then as for `candidates alternatives` |
 | `solve ob` | `delay names` | suspend `ob`, focus `proved (deferred id ob)`; an invalid delay is a contract gap |
+| `solve ob` | `negate c`, goal `naf operand`, ground as read | focus the operand under `ob`'s scope above a NAF entry; save a barrier focused on `ob` with the NAF node; another goal, or an operand or assumption that is not closed as read, is a contract gap |
 | `proved t` | no continuation, nothing pending | finished: `success` with `t`'s references filled by the deferred proofs, and a resume state |
 | `proved t` | no continuation, goals still delayed | `failed`, one `floundered` gap per residual item |
 | `proved t` | top frame has pending premises | frame records `t`, focus its next premise; the store is unchanged |
 | `proved t` | top frame has no pending premise | frame removed, focus `proved (node rule parent premises subproofs)` |
 | `proved t` | top entry `woken id ob next` | record `(id, ob, t)` as a deferred proof, focus `next` |
-| `failed` | a choice point with alternatives | restore its store, continuations, and deferred proofs, try the next alternative |
+| `proved t` | top entry `negation ob _ n` | `failed`; the choice points through the first barrier are discarded; an unsupported gap if a goal delayed since the entry was pushed |
+| `failed` | a choice point with alternatives | restore its store, continuations, and deferred proofs, try the next alternative; a barrier is tried only if no gap was recorded and no goal delayed since it was set, otherwise it is dropped with an unsupported gap |
 | `failed` | no choice point | finished: `exhausted` if there are no gaps, otherwise `unknown gaps` |
 
 `run` takes a step budget; running out of it is `interrupted`.
@@ -185,6 +189,8 @@ freshening every template name is the strategy's responsibility.
 | `Store.Scoped`: every answer mentions only rigid names among its name's dependencies, and flexible names whose dependencies are among them | `Store.commit_scoped`, `Store.Scoped.answer_rigid` |
 | A rigid name a commit opens is never a dependency of a flexible name, old or new, so it never enters an older name's answer | `Store.commit_no_escape`, `Store.commit_independent`, `Store.bind_respects_scope` |
 | Only `success` carries a proof; exhaustion is reported only when no state of the run recorded a gap, so a floundered run is never exhausted | `Outcome.proof?_eq_some`, `run_exhausted`, `run_not_exhausted` |
+| NAF runs its operand in the same run: the operand is focused behind a barrier, a proved operand fails the obligation and cuts the operand's alternatives, and a barrier reached after a new gap or a delay is abandoned with a gap of its own | `step_negate`, `step_refute`, `step_abandon`, `step_backtrack` |
+| The snapshot is fixed for the run, and a completed proof records it | `step_snapshot`, `run_snapshot` |
 | Resolution by the committed bindings is a chain of capture-avoiding substitutions, renaming a binder on a capture hazard ([S05](machine-matching.md)) | `Store.resolve_sound` |
 
 Local assumptions cannot escape because no transition copies a child's scope
@@ -232,8 +238,10 @@ search.
 
 Closed-world nodes retain the certificate the strategy produced
 (`ClosedWorldEvidence`: kind and certificate). The `Certificate` type is a
-parameter of the machine: S07 and S10 define the certificates and S08 checks
-them, so exporting a proof never recomputes a failure or a cover. A tree carries
+parameter of the machine: S07 defines the ground negative certificate
+(`P0.NegativeCertificate`: the exact clauses, context, and operand), S10 the
+scoped ones, and S08 checks them, so exporting a proof never recomputes a
+failure or a cover. A tree carries
 no snapshot of its own. Every certificate is relative to the snapshot of the run
 that built it, recorded once in `CompletedProof.snapshot`, so a tree cannot mix
 evidence from two snapshots.

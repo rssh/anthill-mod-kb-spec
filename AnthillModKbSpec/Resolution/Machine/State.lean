@@ -29,17 +29,39 @@ alternatives are tried as for `candidates`, and the focus is recorded as an
 never reports exhaustion. `delay names` means the obligation cannot
 proceed until one of `names` is bound: it is suspended and the enclosing frame
 continues as if it were proved. Every name must be a declared, unbound flexible
-name, and there must be one; otherwise the answer breaks the contract. -/
+name, and there must be one; otherwise the answer breaks the contract.
+`negate certificate` evaluates negation as failure (S07) for an obligation
+whose goal is written `naf operand`: the operand runs under the obligation's
+own scope, in the same run, behind a barrier. If its search is exhausted with
+no gap recorded meanwhile, the obligation is proved by
+`defaultNegIntro certificate`; if the operand is proved, the obligation fails
+and the operand's remaining alternatives are discarded. If the operand's
+search delays any goal, the NAF is not decided: the obligation is recorded as
+a gap either way. The machine takes the operand from the goal, so a strategy
+cannot name another one, and checks that the obligation is ground as read
+(`Store.groundNegation`): neither the operand nor an assumption, read through
+the bindings, names a free name. The operand's search then binds no name the
+obligation reads, and no rigid parameter makes one failed search stand for
+every value. Another goal, or an obligation that is not ground as read, breaks
+the contract. -/
 inductive Response (Variable Literal Symbol Certificate : Type) where
   | candidates (alternatives : List (Expansion Variable Literal Symbol Certificate))
   | unsupported
   | incomplete (alternatives : List (Expansion Variable Literal Symbol Certificate))
   | delay (names : List Variable)
+  | negate (certificate : Certificate)
 
-/-- The candidates a response offers: those of `candidates` and `incomplete`. -/
+/-- The node a NAF barrier builds once its operand's search is exhausted: no
+premises, the certificate of the operand's complete failure. -/
+def Expansion.negation (certificate : Certificate) : Expansion Variable Literal Symbol Certificate :=
+  { rule := .defaultNegIntro certificate }
+
+/-- The candidates a response offers: those of `candidates` and `incomplete`,
+and for `negate` the node its barrier builds after the operand is exhausted. -/
 def Response.alternatives : Response Variable Literal Symbol Certificate → List (Expansion Variable Literal Symbol Certificate)
   | .candidates alternatives | .incomplete alternatives => alternatives
   | .unsupported | .delay _ => []
+  | .negate certificate => [Expansion.negation certificate]
 
 /-- A strategy reads the focused obligation and the shared store and proposes
 what to do with it: candidate rule applications, a delay, or a gap. Concrete
@@ -85,20 +107,34 @@ inductive Focus (Variable Literal Symbol Certificate : Type) where
 /-- An entry of the success continuation: a rule frame (the AND continuation),
 or a woken delayed goal. `woken id obligation next` records the proof of the
 woken obligation under `id`, then resumes `next`, the focus the waking commit
-would otherwise have taken. -/
+would otherwise have taken. `negation obligation operand holes` receives a
+proof of the operand of the NAF obligation `obligation`: the obligation then
+fails, and the alternatives saved since its barrier are discarded. `holes` is
+the suspension counter when the operand started. -/
 inductive Continuation (Variable Literal Symbol Certificate : Type) where
   | frame (frame : Frame Variable Literal Symbol Certificate)
   | woken (id : Nat) (obligation : Obligation Variable Literal Symbol) (next : Focus Variable Literal Symbol Certificate)
+  | negation (obligation operand : Obligation Variable Literal Symbol) (holes : Nat)
+
+/-- What a NAF barrier records when it is set: the number of gaps recorded and
+the suspension counter. -/
+structure Barrier where
+  gaps : Nat
+  holes : Nat
+  deriving DecidableEq, Repr
 
 /-- A saved alternative point: the remaining candidates for an obligation and
 the store, continuations, and deferred proofs to restore before trying the
-next one. -/
+next one. A NAF barrier (`barrier = some marks`) holds the NAF node, tried when
+the operand's search is exhausted, and only if no gap was recorded and no goal
+delayed since the barrier was set. -/
 structure ChoicePoint (Variable Literal Symbol Certificate : Type) where
   obligation : Obligation Variable Literal Symbol
   alternatives : List (Expansion Variable Literal Symbol Certificate)
   store : Store Variable Literal Symbol
   frames : List (Continuation Variable Literal Symbol Certificate)
   deferred : List (DeferredProof Variable Literal Symbol Certificate)
+  barrier : Option Barrier := none
 
 /-- The abstract machine state. `frames` is the success continuation,
 `choices` the failure continuation. `gaps` survives backtracking, so a run that
@@ -294,12 +330,13 @@ end Frame
 /-! ## Machine invariant, independent of the strategy -/
 
 /-- The obligation the focus or the innermost continuation is working on: the
-innermost frame's current premise, or the woken obligation. -/
+innermost frame's current premise, the woken obligation, or the NAF operand. -/
 def expected (root : Obligation Variable Literal Symbol) :
     List (Continuation Variable Literal Symbol Certificate) → Obligation Variable Literal Symbol
   | [] => root
   | .frame frame :: _ => frame.focus
   | .woken _ obligation _ :: _ => obligation
+  | .negation _ operand _ :: _ => operand
 
 def Focus.Valid (root : Obligation Variable Literal Symbol) (frames : List (Continuation Variable Literal Symbol Certificate)) :
     Focus Variable Literal Symbol Certificate → Prop
@@ -321,6 +358,14 @@ inductive Linked (root : Obligation Variable Literal Symbol) :
   | woken {id : Nat} {obligation : Obligation Variable Literal Symbol} {next : Focus Variable Literal Symbol Certificate}
       {frames : List (Continuation Variable Literal Symbol Certificate)}
       (resumes : next.Valid root frames) (rest : Linked root frames) : Linked root (.woken id obligation next :: frames)
+  /-- A NAF entry receives the operand's proof and builds nothing: the branch
+  fails there. Its NAF obligation continues the entries below it, and the
+  operand is the goal's operand under the same scope. -/
+  | negation {obligation operand : Obligation Variable Literal Symbol}
+      {frames : List (Continuation Variable Literal Symbol Certificate)}
+      (parent : obligation = expected root frames) (scope : operand.scope = obligation.scope)
+      (goal : obligation.goal = .defaultNeg operand.goal)
+      {holes : Nat} (rest : Linked root frames) : Linked root (.negation obligation operand holes :: frames)
 
 theorem Frame.receive_valid {frame : Frame Variable Literal Symbol Certificate} {tree : ProofTree Variable Literal Symbol Certificate}
     (children : ProofTree.CoherentPremises frame.parent frame.before frame.done)
@@ -394,12 +439,13 @@ theorem Focus.Declared.refines {store later : Store Variable Literal Symbol}
   | proved tree => exact ProofTree.Declared.refines declared refines
   | failed => trivial
 
-/-- The name invariant for a continuation: a frame's, or a woken obligation's
-and the focus it resumes. -/
+/-- The name invariant for a continuation: a frame's, a woken obligation's
+and the focus it resumes, or a NAF obligation's and its operand's. -/
 def Continuation.Declared (store : Store Variable Literal Symbol) :
     Continuation Variable Literal Symbol Certificate → Prop
   | .frame entry => entry.Declared store
   | .woken _ obligation next => obligation.Declared store ∧ next.Declared store
+  | .negation obligation operand _ => obligation.Declared store ∧ operand.Declared store
 
 theorem Continuation.Declared.refines {store later : Store Variable Literal Symbol}
     {continuation : Continuation Variable Literal Symbol Certificate} (declared : continuation.Declared store)
@@ -408,6 +454,8 @@ theorem Continuation.Declared.refines {store later : Store Variable Literal Symb
   | frame entry => exact Frame.Declared.refines declared refines
   | woken _ obligation next =>
       exact ⟨Obligation.Declared.refines declared.1 refines, Focus.Declared.refines declared.2 refines⟩
+  | negation obligation operand _ =>
+      exact ⟨Obligation.Declared.refines declared.1 refines, Obligation.Declared.refines declared.2 refines⟩
 
 theorem DeferredProof.Valid.refines {store later : Store Variable Literal Symbol}
     {record : DeferredProof Variable Literal Symbol Certificate} (valid : record.Valid store)
@@ -432,9 +480,10 @@ def Focus.refs : Focus Variable Literal Symbol Certificate → List (Hole Variab
 def Continuation.refs : Continuation Variable Literal Symbol Certificate → List (Hole Variable Literal Symbol)
   | .frame entry => ProofTree.refsOf entry.done
   | .woken _ _ next => next.refs
+  | .negation _ _ _ => []
 
 def Continuation.holes : Continuation Variable Literal Symbol Certificate → List (Hole Variable Literal Symbol)
-  | .frame _ => []
+  | .frame _ | .negation _ _ _ => []
   | .woken id obligation _ => [(id, obligation)]
 
 /-- Every suspension id a branch holds, with its obligation: pending in the
@@ -477,6 +526,7 @@ def Ordered : List (Hole Variable Literal Symbol) → List (Continuation Variabl
   | _, [] => True
   | above, .frame frame :: rest => Ordered (above ++ ProofTree.refsOf frame.done) rest
   | above, .woken id _ next :: rest => (∀ ref ∈ above, id < ref.1) ∧ Ordered (above ++ next.refs) rest
+  | above, .negation _ _ _ :: rest => Ordered above rest
 
 omit [DecidableEq Variable] in
 theorem Ordered.mono {frames : List (Continuation Variable Literal Symbol Certificate)} :
@@ -495,6 +545,7 @@ theorem Ordered.mono {frames : List (Continuation Variable Literal Symbol Certif
       | frame frame => exact ih ordered (extended _)
       | woken id obligation next =>
           exact ⟨fun ref member => ordered.1 ref (contained ref member), ih ordered.2 (extended _)⟩
+      | negation obligation operand _ => exact ih ordered contained
 
 omit [DecidableEq Variable] in
 /-- A reference newer than every woken entry may be added above all of them. -/
@@ -517,6 +568,7 @@ theorem Ordered.extend {frames : List (Continuation Variable Literal Symbol Cert
           rcases List.mem_append.mp member with old | new
           · exact ordered.1 ref old
           · exact newer ref new (id, obligation) (by simp [Continuation.holes])
+      | negation obligation operand _ => exact ih ordered restNewer
 
 /-- The delayed-goal bookkeeping of a branch. Every suspension id is held
 exactly once, by a pending wakeup, a woken continuation, or a deferred proof,
@@ -586,7 +638,25 @@ def State.save (state : State Variable Literal Symbol Certificate Snapshot) (obl
     (rest : List (Expansion Variable Literal Symbol Certificate)) : List (ChoicePoint Variable Literal Symbol Certificate) :=
   match rest with
   | [] => state.choices
-  | _ :: _ => ⟨obligation, rest, state.store, state.frames, state.deferred⟩ :: state.choices
+  | _ :: _ => ⟨obligation, rest, state.store, state.frames, state.deferred, none⟩ :: state.choices
+
+/-- The choice points that remain once a NAF operand is proved: those below its
+barrier. Barriers nest with their entries, so the first barrier is the
+operand's own. -/
+def cutNegation : List (ChoicePoint Variable Literal Symbol Certificate) → List (ChoicePoint Variable Literal Symbol Certificate)
+  | [] => []
+  | point :: rest => if point.barrier.isSome then rest else cutNegation rest
+
+/-- A choice point may be tried: an ordinary one always, a NAF barrier only if
+no gap was recorded and no goal delayed since it was set. An incomplete
+operand search never becomes a failure certificate, and ground NAF decides no
+operand whose search delays. Gaps are only added and the suspension counter
+only grows, so the counts decide it. -/
+def ChoicePoint.open (point : ChoicePoint Variable Literal Symbol Certificate)
+    (gaps : List (Gap Variable Literal Symbol)) (holes : Nat) : Bool :=
+  match point.barrier with
+  | none => true
+  | some marks => gaps.length == marks.gaps && holes == marks.holes
 
 /-- Where a committed candidate continues: a candidate without premises
 completes the obligation at once; otherwise its first premise becomes the focus
@@ -624,11 +694,16 @@ def State.enter (state : State Variable Literal Symbol Certificate Snapshot) (ob
       { saved with store := store, focus := next.1, frames := next.2 }
 
 /-- One machine transition. A delayed obligation is suspended in the store and
-stands proved by a reference. A proved subtree returns to the innermost
-continuation: a frame records it, a woken entry records it as a deferred proof.
-With no continuation left the branch succeeds, filling every reference with
-its deferred proof, or flounders when goals are still delayed. A failed path resumes the newest choice point from its saved
-store, continuations, and deferred proofs. -/
+stands proved by a reference. A NAF obligation focuses its operand above a NAF
+entry, with a barrier below holding the NAF node. A proved subtree returns to
+the innermost continuation: a frame records it, a woken entry records it as a
+deferred proof, and a NAF entry fails its obligation and cuts back past its
+barrier, recording a gap if the operand's search delayed a goal. With no
+continuation left the branch succeeds, filling every reference with its
+deferred proof, or flounders when goals are still delayed. A failed path
+resumes the newest choice point from its saved store, continuations, and
+deferred proofs; a barrier reached after a gap or a delay since it was set is
+abandoned as a gap instead (`ChoicePoint.open`). -/
 def step (strategy : Strategy Variable Literal Symbol Certificate) (state : State Variable Literal Symbol Certificate Snapshot) :
     Status Variable Literal Symbol Certificate Snapshot :=
   match state.focus with
@@ -648,6 +723,18 @@ def step (strategy : Strategy Variable Literal Symbol Certificate) (state : Stat
                 focus := .proved (.deferred state.nextHole obligation)
                 nextHole := state.nextHole + 1 }
           else .running { state with focus := .failed, gaps := ⟨.contract, obligation⟩ :: state.gaps }
+      | .negate certificate =>
+          match obligation.goal with
+          | .defaultNeg operand =>
+              if state.store.groundNegation obligation operand then
+                .running
+                  { state with
+                    focus := .solve ⟨obligation.scope, operand⟩
+                    frames := .negation obligation ⟨obligation.scope, operand⟩ state.nextHole :: state.frames
+                    choices := ⟨obligation, [Expansion.negation certificate], state.store, state.frames, state.deferred,
+                      some ⟨state.gaps.length, state.nextHole⟩⟩ :: state.choices }
+              else .running { state with focus := .failed, gaps := ⟨.contract, obligation⟩ :: state.gaps }
+          | _ => .running { state with focus := .failed, gaps := ⟨.contract, obligation⟩ :: state.gaps }
   | .proved tree =>
       match state.frames with
       | [] =>
@@ -668,6 +755,13 @@ def step (strategy : Strategy Variable Literal Symbol Certificate) (state : Stat
           | .waiting next => .running { state with frames := .frame next :: frames, focus := .solve next.focus }
       | .woken id obligation next :: frames =>
           .running { state with frames := frames, focus := next, deferred := ⟨id, obligation, tree⟩ :: state.deferred }
+      | .negation obligation _ holes :: frames =>
+          .running
+            { state with
+              frames := frames
+              focus := .failed
+              choices := cutNegation state.choices
+              gaps := if state.nextHole == holes then state.gaps else ⟨.unsupported, obligation⟩ :: state.gaps }
   | .failed =>
       match state.choices with
       | [] => .finished (if state.gaps.isEmpty then .exhausted else .unknown state.gaps)
@@ -675,12 +769,21 @@ def step (strategy : Strategy Variable Literal Symbol Certificate) (state : Stat
           match point.alternatives with
           | [] => .running { state with choices := choices }
           | expansion :: rest =>
-              .running
-                ({ state with
-                    store := point.store
-                    frames := point.frames
-                    deferred := point.deferred
-                    choices := choices }.enter point.obligation expansion rest)
+              if point.open state.gaps state.nextHole then
+                .running
+                  ({ state with
+                      store := point.store
+                      frames := point.frames
+                      deferred := point.deferred
+                      choices := choices }.enter point.obligation expansion rest)
+              else .running { state with choices := choices, gaps := ⟨.unsupported, point.obligation⟩ :: state.gaps }
+
+/-- The states a run passes through: each one the next running state of the last. -/
+inductive Reaches (strategy : Strategy Variable Literal Symbol Certificate) :
+    State Variable Literal Symbol Certificate Snapshot → State Variable Literal Symbol Certificate Snapshot → Prop where
+  | refl {state : State Variable Literal Symbol Certificate Snapshot} : Reaches strategy state state
+  | step {state next last : State Variable Literal Symbol Certificate Snapshot}
+      (stepped : step strategy state = .running next) (rest : Reaches strategy next last) : Reaches strategy state last
 
 /-- Run with a step budget. Running out of budget is an interruption, not a
 result about the goal. -/
@@ -1021,7 +1124,7 @@ for them with the current store, continuations, and deferred proofs. -/
 theorem State.mem_save {state : State Variable Literal Symbol Certificate Snapshot}
     {obligation : Obligation Variable Literal Symbol} {rest : List (Expansion Variable Literal Symbol Certificate)}
     {point : ChoicePoint Variable Literal Symbol Certificate} (member : point ∈ state.save obligation rest) :
-    point = ⟨obligation, rest, state.store, state.frames, state.deferred⟩ ∨ point ∈ state.choices := by
+    point = ⟨obligation, rest, state.store, state.frames, state.deferred, none⟩ ∨ point ∈ state.choices := by
   cases rest with
   | nil => exact .inr member
   | cons _ _ => exact List.mem_cons.mp member
@@ -1050,6 +1153,57 @@ theorem State.enter_valid {state : State Variable Literal Symbol Certificate Sna
   · exact ⟨branch.fail, saved⟩
   · rename_i store woken committed
     exact ⟨branch.commit committed, saved⟩
+
+/-- A NAF operand is declared wherever its obligation is: it has the goal's
+free names and shares the obligation's assumptions. -/
+theorem Obligation.Declared.operand {obligation : Obligation Variable Literal Symbol}
+    {operand : Formula Variable Literal Symbol} (declared : obligation.Declared store)
+    (goal : obligation.goal = .defaultNeg operand) :
+    (⟨obligation.scope, operand⟩ : Obligation Variable Literal Symbol).Declared store := fun name member =>
+  declared name (by simpa only [Obligation.freeVars, Obligation.context, goal, Term.freeVars] using member)
+
+/-- Entering a NAF operand: the operand is focused above its entry, and the
+barrier saves the branch focused on the NAF obligation itself. -/
+theorem Branch.Valid.negate {obligation : Obligation Variable Literal Symbol} {operand : Formula Variable Literal Symbol}
+    {holes : Nat}
+    (valid : Branch.Valid root store (.solve obligation) frames deferred bound)
+    (goal : obligation.goal = .defaultNeg operand) :
+    Branch.Valid root store (.solve ⟨obligation.scope, operand⟩)
+      (.negation obligation ⟨obligation.scope, operand⟩ holes :: frames) deferred bound := by
+  have operandDeclared := Obligation.Declared.operand valid.declared goal
+  refine ⟨valid.storeScoped, valid.waiting, valid.held, .negation (operand := ⟨obligation.scope, operand⟩) valid.valid rfl goal valid.linked, rfl,
+    operandDeclared,
+    fun continuation member => ?_, valid.records,
+    valid.accounted.of_perm (by simp [branchHoles, Continuation.holes]) (fun ref member => by
+      refs_member member []) (by simpa [Ordered, Focus.refs] using valid.accounted.ordered) valid.accounted.acyclic⟩
+  rcases List.mem_cons.mp member with rfl | member
+  · exact ⟨valid.declared, operandDeclared⟩
+  · exact valid.continuations continuation member
+
+/-- A proved NAF operand fails its obligation: the branch fails below the entry. -/
+theorem Branch.Valid.refute {tree : ProofTree Variable Literal Symbol Certificate}
+    {obligation operand : Obligation Variable Literal Symbol} {holes : Nat}
+    (valid : Branch.Valid root store (.proved tree) (.negation obligation operand holes :: frames) deferred bound) :
+    Branch.Valid root store .failed frames deferred bound := by
+  cases valid.linked with
+  | negation _ _ _ rest =>
+      have ordered : Ordered tree.refs frames := valid.accounted.ordered
+      exact ⟨valid.storeScoped, valid.waiting, valid.held, rest, trivial, trivial,
+        fun continuation member => valid.continuations continuation (List.mem_cons_of_mem _ member), valid.records,
+        valid.accounted.of_perm (by simp [branchHoles, Continuation.holes]) (fun ref member => by
+          refs_member member []) (ordered.mono fun _ member => by simp [Focus.refs] at member)
+          valid.accounted.acyclic⟩
+
+omit [DecidableEq Variable] in
+/-- Cutting a NAF operand's alternatives keeps some of the saved choice points. -/
+theorem mem_cutNegation : ∀ {choices : List (ChoicePoint Variable Literal Symbol Certificate)}
+    {point : ChoicePoint Variable Literal Symbol Certificate}, point ∈ cutNegation choices → point ∈ choices
+  | [], _, member => by cases member
+  | first :: rest, point, member => by
+      unfold cutNegation at member
+      split at member
+      · exact List.mem_cons_of_mem _ member
+      · exact List.mem_cons_of_mem _ (mem_cutNegation member)
 
 end Preservation
 
@@ -1153,6 +1307,16 @@ theorem step_valid (strategy : Strategy Variable Literal Symbol Certificate)
         cases stepped
         exact ⟨⟨branch.suspend delayable, fun point member => (valid.choices point member).raise (Nat.le_succ _)⟩, rfl⟩
       · cases stepped; exact ⟨⟨branch.fail, valid.choices⟩, rfl⟩
+    · split at stepped
+      · rename_i operand goalEq
+        split at stepped
+        · cases stepped
+          refine ⟨⟨branch.negate goalEq, fun point member => ?_⟩, rfl⟩
+          rcases List.mem_cons.mp member with rfl | member
+          · exact branch
+          · exact valid.choices point member
+        · cases stepped; exact ⟨⟨branch.fail, valid.choices⟩, rfl⟩
+      · cases stepped; exact ⟨⟨branch.fail, valid.choices⟩, rfl⟩
   · rename_i tree focusEq
     rw [focusEq] at branch
     split at stepped
@@ -1169,6 +1333,10 @@ theorem step_valid (strategy : Strategy Variable Literal Symbol Certificate)
     · rename_i id obligation resume frames framesEq
       rw [framesEq] at branch
       cases stepped; exact ⟨⟨branch.record, valid.choices⟩, rfl⟩
+    · rename_i obligation operand holes frames framesEq
+      rw [framesEq] at branch
+      cases stepped
+      exact ⟨⟨branch.refute, fun point member => valid.choices point (mem_cutNegation member)⟩, rfl⟩
   · split at stepped
     · cases stepped
     · rename_i point others choicesEq
@@ -1177,13 +1345,15 @@ theorem step_valid (strategy : Strategy Variable Literal Symbol Certificate)
         fun other member => valid.choices other (by simp [choicesEq, member])
       split at stepped
       · cases stepped; exact ⟨⟨valid.branch, othersValid⟩, rfl⟩
-      · cases stepped
-        exact ⟨State.enter_valid
-          (state := { state with
-            store := point.store
-            frames := point.frames
-            deferred := point.deferred
-            choices := others }) pointValid othersValid, State.enter_root _ _ _ _⟩
+      · split at stepped
+        · cases stepped
+          exact ⟨State.enter_valid
+            (state := { state with
+              store := point.store
+              frames := point.frames
+              deferred := point.deferred
+              choices := others }) pointValid othersValid, State.enter_root _ _ _ _⟩
+        · cases stepped; exact ⟨⟨valid.branch, othersValid⟩, rfl⟩
 
 /-- What a successful run guarantees. The tree proves the root obligation,
 coherently, names only names the final store declares, and holds no
@@ -1226,7 +1396,8 @@ theorem step_success (strategy : Strategy Variable Literal Symbol Certificate)
     ⟨valid.branch.fail, valid.choices⟩
   unfold step at stepped
   split at stepped
-  · split at stepped <;> (try split at stepped) <;> cases stepped
+  · repeat' split at stepped
+    all_goals cases stepped
   · rename_i tree focusEq
     rw [focusEq] at branch
     split at stepped
@@ -1258,9 +1429,10 @@ theorem step_success (strategy : Strategy Variable Literal Symbol Certificate)
       · cases stepped
     · split at stepped <;> cases stepped
     · cases stepped
+    · cases stepped
   · split at stepped
     · split at stepped <;> cases stepped
-    · split at stepped <;> cases stepped
+    · split at stepped <;> (try split at stepped) <;> cases stepped
 
 /-- A completed run proves the original query under the original scope with a
 valid completed proof: every node's subproofs prove exactly its premises under
@@ -1301,6 +1473,7 @@ theorem step_proved_store (strategy : Strategy Variable Literal Symbol Certifica
     · cases stepped
     · cases stepped; rfl
   · split at stepped <;> (cases stepped; rfl)
+  · cases stepped; rfl
   · cases stepped; rfl
 
 /-- A subproof returning to the innermost frame is passed to it by `receive`; while
@@ -1382,14 +1555,89 @@ theorem step_backtrack (strategy : Strategy Variable Literal Symbol Certificate)
     {choices : List (ChoicePoint Variable Literal Symbol Certificate)}
     {expansion : Expansion Variable Literal Symbol Certificate} {rest : List (Expansion Variable Literal Symbol Certificate)}
     (focused : state.focus = .failed) (choicesEq : state.choices = point :: choices)
-    (alternatives : point.alternatives = expansion :: rest) :
+    (alternatives : point.alternatives = expansion :: rest) (opened : point.open state.gaps state.nextHole = true) :
     step strategy state = .running
       ({ state with
           store := point.store
           frames := point.frames
           deferred := point.deferred
           choices := choices }.enter point.obligation expansion rest) := by
-  simp [step, focused, choicesEq, alternatives]
+  simp [step, focused, choicesEq, alternatives, opened]
+
+/-- Negation as failure runs its operand in the same run when the obligation is
+ground as read: the operand is the goal's own, focused under the obligation's
+scope above a NAF entry, and a barrier saves the branch with the NAF node as
+its one alternative. -/
+theorem step_negate (strategy : Strategy Variable Literal Symbol Certificate)
+    {state : State Variable Literal Symbol Certificate Snapshot} {obligation : Obligation Variable Literal Symbol}
+    {operand : Formula Variable Literal Symbol} {certificate : Certificate} (focused : state.focus = .solve obligation)
+    (negates : strategy obligation state.store = .negate certificate) (goal : obligation.goal = .defaultNeg operand)
+    (ground : state.store.groundNegation obligation operand = true) :
+    step strategy state = .running
+      { state with
+        focus := .solve ⟨obligation.scope, operand⟩
+        frames := .negation obligation ⟨obligation.scope, operand⟩ state.nextHole :: state.frames
+        choices := ⟨obligation, [Expansion.negation certificate], state.store, state.frames, state.deferred,
+          some ⟨state.gaps.length, state.nextHole⟩⟩ :: state.choices } := by
+  simp [step, focused, negates, goal, ground]
+
+/-- A proved NAF operand fails its obligation: the alternatives saved since the
+barrier, and the barrier itself, are discarded. If the operand's search delayed
+a goal, the obligation is also recorded as a gap. -/
+theorem step_refute (strategy : Strategy Variable Literal Symbol Certificate)
+    {state : State Variable Literal Symbol Certificate Snapshot} {tree : ProofTree Variable Literal Symbol Certificate}
+    {obligation operand : Obligation Variable Literal Symbol} {holes : Nat}
+    {frames : List (Continuation Variable Literal Symbol Certificate)}
+    (focused : state.focus = .proved tree) (framesEq : state.frames = .negation obligation operand holes :: frames)
+    (settled : state.nextHole = holes) :
+    step strategy state = .running
+      { state with frames := frames, focus := .failed, choices := cutNegation state.choices } := by
+  simp [step, focused, framesEq, settled]
+
+/-- A NAF barrier reached after its operand's search recorded a gap or delayed
+a goal is not tried: such a search never certifies failure, and the NAF
+obligation is recorded as a gap of its own. -/
+theorem step_abandon (strategy : Strategy Variable Literal Symbol Certificate)
+    {state : State Variable Literal Symbol Certificate Snapshot} {point : ChoicePoint Variable Literal Symbol Certificate}
+    {choices : List (ChoicePoint Variable Literal Symbol Certificate)}
+    {expansion : Expansion Variable Literal Symbol Certificate} {rest : List (Expansion Variable Literal Symbol Certificate)}
+    (focused : state.focus = .failed) (choicesEq : state.choices = point :: choices)
+    (alternatives : point.alternatives = expansion :: rest) (closed : point.open state.gaps state.nextHole = false) :
+    step strategy state = .running
+      { state with choices := choices, gaps := ⟨.unsupported, point.obligation⟩ :: state.gaps } := by
+  simp [step, focused, choicesEq, alternatives, closed]
+
+theorem State.enter_snapshot (state : State Variable Literal Symbol Certificate Snapshot)
+    (obligation : Obligation Variable Literal Symbol) (expansion : Expansion Variable Literal Symbol Certificate)
+    (rest : List (Expansion Variable Literal Symbol Certificate)) :
+    (state.enter obligation expansion rest).snapshot = state.snapshot := by
+  unfold State.enter
+  split <;> rfl
+
+/-- The snapshot is fixed for the whole run: no transition changes it. -/
+theorem step_snapshot (strategy : Strategy Variable Literal Symbol Certificate)
+    {state next : State Variable Literal Symbol Certificate Snapshot} (stepped : step strategy state = .running next) :
+    next.snapshot = state.snapshot := by
+  unfold step at stepped
+  repeat' split at stepped
+  all_goals (cases stepped <;> first | rfl | exact State.enter_snapshot _ _ _ _)
+
+/-- A completed proof records the snapshot the run started from. -/
+theorem run_snapshot (strategy : Strategy Variable Literal Symbol Certificate) :
+    ∀ (fuel : Nat) {state resume : State Variable Literal Symbol Certificate Snapshot}
+      {proof : CompletedProof Variable Literal Symbol Certificate Snapshot},
+      run strategy fuel state = .success proof resume → proof.snapshot = state.snapshot
+  | 0, _, _, _, ran => by cases ran
+  | fuel + 1, state, resume, proof, ran => by
+      unfold run at ran
+      split at ran
+      · rename_i next stepped
+        rw [run_snapshot strategy fuel ran, step_snapshot strategy stepped]
+      · rename_i outcome stepped
+        subst outcome
+        unfold step at stepped
+        repeat' split at stepped
+        all_goals (cases stepped <;> rfl)
 
 /-- Gaps are never forgotten, even across backtracking. -/
 theorem step_gaps (strategy : Strategy Variable Literal Symbol Certificate)
@@ -1410,17 +1658,28 @@ theorem step_gaps (strategy : Strategy Variable Literal Symbol Certificate)
     · split at stepped
       · cases stepped; exact ⟨[], rfl⟩
       · cases stepped; exact ⟨[_], rfl⟩
+    · split at stepped
+      · split at stepped
+        · cases stepped; exact ⟨[], rfl⟩
+        · cases stepped; exact ⟨[_], rfl⟩
+      · cases stepped; exact ⟨[_], rfl⟩
   · split at stepped
     · split at stepped
       · cases stepped
       · cases stepped; exact ⟨_, rfl⟩
     · split at stepped <;> (cases stepped; exact ⟨[], rfl⟩)
     · cases stepped; exact ⟨[], rfl⟩
+    · cases stepped
+      split
+      · exact ⟨[], rfl⟩
+      · exact ⟨[_], rfl⟩
   · split at stepped
     · cases stepped
     · split at stepped
       · cases stepped; exact ⟨[], rfl⟩
-      · cases stepped; exact State.enter_gaps _ _ _ _
+      · split at stepped
+        · cases stepped; exact State.enter_gaps _ _ _ _
+        · cases stepped; exact ⟨[_], rfl⟩
 
 /-- A run reports exhaustion only if no state on it recorded a gap. -/
 theorem run_exhausted (strategy : Strategy Variable Literal Symbol Certificate) :
@@ -1439,17 +1698,19 @@ theorem run_exhausted (strategy : Strategy Variable Literal Symbol Certificate) 
         subst outcome
         unfold step at stepped
         split at stepped
-        · split at stepped <;> (try split at stepped) <;> cases stepped
+        · repeat' split at stepped
+          all_goals cases stepped
         · split at stepped
           · split at stepped <;> cases stepped
           · split at stepped <;> cases stepped
+          · cases stepped
           · cases stepped
         · split at stepped
           · split at stepped
             · rename_i empty
               exact List.isEmpty_iff.mp empty
             · cases stepped
-          · split at stepped <;> cases stepped
+          · split at stepped <;> (try split at stepped) <;> cases stepped
 
 /-- Floundering is never exhaustion: once a branch floundered, or any path was
 abandoned, the run ends in another success, in `unknown`, or interrupted. -/

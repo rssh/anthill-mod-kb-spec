@@ -232,13 +232,14 @@ def Focus.SoundFrom (hoApplySymbol : Symbol) (kb : LogicalKb Variable Literal Sy
   | _ => True
 
 /-- A frame: the node it will build is sound, and so are its completed
-subproofs. A woken entry: the focus it resumes. -/
+subproofs. A woken entry: the focus it resumes. A NAF entry builds nothing. -/
 def Continuation.SoundFrom (hoApplySymbol : Symbol) (kb : LogicalKb Variable Literal Symbol)
     (naf : NafFailure Variable Literal Symbol) (store : Store Variable Literal Symbol) :
     Continuation Variable Literal Symbol Certificate → Prop
   | .frame entry => Machine.SoundFrom hoApplySymbol kb naf store entry.parent entry.premises ∧
       ∀ tree ∈ entry.done, tree.Nodes (Machine.SoundFrom hoApplySymbol kb naf store)
   | .woken _ _ next => next.SoundFrom hoApplySymbol kb naf store
+  | .negation _ _ _ => True
 
 /-- Every node a branch holds or will build is sound from its store on: in the
 focus, in the continuations, and in the deferred proofs. -/
@@ -287,6 +288,7 @@ theorem Continuation.SoundFrom.refines {continuation : Continuation Variable Lit
   | woken _ _ resumed =>
       have resumes : resumed.SoundFrom hoApplySymbol kb naf store := sound
       exact resumes.refines refines
+  | negation _ _ _ => trivial
 
 theorem Branch.Sound.refines {focus : Focus Variable Literal Symbol Certificate}
     (sound : Branch.Sound hoApplySymbol kb naf store focus frames deferred) (refines : store.Refines next) :
@@ -413,6 +415,21 @@ theorem step_sound (strategy : Strategy Variable Literal Symbol Certificate)
         exact ⟨⟨.deferred, (branch.refines (Store.Refines.suspend _ _)).continuations,
           (branch.refines (Store.Refines.suspend _ _)).records⟩, sound.choices⟩
       · cases stepped; exact ⟨branch.fail, sound.choices⟩
+    · rename_i certificate responseEq
+      split at stepped
+      · split at stepped
+        · cases stepped
+          have candidates := strategySound obligation state.store validBranch.storeScoped validBranch.declared
+          rw [responseEq] at candidates
+          refine ⟨⟨trivial, fun continuation member => ?_, branch.records⟩, fun point member => ?_⟩
+          · rcases List.mem_cons.mp member with rfl | member
+            · trivial
+            · exact branch.continuations continuation member
+          · rcases List.mem_cons.mp member with rfl | member
+            · exact ⟨branch, fun expansion inside => candidates expansion inside⟩
+            · exact sound.choices point member
+        · cases stepped; exact ⟨branch.fail, sound.choices⟩
+      · cases stepped; exact ⟨branch.fail, sound.choices⟩
   · rename_i tree focusEq
     rw [focusEq] at branch
     split at stepped
@@ -451,6 +468,11 @@ theorem step_sound (strategy : Strategy Variable Literal Symbol Certificate)
       rcases List.mem_cons.mp member with rfl | member
       · exact branch.focus
       · exact branch.records record member
+    · rename_i obligation operand holes frames framesEq
+      rw [framesEq] at branch
+      cases stepped
+      exact ⟨⟨trivial, fun continuation member => branch.continuations continuation (List.mem_cons_of_mem _ member),
+        branch.records⟩, fun point member => sound.choices point (mem_cutNegation member)⟩
   · split at stepped
     · cases stepped
     · rename_i point others choicesEq
@@ -460,16 +482,18 @@ theorem step_sound (strategy : Strategy Variable Literal Symbol Certificate)
       split at stepped
       · cases stepped; exact ⟨sound.branch, othersSound⟩
       · rename_i expansion rest alternativesEq
-        cases stepped
-        have alternatives := pointSound.2
-        rw [alternativesEq] at alternatives
-        exact State.enter_sound
-          (state := { state with
-            store := point.store
-            frames := point.frames
-            deferred := point.deferred
-            choices := others }) pointSound.1 othersSound (alternatives expansion List.mem_cons_self)
-          fun other member => alternatives other (List.mem_cons_of_mem _ member)
+        split at stepped
+        · cases stepped
+          have alternatives := pointSound.2
+          rw [alternativesEq] at alternatives
+          exact State.enter_sound
+            (state := { state with
+              store := point.store
+              frames := point.frames
+              deferred := point.deferred
+              choices := others }) pointSound.1 othersSound (alternatives expansion List.mem_cons_self)
+            fun other member => alternatives other (List.mem_cons_of_mem _ member)
+        · cases stepped; exact ⟨sound.branch, othersSound⟩
 
 /-- The success step of a sound state: every node of the completed tree, its
 references filled with the deferred proofs, is sound from the final store on,

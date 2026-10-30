@@ -276,10 +276,15 @@ The run-level theorems hold for every sound strategy, so later strategies
   negations or denial clauses in order to close another goal is contradiction
   search, also S09's: only an assumption reading as `false` gives ex falso.
 - NAF is S07's (nested ground NAF and exhaustive failure for P0) and S10's
-  (evidence-first and scoped). This strategy builds no closed-world node.
+  (evidence-first and scoped). This strategy builds no closed-world node and
+  answers NAF `unsupported` when no exact candidate closes it; S07 adds ground
+  NAF as a fallback for exactly those answers (`Strategy.withNegation`,
+  [P0 evaluation](machine-p0.md)), so every other answer is kept.
 - `ho_apply` conversion and flexible heads are S11's; equality and dictionary
   calls are S14's.
-- No termination, fairness, or completeness is claimed. Depth-first selection may
-  loop, and `exhausted` is relative to this strategy's candidates.
+- No termination, fairness, or completeness is claimed in general. Depth-first
+  selection may loop, and `exhausted` is relative to this strategy's candidates.
+  For ranked ground P0 inputs, S07 proves termination and complete failure on
+  exhaustion ([P0 evaluation](machine-p0.md)).
 - Exact steps compare syntactically, as written. A user goal that is a rule's
   instance only after reading gets its introduction rule instead.
