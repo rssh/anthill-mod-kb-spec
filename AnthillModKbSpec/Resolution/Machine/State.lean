@@ -8,7 +8,7 @@ variable {Variable Literal Symbol Certificate Snapshot : Type}
 /-- One candidate way to establish a focused obligation: a rule application with
 its explicit parameters, the fresh flexible names it introduces, the answer
 bindings it commits, and its premises. All premises must be proved (AND); the
-candidates a command returns are alternatives (OR). Opening an expansion proves
+candidates a strategy returns are alternatives (OR). Opening an expansion proves
 nothing yet: its node is built only after every premise has a subproof. -/
 structure Expansion (Variable Literal Symbol Certificate : Type) where
   rule : RuleApp Variable Literal Symbol Certificate
@@ -20,12 +20,12 @@ structure Expansion (Variable Literal Symbol Certificate : Type) where
 def Expansion.rigids (expansion : Expansion Variable Literal Symbol Certificate) : List Variable :=
   expansion.premises.flatMap (fun premise => premise.discharge.rigids)
 
-/-- What a command answers for a focused obligation and the current store.
-`candidates []` is a miss for this path. `unsupported` means the command has no
+/-- What a strategy answers for a focused obligation and the current store.
+`candidates []` is a miss for this path. `unsupported` means the strategy has no
 capability for this focus: the path is abandoned and recorded as a gap, and is
 never treated as failure of the goal. `incomplete alternatives` is both: the
 alternatives are tried as for `candidates`, and the focus is recorded as an
-`unsupported` gap for the candidates the command could not build, so the run
+`unsupported` gap for the candidates the strategy could not build, so the run
 never reports exhaustion. `delay names` means the obligation cannot
 proceed until one of `names` is bound: it is suspended and the enclosing frame
 continues as if it were proved. Every name must be a declared, unbound flexible
@@ -41,11 +41,12 @@ def Response.alternatives : Response Variable Literal Symbol Certificate → Lis
   | .candidates alternatives | .incomplete alternatives => alternatives
   | .unsupported | .delay _ => []
 
-/-- A command reads the focused obligation and the shared store. Concrete
-commands (S06 onward) choose clauses, matches, and fresh names; the machine
-checks names and bindings and manages continuations and rollback. A command is
+/-- A strategy reads the focused obligation and the shared store and proposes
+what to do with it: candidate rule applications, a delay, or a gap. Concrete
+strategies (S06 onward) choose clauses, matches, and fresh names; the machine
+checks names and bindings and manages continuations and rollback. A strategy is
 built for one snapshot, and its closed-world nodes are relative to it. -/
-abbrev Command (Variable Literal Symbol Certificate : Type) :=
+abbrev Strategy (Variable Literal Symbol Certificate : Type) :=
   Obligation Variable Literal Symbol → Store Variable Literal Symbol → Response Variable Literal Symbol Certificate
 
 /-- A partially completed rule application (a continuation frame). `before`
@@ -60,7 +61,7 @@ structure Frame (Variable Literal Symbol Certificate : Type) where
   pending : List (Premise Variable Literal Symbol)
 
 inductive GapReason where
-  /-- The command had no capability for the focus. -/
+  /-- The strategy had no capability for the focus. -/
   | unsupported
   /-- A candidate or a delay broke the machine's name or binding contract. -/
   | contract
@@ -118,7 +119,7 @@ structure State (Variable Literal Symbol Certificate Snapshot : Type) where
 
 /-- Outcomes. Only `success` carries a proof, and it carries a state from which
 search resumes for further answers. `exhausted` means every alternative of this
-command strategy was tried with no gap: it is not complete failure (S07 needs a
+strategy was tried with no gap: it is not complete failure (S07 needs a
 `GroundSearch.Fails` certificate for that), non-derivability, or refutation.
 `unknown` and `interrupted` give no evidence either way; a floundered branch
 makes the outcome `unknown` unless another branch succeeds. -/
@@ -290,7 +291,7 @@ theorem feed_overfull (frame : Frame Variable Literal Symbol Certificate) (trees
 
 end Frame
 
-/-! ## Machine invariant, independent of the command -/
+/-! ## Machine invariant, independent of the strategy -/
 
 /-- The obligation the focus or the innermost continuation is working on: the
 innermost frame's current premise, or the woken obligation. -/
@@ -628,11 +629,11 @@ continuation: a frame records it, a woken entry records it as a deferred proof.
 With no continuation left the branch succeeds, filling every reference with
 its deferred proof, or flounders when goals are still delayed. A failed path resumes the newest choice point from its saved
 store, continuations, and deferred proofs. -/
-def step (command : Command Variable Literal Symbol Certificate) (state : State Variable Literal Symbol Certificate Snapshot) :
+def step (strategy : Strategy Variable Literal Symbol Certificate) (state : State Variable Literal Symbol Certificate Snapshot) :
     Status Variable Literal Symbol Certificate Snapshot :=
   match state.focus with
   | .solve obligation =>
-      match command obligation state.store with
+      match strategy obligation state.store with
       | .candidates [] => .running { state with focus := .failed }
       | .candidates (expansion :: rest) => .running (state.enter obligation expansion rest)
       | .unsupported | .incomplete [] =>
@@ -683,12 +684,12 @@ def step (command : Command Variable Literal Symbol Certificate) (state : State 
 
 /-- Run with a step budget. Running out of budget is an interruption, not a
 result about the goal. -/
-def run (command : Command Variable Literal Symbol Certificate) :
+def run (strategy : Strategy Variable Literal Symbol Certificate) :
     Nat → State Variable Literal Symbol Certificate Snapshot → Outcome Variable Literal Symbol Certificate Snapshot
   | 0, state => .interrupted state
   | fuel + 1, state =>
-      match step command state with
-      | .running next => run command fuel next
+      match step strategy state with
+      | .running next => run strategy fuel next
       | .finished outcome => outcome
 
 /-- The query's free names other than its answer names are its rigid parameters. -/
@@ -1130,10 +1131,10 @@ theorem State.enter_store (state : State Variable Literal Symbol Certificate Sna
   · rename_i store woken committed
     exact Store.commit_extends committed
 
-/-- Every transition preserves the invariant, whatever the command answers. -/
-theorem step_valid (command : Command Variable Literal Symbol Certificate)
+/-- Every transition preserves the invariant, whatever the strategy answers. -/
+theorem step_valid (strategy : Strategy Variable Literal Symbol Certificate)
     {state next : State Variable Literal Symbol Certificate Snapshot} (valid : state.Valid)
-    (stepped : step command state = .running next) : next.Valid ∧ next.root = state.root := by
+    (stepped : step strategy state = .running next) : next.Valid ∧ next.root = state.root := by
   have branch := valid.branch
   unfold step at stepped
   split at stepped
@@ -1216,9 +1217,9 @@ theorem CompletedProof.Valid.monotonic_iff {root : Obligation Variable Literal S
 the references of the finished tree resolve to the deferred proofs, and the
 references in those records point to later records, so filling leaves a
 complete tree (`ProofTree.fillAll_complete`). -/
-theorem step_success (command : Command Variable Literal Symbol Certificate)
+theorem step_success (strategy : Strategy Variable Literal Symbol Certificate)
     {state resume : State Variable Literal Symbol Certificate Snapshot} {proof : CompletedProof Variable Literal Symbol Certificate Snapshot}
-    (valid : state.Valid) (stepped : step command state = .finished (.success proof resume)) :
+    (valid : state.Valid) (stepped : step strategy state = .finished (.success proof resume)) :
     proof.Valid state.root ∧ resume.Valid ∧ resume.root = state.root := by
   have branch := valid.branch
   have resumed : ({ state with focus := .failed } : State Variable Literal Symbol Certificate Snapshot).Valid :=
@@ -1266,31 +1267,31 @@ valid completed proof: every node's subproofs prove exactly its premises under
 their own scopes, the final answers satisfy the dependency invariant, every
 obligation of the tree names only names declared in the final store, the tree
 holds no reference, and no goal is still delayed. -/
-theorem run_success (command : Command Variable Literal Symbol Certificate) :
+theorem run_success (strategy : Strategy Variable Literal Symbol Certificate) :
     ∀ (fuel : Nat) {state resume : State Variable Literal Symbol Certificate Snapshot}
       {proof : CompletedProof Variable Literal Symbol Certificate Snapshot},
-      state.Valid → run command fuel state = .success proof resume →
+      state.Valid → run strategy fuel state = .success proof resume →
         proof.Valid state.root ∧ resume.Valid ∧ resume.root = state.root
   | 0, _, _, _, _, ran => by cases ran
   | fuel + 1, state, resume, proof, valid, ran => by
       unfold run at ran
       split at ran
       · rename_i next stepped
-        obtain ⟨nextValid, sameRoot⟩ := step_valid command valid stepped
+        obtain ⟨nextValid, sameRoot⟩ := step_valid strategy valid stepped
         rw [← sameRoot]
-        exact run_success command fuel nextValid ran
+        exact run_success strategy fuel nextValid ran
       · rename_i outcome stepped
         subst outcome
-        exact step_success command valid stepped
+        exact step_success strategy valid stepped
 
 /-! ## Answers, completion, delay, rollback, and gaps -/
 
 /-- The next AND sibling starts from the store the previous sibling left, and a
 suspension outlives the frame that created it: returning a subproof, recording
 a woken goal's proof, or floundering never changes the store. -/
-theorem step_proved_store (command : Command Variable Literal Symbol Certificate)
+theorem step_proved_store (strategy : Strategy Variable Literal Symbol Certificate)
     {state next : State Variable Literal Symbol Certificate Snapshot} {tree : ProofTree Variable Literal Symbol Certificate}
-    (focused : state.focus = .proved tree) (stepped : step command state = .running next) :
+    (focused : state.focus = .proved tree) (stepped : step strategy state = .running next) :
     next.store = state.store := by
   unfold step at stepped
   rw [focused] at stepped
@@ -1304,21 +1305,21 @@ theorem step_proved_store (command : Command Variable Literal Symbol Certificate
 
 /-- A subproof returning to the innermost frame is passed to it by `receive`; while
 premises remain, the next premise becomes the focus. -/
-theorem step_waiting (command : Command Variable Literal Symbol Certificate)
+theorem step_waiting (strategy : Strategy Variable Literal Symbol Certificate)
     {state : State Variable Literal Symbol Certificate Snapshot} {tree : ProofTree Variable Literal Symbol Certificate}
     {frame next : Frame Variable Literal Symbol Certificate} {frames : List (Continuation Variable Literal Symbol Certificate)}
     (focused : state.focus = .proved tree) (framesEq : state.frames = .frame frame :: frames)
     (waiting : frame.receive tree = .waiting next) :
-    step command state = .running { state with frames := .frame next :: frames, focus := .solve next.focus } := by
+    step strategy state = .running { state with frames := .frame next :: frames, focus := .solve next.focus } := by
   simp [step, focused, framesEq, waiting]
 
 /-- When the last premise is proved, the frame is removed and its node is the
 focus: the parent completes exactly once. -/
-theorem step_complete (command : Command Variable Literal Symbol Certificate)
+theorem step_complete (strategy : Strategy Variable Literal Symbol Certificate)
     {state : State Variable Literal Symbol Certificate Snapshot} {tree : ProofTree Variable Literal Symbol Certificate}
     {frame : Frame Variable Literal Symbol Certificate} {frames : List (Continuation Variable Literal Symbol Certificate)}
     (focused : state.focus = .proved tree) (framesEq : state.frames = .frame frame :: frames) (last : frame.pending = []) :
-    step command state = .running
+    step strategy state = .running
       { state with
         frames := frames
         focus := .proved (.node frame.rule frame.parent frame.premises (frame.done ++ [tree])) } := by
@@ -1328,11 +1329,11 @@ theorem step_complete (command : Command Variable Literal Symbol Certificate)
 
 /-- A valid delay suspends the focused obligation in the store under the next
 id and stands proved by a reference; the enclosing frame continues. -/
-theorem step_delay (command : Command Variable Literal Symbol Certificate)
+theorem step_delay (strategy : Strategy Variable Literal Symbol Certificate)
     {state : State Variable Literal Symbol Certificate Snapshot} {obligation : Obligation Variable Literal Symbol}
     {names : List Variable} (focused : state.focus = .solve obligation)
-    (delays : command obligation state.store = .delay names) (delayable : state.store.delayable names = true) :
-    step command state = .running
+    (delays : strategy obligation state.store = .delay names) (delayable : state.store.delayable names = true) :
+    step strategy state = .running
       { state with
         store := state.store.suspend ⟨state.nextHole, obligation, names⟩
         focus := .proved (.deferred state.nextHole obligation)
@@ -1341,31 +1342,31 @@ theorem step_delay (command : Command Variable Literal Symbol Certificate)
 
 /-- A delay on no name, a rigid name, a bound name, or an undeclared name is a
 contract gap. -/
-theorem step_delay_invalid (command : Command Variable Literal Symbol Certificate)
+theorem step_delay_invalid (strategy : Strategy Variable Literal Symbol Certificate)
     {state : State Variable Literal Symbol Certificate Snapshot} {obligation : Obligation Variable Literal Symbol}
     {names : List Variable} (focused : state.focus = .solve obligation)
-    (delays : command obligation state.store = .delay names) (invalid : state.store.delayable names = false) :
-    step command state = .running { state with focus := .failed, gaps := ⟨.contract, obligation⟩ :: state.gaps } := by
+    (delays : strategy obligation state.store = .delay names) (invalid : state.store.delayable names = false) :
+    step strategy state = .running { state with focus := .failed, gaps := ⟨.contract, obligation⟩ :: state.gaps } := by
   simp [step, focused, delays, invalid]
 
 /-- A woken goal's proof is recorded under its suspension id and the focus it
 interrupted resumes exactly as saved: nothing from the woken goal's scope
 reaches the caller. -/
-theorem step_woken (command : Command Variable Literal Symbol Certificate)
+theorem step_woken (strategy : Strategy Variable Literal Symbol Certificate)
     {state : State Variable Literal Symbol Certificate Snapshot} {tree : ProofTree Variable Literal Symbol Certificate}
     {id : Nat} {obligation : Obligation Variable Literal Symbol} {next : Focus Variable Literal Symbol Certificate}
     {frames : List (Continuation Variable Literal Symbol Certificate)}
     (focused : state.focus = .proved tree) (framesEq : state.frames = .woken id obligation next :: frames) :
-    step command state = .running
+    step strategy state = .running
       { state with frames := frames, focus := next, deferred := ⟨id, obligation, tree⟩ :: state.deferred } := by
   simp [step, focused, framesEq]
 
 /-- A branch that finishes with goals still delayed or constraints unresolved
 flounders: one gap per residual item, never success, and the path fails. -/
-theorem step_flounder (command : Command Variable Literal Symbol Certificate)
+theorem step_flounder (strategy : Strategy Variable Literal Symbol Certificate)
     {state : State Variable Literal Symbol Certificate Snapshot} {tree : ProofTree Variable Literal Symbol Certificate}
     (focused : state.focus = .proved tree) (framesEq : state.frames = []) (residual : state.store.residual ≠ []) :
-    step command state = .running
+    step strategy state = .running
       { state with
         focus := .failed
         gaps := state.store.residual.map (fun obligation => ⟨.floundered, obligation⟩) ++ state.gaps } := by
@@ -1376,13 +1377,13 @@ theorem step_flounder (command : Command Variable Literal Symbol Certificate)
 continuations, and deferred proofs: bindings, suspensions, and deferred proofs
 of the failed alternative are discarded, and suspensions it woke are pending
 again. -/
-theorem step_backtrack (command : Command Variable Literal Symbol Certificate)
+theorem step_backtrack (strategy : Strategy Variable Literal Symbol Certificate)
     {state : State Variable Literal Symbol Certificate Snapshot} {point : ChoicePoint Variable Literal Symbol Certificate}
     {choices : List (ChoicePoint Variable Literal Symbol Certificate)}
     {expansion : Expansion Variable Literal Symbol Certificate} {rest : List (Expansion Variable Literal Symbol Certificate)}
     (focused : state.focus = .failed) (choicesEq : state.choices = point :: choices)
     (alternatives : point.alternatives = expansion :: rest) :
-    step command state = .running
+    step strategy state = .running
       ({ state with
           store := point.store
           frames := point.frames
@@ -1391,8 +1392,8 @@ theorem step_backtrack (command : Command Variable Literal Symbol Certificate)
   simp [step, focused, choicesEq, alternatives]
 
 /-- Gaps are never forgotten, even across backtracking. -/
-theorem step_gaps (command : Command Variable Literal Symbol Certificate)
-    {state next : State Variable Literal Symbol Certificate Snapshot} (stepped : step command state = .running next) :
+theorem step_gaps (strategy : Strategy Variable Literal Symbol Certificate)
+    {state next : State Variable Literal Symbol Certificate Snapshot} (stepped : step strategy state = .running next) :
     ∃ added, next.gaps = added ++ state.gaps := by
   unfold step at stepped
   split at stepped
@@ -1422,16 +1423,16 @@ theorem step_gaps (command : Command Variable Literal Symbol Certificate)
       · cases stepped; exact State.enter_gaps _ _ _ _
 
 /-- A run reports exhaustion only if no state on it recorded a gap. -/
-theorem run_exhausted (command : Command Variable Literal Symbol Certificate) :
+theorem run_exhausted (strategy : Strategy Variable Literal Symbol Certificate) :
     ∀ (fuel : Nat) {state : State Variable Literal Symbol Certificate Snapshot},
-      run command fuel state = .exhausted → state.gaps = []
+      run strategy fuel state = .exhausted → state.gaps = []
   | 0, _, ran => by cases ran
   | fuel + 1, state, ran => by
       unfold run at ran
       split at ran
       · rename_i next stepped
-        obtain ⟨added, gaps⟩ := step_gaps command stepped
-        have empty := run_exhausted command fuel ran
+        obtain ⟨added, gaps⟩ := step_gaps strategy stepped
+        have empty := run_exhausted strategy fuel ran
         rw [empty] at gaps
         exact (List.append_eq_nil_iff.mp gaps.symm).2
       · rename_i outcome stepped
@@ -1452,9 +1453,9 @@ theorem run_exhausted (command : Command Variable Literal Symbol Certificate) :
 
 /-- Floundering is never exhaustion: once a branch floundered, or any path was
 abandoned, the run ends in another success, in `unknown`, or interrupted. -/
-theorem run_not_exhausted (command : Command Variable Literal Symbol Certificate) (fuel : Nat)
+theorem run_not_exhausted (strategy : Strategy Variable Literal Symbol Certificate) (fuel : Nat)
     {state : State Variable Literal Symbol Certificate Snapshot} (gapped : state.gaps ≠ []) :
-    run command fuel state ≠ .exhausted :=
-  fun ran => gapped (run_exhausted command fuel ran)
+    run strategy fuel state ≠ .exhausted :=
+  fun ran => gapped (run_exhausted strategy fuel ran)
 
 end AnthillModKbSpec.Machine

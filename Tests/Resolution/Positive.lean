@@ -4,7 +4,7 @@ open AnthillModKbSpec AnthillModKbSpec.Machine AnthillModKbSpec.InductiveDomains
 
 namespace PositiveTests
 
-/-! Executable traces of S06: the `positive` command over an effective program.
+/-! Executable traces of S06: the `positive` strategy over an effective program.
 Each trace runs the machine from `State.init` and is checked by `#guard`, which
 evaluates compiled code. The theorems at the end hold for every program and
 query: a successful run reconstructs `Derives` for its answer instance. -/

@@ -101,7 +101,7 @@ def Obligation.root (rigids : List Variable) (context : ProofContext Variable Li
 /-- Result of committing a candidate's names and bindings. `committed` also
 returns the suspensions the commit woke, removed from the new store. `rejected`
 is a candidate miss: the binding fails the occurs check or would let a rigid
-name escape the scope of the name it is bound to. `violated` means the command
+name escape the scope of the name it is bound to. `violated` means the strategy
 broke the machine contract (a name that is not fresh, a premise naming an
 undeclared name or a rigid name outside its scope, an unresolved value, a rigid
 name outside the scope, an assigned rigid, a rebound answer); it also abandons
@@ -256,7 +256,7 @@ def Store.bindAll (store : Store Variable Literal Symbol) (scope : Scope Variabl
 
 /-- The store a candidate's bindings are committed against: its flexible names
 declared, depending on the obligation's rigid names, then its premises' rigid
-names. A command matching for a candidate matches against this store. -/
+names. A strategy matching for a candidate matches against this store. -/
 def Store.prepare (store : Store Variable Literal Symbol) (obligation : Obligation Variable Literal Symbol)
     (flexibles rigids : List Variable) : Store Variable Literal Symbol :=
   (store.declare (.flexible obligation.scope.rigids) flexibles).declare .rigid rigids

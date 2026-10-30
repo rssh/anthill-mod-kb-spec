@@ -4,7 +4,7 @@ open AnthillModKbSpec AnthillModKbSpec.Machine
 
 namespace DelayTests
 
-/-! Executable traces of delayed goals (S18). The command below is a test driver:
+/-! Executable traces of delayed goals (S18). The strategy below is a test driver:
 `r(t, ...)` is a check that delays while `t` reads as an unbound flexible name
 and otherwise holds by an assumption; so does `naf r(t, ...)`, which otherwise
 closes when its operand is not assumed; `s(t, u)` delays on both names while
@@ -12,7 +12,7 @@ both are unbound and otherwise holds; `e(t, u)` binds `t := u`; `c(t)` is a
 test-driver clause `c(t) :- r(t), true` (S06 supplies clause selection). `#guard`
 evaluates each run; the generic theorems (`step_valid`, `run_success`,
 `Store.commit_wakes`, `CompletedProof.Valid`, `run_not_exhausted`) hold
-for any command. -/
+for any strategy. -/
 
 inductive Sym where
   | p | q | r | s | e | c | a | b
@@ -103,7 +103,7 @@ def respond (obligation : Obligation Nat Nat Sym) (store : Store Nat Nat Sym) (g
   | .app _ _ => .candidates (identityCandidates store obligation.scope goal)
   | _ => .unsupported
 
-def delaying : Command Nat Nat Sym Unit := fun obligation store =>
+def delaying : Strategy Nat Nat Sym Unit := fun obligation store =>
   let goal := store.resolve obligation.goal
   match waitsOn? store goal with
   | some name => .delay [name]
@@ -112,14 +112,14 @@ def delaying : Command Nat Nat Sym Unit := fun obligation store =>
 def query (flexibles : List Nat) (context : List T) (goal : T) : State Nat Nat Sym Unit Nat :=
   State.init 0 flexibles context goal
 
-def solve (state : State Nat Nat Sym Unit Nat) (command : Command Nat Nat Sym Unit := delaying) (fuel : Nat := 300) :
+def solve (state : State Nat Nat Sym Unit Nat) (strategy : Strategy Nat Nat Sym Unit := delaying) (fuel : Nat := 300) :
     Run :=
-  run command fuel state
+  run strategy fuel state
 
-/-- Resume after a success with the command that produced it. -/
-def resume (outcome : Run) (command : Command Nat Nat Sym Unit := delaying) : Run :=
+/-- Resume after a success with the strategy that produced it. -/
+def resume (outcome : Run) (strategy : Strategy Nat Nat Sym Unit := delaying) : Run :=
   match outcome with
-  | .success _ state => solve state command
+  | .success _ state => solve state strategy
   | other => other
 
 def X : Nat := 0
@@ -284,7 +284,7 @@ def flounder := solve (query [X] [] (atom .r [.var X]))
 
 -- A floundered branch does not block another branch's success, and its gap is
 -- still reported once the alternatives are exhausted.
-def splitting : Command Nat Nat Sym Unit := fun obligation store =>
+def splitting : Strategy Nat Nat Sym Unit := fun obligation store =>
   match store.resolve obligation.goal with
   | .disj left right => .candidates [.disjLeft left, .disjRight right]
   | _ => delaying obligation store
@@ -345,7 +345,7 @@ def contractGap (outcome : Run) (goal : T) : Bool :=
 #guard contractGap (solve (query [] [] (atom .r [.var 7])) (fun _ _ => .delay [7])) (atom .r [.var 7])
 #guard contractGap (solve (query [X] [] (atom .r [.var X])) (fun _ _ => .delay [9])) (atom .r [.var X])
 
-def delayOnBound : Command Nat Nat Sym Unit := fun obligation store =>
+def delayOnBound : Strategy Nat Nat Sym Unit := fun obligation store =>
   match obligation.goal with
   | .app .r _ => .delay [X]
   | _ => delaying obligation store
@@ -363,14 +363,14 @@ example {store next : Store Nat Nat Sym} (valid : store.Scoped) (waiting : store
   let ⟨_, once, _, _, waits, _⟩ := Store.commit_wakes valid waiting committed
   ⟨once, (Store.commit_woken valid committed).2, waits⟩
 
--- Every success of any command proves the root coherently with no goal still
+-- Every success of any strategy proves the root coherently with no goal still
 -- delayed and no reference left in its tree.
-example (command : Command Nat Nat Sym Unit) (fuel : Nat) (proof : CompletedProof Nat Nat Sym Unit Nat)
+example (strategy : Strategy Nat Nat Sym Unit) (fuel : Nat) (proof : CompletedProof Nat Nat Sym Unit Nat)
     (next : State Nat Nat Sym Unit Nat)
-    (ran : run command fuel (query [X] [atom .p [k .a]] (atom .r [.var X])) = .success proof next) :
+    (ran : run strategy fuel (query [X] [atom .p [k .a]] (atom .r [.var X])) = .success proof next) :
     proof.store.wakeups = [] ∧ proof.tree.obligation = (query [X] [atom .p [k .a]] (atom .r [.var X])).root ∧
       proof.tree.Coherent ∧ proof.tree.refs = [] :=
-  let ⟨valid, _⟩ := run_success command fuel (State.init_valid _ _ _ _) ran
+  let ⟨valid, _⟩ := run_success strategy fuel (State.init_valid _ _ _ _) ran
   ⟨valid.settled.1, valid.proves, valid.coherent, valid.complete⟩
 
 -- A tree with a reference is never monotonic: the reference may stand for a
@@ -380,20 +380,20 @@ example (obligation : Obligation Nat Nat Sym) : ¬ (ProofTree.deferred (Certific
 
 -- A run's success is monotonic exactly when its tree retains no closed-world
 -- evidence.
-example (command : Command Nat Nat Sym Unit) (fuel : Nat) (proof : CompletedProof Nat Nat Sym Unit Nat)
+example (strategy : Strategy Nat Nat Sym Unit) (fuel : Nat) (proof : CompletedProof Nat Nat Sym Unit Nat)
     (next : State Nat Nat Sym Unit Nat)
-    (ran : run command fuel (query [X] [atom .p [k .a]] (atom .r [.var X])) = .success proof next) :
+    (ran : run strategy fuel (query [X] [atom .p [k .a]] (atom .r [.var X])) = .success proof next) :
     proof.tree.Monotonic ↔ proof.tree.closedWorld = [] :=
-  (run_success command fuel (State.init_valid _ _ _ _) ran).1.monotonic_iff
+  (run_success strategy fuel (State.init_valid _ _ _ _) ran).1.monotonic_iff
 
 -- Once a branch floundered, the run never reports exhaustion.
-example (command : Command Nat Nat Sym Unit) (fuel : Nat) {state : State Nat Nat Sym Unit Nat}
+example (strategy : Strategy Nat Nat Sym Unit) (fuel : Nat) {state : State Nat Nat Sym Unit Nat}
     {tree : Tree} (focused : state.focus = .proved tree) (framesEq : state.frames = [])
     (residual : state.store.residual ≠ []) {next : State Nat Nat Sym Unit Nat}
-    (stepped : step command state = .running next) : run command fuel next ≠ .exhausted := by
-  rw [step_flounder command focused framesEq residual] at stepped
+    (stepped : step strategy state = .running next) : run strategy fuel next ≠ .exhausted := by
+  rw [step_flounder strategy focused framesEq residual] at stepped
   cases stepped
   obtain ⟨pending, more, residualEq⟩ := List.exists_cons_of_ne_nil residual
-  exact run_not_exhausted command fuel (by simp [residualEq])
+  exact run_not_exhausted strategy fuel (by simp [residualEq])
 
 end DelayTests

@@ -24,7 +24,7 @@ inductive RuleId where
   deriving DecidableEq, Repr
 
 /-- Closed-world evidence retained in a proof node: its kind and the certificate
-the command produced. `Certificate` is abstract here: S07 and S10 define the
+the strategy produced. `Certificate` is abstract here: S07 and S10 define the
 certificates, and S08 checks them, so an exported proof never recomputes a
 failure or a cover. A proof tree carries no snapshot of its own; every
 certificate is relative to the snapshot of the run that built the tree. -/

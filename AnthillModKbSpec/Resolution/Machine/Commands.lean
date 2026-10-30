@@ -10,7 +10,7 @@ variable {Variable Literal Symbol Certificate : Type} [DecidableEq Variable]
 Each contract maps a focused obligation to one candidate: the rule it applies,
 its premises with their scope effects, and the fresh names it introduces. The
 machine fixes completion: the node is built after all premises succeed. Concrete
-commands (S06 onward) decide when to offer which contract; this file fixes what
+strategies (S06 onward) decide when to offer which contract; this file fixes what
 each one means. -/
 
 namespace Expansion

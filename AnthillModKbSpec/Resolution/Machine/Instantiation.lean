@@ -648,7 +648,7 @@ theorem Store.freshen_fresh (store : Store Variable Literal Symbol) (templates a
   exact ⟨lookup_eq_none.mpr outside.2.1, outside.1, outside.2.2⟩
 
 /-- Binder names of the obligation's goal and assumptions as read through the
-store. The commit needs only store freshness, but a command that matches
+store. The commit needs only store freshness, but a strategy that matches
 syntactically should also avoid these when it picks new names: an opening, or a
 later reading, then renames no binder into an alpha-variant that `Store.unify`
 reports as unsupported. -/

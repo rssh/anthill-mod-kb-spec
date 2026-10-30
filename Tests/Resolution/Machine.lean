@@ -4,11 +4,11 @@ open AnthillModKbSpec AnthillModKbSpec.Machine
 
 namespace MachineTests
 
-/-! Executable traces of the S04 machine. The command below is a test driver for
+/-! Executable traces of the S04 machine. The strategy below is a test driver for
 logical connectives and atomic assumptions; S05's matcher is exercised in
-`Tests/Resolution/Matching.lean`, and S06 supplies the real commands. `#guard` evaluates each run; the generic theorems
+`Tests/Resolution/Matching.lean`, and S06 supplies the real strategy. `#guard` evaluates each run; the generic theorems
 (`step_valid`, `run_success`, `Frame.feed_exact`, `run_exhausted`,
-`Store.commit_no_escape`) hold for any command. -/
+`Store.commit_no_escape`) hold for any strategy. -/
 
 inductive Sym where
   | p | q | r | a | b
@@ -106,7 +106,7 @@ def equalityCandidates (store : Store Nat Nat Sym) (left right : T) : List (Expa
 existential opening come before the goal's introduction rule. New names avoid
 the read binder names, so that matching, which is syntactic, never meets a
 renamed binder. -/
-def logical : Command Nat Nat Sym Absent := fun obligation store =>
+def logical : Strategy Nat Nat Sym Absent := fun obligation store =>
   let goal := store.resolve obligation.goal
   match identityCandidates store obligation.scope goal with
   | first :: rest => .candidates (first :: rest)
@@ -237,9 +237,9 @@ def compatible := solve (query [X] [atom .p [k .a], atom .q [k .a]]
 #guard compatible.kind = .success
 #guard answerIs compatible X (k .a)
 
--- The machine itself refuses to rebind X, even for a command that does not
+-- The machine itself refuses to rebind X, even for a strategy that does not
 -- resolve the goal first: binding X:=b after X:=a is a contract violation.
-def rebind : Command Nat Nat Sym Absent := fun obligation _ =>
+def rebind : Strategy Nat Nat Sym Absent := fun obligation _ =>
   match obligation.goal with
   | .conj a b => .candidates [.conjIntro a b]
   | .app .p _ => .candidates [.assumption [(X, k .a)]]
@@ -254,7 +254,7 @@ def selfIdentity := solve (query [] [] (.existsVar 11 (.imp (atom .p [.var 11]) 
 #guard selfIdentity.kind = .success
 #guard (solve (query [X] [] (.equal (.var X) (.var X)))).kind = .success
 
-def selfBinding : Command Nat Nat Sym Absent := fun _ _ => .candidates [.assumption [(X, .var X)]]
+def selfBinding : Strategy Nat Nat Sym Absent := fun _ _ => .candidates [.assumption [(X, .var X)]]
 #guard (run selfBinding 10 (query [X] [] (atom .p [.var X]))).kind = .success
 
 /-! ### Dependencies: rigid names and opened witnesses do not escape -/
@@ -283,10 +283,10 @@ def openThenWitness := solve (query [] [] (.imp (.existsVar 10 (atom .p [.var 10
 def witnessEscape := solve (query [] [] (.existsVar 11 (.imp (.existsVar 10 (atom .p [.var 10])) (atom .p [.var 11]))))
 #guard witnessEscape.kind = .exhausted
 
--- (∀x. ∃y. true) ∧ (∀z. true): y is created under x. A command that tries to bind
+-- (∀x. ∃y. true) ∧ (∀z. true): y is created under x. A strategy that tries to bind
 -- y to z, an eigenvariable of the sibling branch at the same depth, is refused;
 -- a numeric level would not separate the two scopes.
-def crossBranch : Command Nat Nat Sym Absent := fun obligation store =>
+def crossBranch : Strategy Nat Nat Sym Absent := fun obligation store =>
   match obligation.goal, obligation.scope.rigids with
   | .truth, rigid :: _ =>
       let escaping := store.names.filterMap fun
@@ -330,17 +330,17 @@ def gapThenSuccess := solve (query [] [k .p] (.disj (.defaultNeg (k .q)) (k .p))
 #guard (solve (query [] [k .p, k .q] (.conj (k .p) (k .q))) 3).kind = .interrupted
 
 -- Binding a rigid parameter breaks the contract and is recorded as a gap.
-def bindRigid : Command Nat Nat Sym Absent := fun _ _ => .candidates [.assumption [(7, k .a)]]
+def bindRigid : Strategy Nat Nat Sym Absent := fun _ _ => .candidates [.assumption [(7, k .a)]]
 #guard (run bindRigid 10 (query [] [] (atom .p [.var 7]))).kind = .unknown
 
 -- Opening a name already free in the obligation breaks the contract: every free
 -- name of an obligation is declared, and new names must be new to the store.
-def staleName : Command Nat Nat Sym Absent := fun _ _ => .candidates [.existsIntro 0 (atom .p [.var 7]) 7]
+def staleName : Strategy Nat Nat Sym Absent := fun _ _ => .candidates [.existsIntro 0 (atom .p [.var 7]) 7]
 #guard (run staleName 10 (query [] [] (.existsVar 0 (atom .p [.var 7])))).kind = .unknown
 
 -- A new name may equal a binder name of the obligation: opening ∀10 with 10
 -- itself is accepted, and binders impose nothing.
-def ownBinder : Command Nat Nat Sym Absent := fun obligation store =>
+def ownBinder : Strategy Nat Nat Sym Absent := fun obligation store =>
   match store.resolve obligation.goal with
   | .forallVar x body => .candidates [.forallIntro x body x]
   | _ => logical obligation store
@@ -348,7 +348,7 @@ def ownBinder : Command Nat Nat Sym Absent := fun obligation store =>
 
 -- A premise goal or discharged assumption naming an undeclared name breaks the
 -- contract: the commit refuses it, a gap on the obligation being expanded.
-def undeclaredGoal : Command Nat Nat Sym Absent := fun obligation store =>
+def undeclaredGoal : Strategy Nat Nat Sym Absent := fun obligation store =>
   match obligation.goal with
   | .conj _ _ => .candidates [.conjIntro (atom .p [.var 9]) (k .q)]
   | _ => logical obligation store
@@ -356,7 +356,7 @@ def undeclaredGoal : Command Nat Nat Sym Absent := fun obligation store =>
   | .unknown [⟨.contract, obligation⟩] => same obligation.goal (.conj (k .p) (k .q))
   | _ => false
 
-def undeclaredAssumption : Command Nat Nat Sym Absent := fun obligation store =>
+def undeclaredAssumption : Strategy Nat Nat Sym Absent := fun obligation store =>
   match obligation.goal with
   | .imp _ conclusion => .candidates [.impIntro (atom .p [.var 9]) conclusion]
   | _ => logical obligation store
@@ -367,7 +367,7 @@ def undeclaredAssumption : Command Nat Nat Sym Absent := fun obligation store =>
 -- A premise may mention a rigid name only within its own scope. After ∀x. true
 -- is closed, its eigenvariable is still declared, but a premise of the sibling
 -- q naming it is refused.
-def staleRigid : Command Nat Nat Sym Absent := fun obligation store =>
+def staleRigid : Strategy Nat Nat Sym Absent := fun obligation store =>
   let outOfScope := store.names.find? fun entry => entry.2 == .rigid && !obligation.scope.rigids.contains entry.1
   match obligation.goal, outOfScope with
   | .app .q [], some (stale, _) => .candidates [.disjLeft (atom .p [.var stale])]
@@ -379,7 +379,7 @@ def staleRigid : Command Nat Nat Sym Absent := fun obligation store =>
 -- Nor through a flexible name created in the closed scope: inside ∀x the
 -- witness y is bound to x, and a premise of q naming y is refused, though y is
 -- flexible.
-def staleWitness : Command Nat Nat Sym Absent := fun obligation store =>
+def staleWitness : Strategy Nat Nat Sym Absent := fun obligation store =>
   let outOfScope := store.names.find? fun entry =>
     (match entry.2 with | .flexible _ => true | .rigid => false) && !store.inScope obligation.scope.rigids entry.1
   match obligation.goal, outOfScope with
@@ -399,7 +399,7 @@ def staleWitness : Command Nat Nat Sym Absent := fun obligation store =>
 
 -- So is a rigid name opened for one premise in its siblings: an existsElim
 -- whose existential names the eigenvariable it opens is refused.
-def siblingRigid : Command Nat Nat Sym Absent := fun obligation store =>
+def siblingRigid : Strategy Nat Nat Sym Absent := fun obligation store =>
   match obligation.goal with
   | .app .q [] => .candidates [.existsElim 0 (atom .p [.var 0, .var 7]) 7 obligation.goal]
   | _ => logical obligation store
@@ -410,7 +410,7 @@ def siblingRigid : Command Nat Nat Sym Absent := fun obligation store =>
 /-! ### Closed-world evidence is retained -/
 
 -- Closes `naf A` when A is absent from the context, keeping the certificate.
-def withNaf : Command Nat Nat Sym Absent := fun obligation store =>
+def withNaf : Strategy Nat Nat Sym Absent := fun obligation store =>
   match store.resolve obligation.goal with
   | .defaultNeg operand =>
       if obligation.context.any (same operand) then .candidates []
@@ -454,14 +454,14 @@ example : (Frame.start parent .conjIntro left [right]).feed [leftTree, rightTree
 example : (ProofTree.node .conjIntro parent [left, right] [leftTree, rightTree]).Coherent :=
   .node (.cons rfl (.node .nil) (.cons rfl (.node .nil) .nil))
 
--- Every reachable state of any command keeps the invariant; a success proves the
+-- Every reachable state of any strategy keeps the invariant; a success proves the
 -- root with a coherent tree and scoped answers, and every obligation of the tree
 -- names only names the final store declares.
-example (command : Command Nat Nat Sym Absent) (fuel : Nat) (proof : CompletedProof Nat Nat Sym Absent Nat)
-    (next : State Nat Nat Sym Absent Nat) (ran : run command fuel (query [X] [k .p] (atom .p [.var X])) = .success proof next) :
+example (strategy : Strategy Nat Nat Sym Absent) (fuel : Nat) (proof : CompletedProof Nat Nat Sym Absent Nat)
+    (next : State Nat Nat Sym Absent Nat) (ran : run strategy fuel (query [X] [k .p] (atom .p [.var X])) = .success proof next) :
     proof.tree.obligation = (query [X] [k .p] (atom .p [.var X])).root ∧ proof.tree.Coherent ∧ proof.store.Scoped ∧
       proof.tree.Declared proof.store :=
-  let ⟨valid, _⟩ := run_success command fuel (State.init_valid _ _ _ _) ran
+  let ⟨valid, _⟩ := run_success strategy fuel (State.init_valid _ _ _ _) ran
   ⟨valid.proves, valid.coherent, valid.answers, valid.declared⟩
 
 -- Clause and logical evidence is monotonic; closed-world evidence is not.

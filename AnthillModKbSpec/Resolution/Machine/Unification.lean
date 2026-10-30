@@ -22,7 +22,7 @@ or rigid-name clash, or a binding the store rejects (occurs check, dependency).
 It is never negative evidence about a goal. `unsupported` is a comparison the
 initial profile does not admit. `violated` means an input names something the
 store does not allow here (an undeclared name, or a rigid name outside the
-scope): a breach of the command contract. -/
+scope): a breach of the machine's contract. -/
 inductive Unification (Variable Literal Symbol : Type) where
   | unified (store : Store Variable Literal Symbol) (bindings : List (Variable × Term Variable Literal Symbol))
   | mismatch
@@ -343,7 +343,7 @@ decreasing_by
 
 /-- Match two terms read through the store. Readings naming something not
 usable here (an undeclared name, or a rigid name outside the scope) break the
-command contract before any comparison, even when identical. -/
+machine's contract before any comparison, even when identical. -/
 def Store.unify (store : Store Variable Literal Symbol) (scope : Scope Variable Literal Symbol)
     (hoApplySymbol : Symbol) (left right : Term Variable Literal Symbol) : Unification Variable Literal Symbol :=
   if ((store.resolve left).freeVars ++ (store.resolve right).freeVars).all (store.usable scope) then

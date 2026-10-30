@@ -1,6 +1,6 @@
 # Ordinary clause selection and positive execution
 
-S06 gives the [S04 machine](machine-state.md) its first concrete command set and
+S06 gives the [S04 machine](machine-state.md) its first concrete strategy and
 proves that a successful run reconstructs `Derives` for its answer instance. It
 builds on the [S05 matching layer](machine-matching.md), the
 [S18 delayed goals](machine-delay.md), and the [S19 name invariant](machine-state.md#declared-names).
@@ -8,13 +8,13 @@ Traces are in [Tests/Resolution/Positive.lean](../Tests/Resolution/Positive.lean
 
 | Module | Contents |
 | --- | --- |
-| [Machine/Reconstruction](../AnthillModKbSpec/Resolution/Machine/Reconstruction.lean) | Node contracts in every later store (`SoundFrom`), sound commands (`Command.Sound`) and the pieces every command uses to prove it (`attempt`, `respond`, `attempt_sound`), the sound-state invariant and its preservation, reconstruction of a successful run |
+| [Machine/Reconstruction](../AnthillModKbSpec/Resolution/Machine/Reconstruction.lean) | Node contracts in every later store (`SoundFrom`), sound strategies (`Strategy.Sound`) and the pieces every strategy uses to prove it (`attempt`, `respond`, `attempt_sound`), the sound-state invariant and its preservation, reconstruction of a successful run |
 | [Machine/Program](../AnthillModKbSpec/Resolution/Machine/Program.lean) | The effective program and its lowering |
-| [Machine/Positive](../AnthillModKbSpec/Resolution/Machine/Positive.lean) | The `positive` command, its soundness, clause selection and guard theorems |
+| [Machine/Positive](../AnthillModKbSpec/Resolution/Machine/Positive.lean) | The `positive` strategy, its soundness, clause selection and guard theorems |
 
 ## The effective program
 
-`LogicalKb` is a set. The command needs a finite clause list in selection order,
+`LogicalKb` is a set. The strategy needs a finite clause list in selection order,
 so `Program` holds one, with each clause's source (`ClauseSource`: a lowered KB
 clause with its index, or a generated signature clause). `Program.kb` is the KB
 it denotes.
@@ -42,7 +42,7 @@ rules, the declared domains, and the registered predicates.
 `Program.guard` marks the guard symbols: the naming's membership symbols for
 D_all, each declared domain, and each registered predicate arity (`guardSymbol`).
 
-## The command
+## The strategy
 
 `positive hoApplySymbol program` reads the focused goal and its context through
 the store once per focus (`Store.readContext`; the matcher reads the sides it
@@ -75,7 +75,7 @@ For an atom or falsity, each candidate is matched with `Store.unify` against
 never failure. Gaps keep the other candidates: the response is
 `incomplete candidates`, which tries them and records an `unsupported` gap for
 the focus, so the run is never `exhausted`
-([machine response](machine-state.md#commands-and-candidates)). Candidates are
+([machine response](machine-state.md#strategies-and-candidates)). Candidates are
 selected by head symbol and arity (`sameHead`), or offered to falsity when they
 conclude it. A head that differs from the goal's only by `ho_apply` is matched
 too (`mayMatch`): the matcher reports it `unsupported`, since conversion is
@@ -156,7 +156,7 @@ derivation.
 
 A local rule is an assumption `∀x₁…xₙ. M`. Its free names are captured parameters
 and are kept. Only its leading binders are instantiated (`Term.instantiateLeading`).
-For an atom or falsity the command eliminates all binders of the rule as written
+For an atom or falsity the strategy eliminates all binders of the rule as written
 with fresh flexible witnesses and matches the instance of the conclusion against
 the goal (`localAttempt`). The intermediate instances, built from the rule as
 written, are then proved by exact steps. The rule is classified and filtered by
@@ -176,7 +176,7 @@ instance built for a rule use, whatever the store later binds or renames when it
 is read. A binder that does not occur in the rule's matrix gets the closed
 witness `true`, so no undeclared name enters a rule parameter.
 
-The command rediscovers the witnesses rather than recording them at the rule
+The strategy rediscovers the witnesses rather than recording them at the rule
 use: a candidate builds one node, and a premise carries no provenance. Building
 the chain at once would need either of these in the machine.
 
@@ -201,17 +201,17 @@ contract from each commit to the final store.
 | `NodeSound store obligation premises` | The node's contract read through `store`: derivations of its read premises give a derivation of its read obligation. For a candidate it is `SoundUnder` |
 | `SoundFrom store obligation premises` | `NodeSound` in every scoped store refining `store` |
 | `CandidateSound store obligation e` | If the commit of `e` succeeds, its contract holds from the committed store on |
-| `Command.Sound kb` | On a scoped store and a declared obligation, every candidate the command answers is sound |
+| `Strategy.Sound kb` | On a scoped store and a declared obligation, every candidate the strategy answers is sound |
 | `ProofTree.Nodes P` | Every node of a tree satisfies `P`; a reference is checked through its record |
 | `State.Sound` | Every node a branch holds or will build is sound from its store on: the proved focus, each frame's node and completed subproofs, the focus a woken entry resumes, every deferred proof, and, for each choice point, its branch and remaining candidates |
 
 | Property | Theorem |
 | --- | --- |
 | The initial state is sound | `State.init_sound` |
-| Under a sound command every transition keeps a valid state sound: commits refine the store, a frame builds the node its candidate promised, records and resumed foci stay sound, rollback restores a sound branch | `step_sound`, `State.enter_sound`, `Expansion.start_sound`, `Continuation.schedule_sound` |
+| Under a sound strategy every transition keeps a valid state sound: commits refine the store, a frame builds the node its candidate promised, records and resumed foci stay sound, rollback restores a sound branch | `step_sound`, `State.enter_sound`, `Expansion.start_sound`, `Continuation.schedule_sound` |
 | Filling references keeps every node sound | `ProofTree.Nodes.fill`, `ProofTree.Nodes.fillAll` |
 | A coherent tree without references, each node sound in a store, derives its obligation read through that store | `ProofTree.Nodes.readDerives` |
-| A successful run of a sound command derives its root read through the final answers; the resume state is valid and sound, so later answers are reconstructed too | `run_reconstructs`, `run_init_reconstructs` |
+| A successful run of a sound strategy derives its root read through the final answers; the resume state is valid and sound, so later answers are reconstructed too | `run_reconstructs`, `run_init_reconstructs` |
 | `positive` is sound for its program's KB, whatever the NAF provider | `positive_sound` |
 | A range guard on an unbound name delays, validly, unless an assumption it reads as closes it | `positive_guard`, `waiting?_guard` |
 | A gap keeps the other candidates and is recorded; the run is never exhausted | `Response.incomplete`, `step_gaps`, `run_exhausted` |
@@ -226,8 +226,8 @@ name invariant at the commit. A local rule's `impElim` and a denial clause need
 the goal to read as their conclusion, from the match or the read goal. An exact
 candidate is sound because the goal already reads as its conclusion.
 
-The run-level theorems hold for every sound command, so later command sets
-(S07, S09–S14) reuse them by proving their own `Command.Sound`.
+The run-level theorems hold for every sound strategy, so later strategies
+(S07, S09–S14) reuse them by proving their own `Strategy.Sound`.
 
 ## Traces
 
@@ -276,10 +276,10 @@ The run-level theorems hold for every sound command, so later command sets
   negations or denial clauses in order to close another goal is contradiction
   search, also S09's: only an assumption reading as `false` gives ex falso.
 - NAF is S07's (nested ground NAF and exhaustive failure for P0) and S10's
-  (evidence-first and scoped). This command builds no closed-world node.
+  (evidence-first and scoped). This strategy builds no closed-world node.
 - `ho_apply` conversion and flexible heads are S11's; equality and dictionary
   calls are S14's.
 - No termination, fairness, or completeness is claimed. Depth-first selection may
-  loop, and `exhausted` is relative to this command's candidates.
+  loop, and `exhausted` is relative to this strategy's candidates.
 - Exact steps compare syntactically, as written. A user goal that is a rule's
   instance only after reading gets its introduction rule instead.

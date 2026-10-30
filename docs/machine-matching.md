@@ -50,13 +50,13 @@ so no alpha-equivalence judgment is needed.
 The opening contracts (`forallIntro`, `existsIntro`, `existsElim`) open the body
 with `Term.instantiate` as well. An inner binder that would capture the opened
 name is renamed, so the name needs to be fresh only for free names. This matters
-when a command opens the goal as read through the answers. Reading can rename
+when a strategy opens the goal as read through the answers. Reading can rename
 binders or bring in binders from answer values, which no check on the
 obligation as written can see. The commit checks only that a new name is new to
 the store (S19). By the [name invariant](machine-state.md#declared-names) that
 makes it fresh for the free names of every obligation the store reads, and
 binder names impose nothing for soundness. The matcher, however, is syntactic. A
-command should therefore also avoid the binder names it reads
+strategy should therefore also avoid the binder names it reads
 (`Store.readBinders`), so that no opening or later reading renames a binder into
 an alpha-variant that `Store.unify` reports as `unsupported`.
 
@@ -141,7 +141,7 @@ size of the pending pairs. No fuel is involved.
 | `unified store bindings` | The returned bindings, committed in order, give `store`, where both sides read the same | A candidate with these bindings |
 | `mismatch` | A constructor or rigid-name clash, an arity clash, or a binding the store rejects (occurs check, dependency) | A candidate miss; never negative evidence about the goal |
 | `unsupported` | A comparison the initial profile does not admit | A gap, recorded as unsupported |
-| `violated` | A reading names something not usable here: an undeclared name, or a rigid name outside the scope | A command-contract breach, recorded as a gap |
+| `violated` | A reading names something not usable here: an undeclared name, or a rigid name outside the scope | A breach of the machine's contract, recorded as a gap |
 
 | Pair, after reading | Outcome |
 | --- | --- |
@@ -172,7 +172,7 @@ no unifier exists, and never NAF evidence.
 goal read through `store`. `Expansion.SoundUnder` is the completion contract
 for read obligations: derivations of every read premise give a derivation of
 the read obligation. S04's `Expansion.Sound` stated this only for binding-free
-candidates. The goal need only *read* as the connective, so a command may
+candidates. The goal need only *read* as the connective, so a strategy may
 resolve the goal before choosing the rule.
 
 | Contract | Lemma | Hypotheses |
@@ -214,10 +214,10 @@ freshened clauses, each matched against the prepared store.
 | `p(0) ∧ ∀5. ∀1. r(5, 1, 0)` under `p(1)` with `r(X, X, Y)`, and its `∃5` and `∀9` variants | Exhausted: after `0 := 1` the conjunct reads as `∀5. ∀6. r(5, 6, 1)`. A driver that opens with the read inner binder uses 6, and the opening renames without capture |
 | `∀5. ∀6. (p(5, 6) → p(5, 6))`, opened with the inner binder 6 | Success: a binder name of the obligation is a new name of the store (S05 refused it) |
 | `∃2. (q(2) ∧ ∀1. p(1, 2))` under `q(a)`, `∀1. p(1, a)` | Success with the driver's witness 3, which avoids the read binder names. With store freshness alone the witness is 1, the inner binder is renamed, and the alpha-variant is unsupported (unknown) |
-| `r(X) :- s(X, Z)` used by a command that freshens only the head | Contract gap on `r(Y)`: the body names the undeclared `Z`. Freshening every template answers `a` |
+| `r(X) :- s(X, Z)` used by a strategy that freshens only the head | Contract gap on `r(Y)`: the body names the undeclared `Z`. Freshening every template answers `a` |
 | `∀x. ∃y. y = x` / `∃y. ∀x. y = x` | Success / exhausted (a mismatch, not unknown) |
 | `∃y. ∀x. ∃z. (y = z ∧ z = x)` | Exhausted: `y = z` narrows `z`, so `z = x` is refused |
-| `(∀x. X = x) ∨ X = a` | The scope miss rolls back; answer `a`; a command proposing `X := x` directly is rejected by the commit, with no gap |
+| `(∀x. X = x) ∨ X = a` | The scope miss rolls back; answer `a`; a strategy proposing `X := x` directly is rejected by the commit, with no gap |
 | `r(X) :- s(X)`, `r(X) :- t(X)` for `r(Y) ∧ u(Y)` | The first clause's bindings are discarded; answer `b`; only the second clause is in the proof; resuming is exhausted |
 | `p(a, b)` from `∀1. p(1, C)` | Answer `C = b`: the captured answer name is kept and matched |
 | `p(X) ∧ ∀5. (r(5, X) → r(5, X))` under `p(5)` | Success: reading the pending conjunct renames its binder (S04 reported this as unsupported) |
@@ -229,7 +229,7 @@ freshened clauses, each matched against the prepared store.
   operation calls, or convert `ho_apply`: those report `unsupported`.
   Higher-order patterns remain with the Miller certificates.
 - No completeness: `mismatch` and `exhausted` carry no negative evidence.
-- The test driver is not S06's command set ([S06](machine-positive.md) supplies it and
+- The test driver is not S06's strategy ([S06](machine-positive.md) supplies it and
   whole-run reconstruction).
 - Delayed goals (S18) attach to names in the same store. The matcher reads and
   commits there and does not see deferred proofs; the commit that replays a

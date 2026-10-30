@@ -12,7 +12,7 @@ module carries that contract along the run, from each commit to the final store,
 and composes the nodes of the completed tree into a `Derives` proof of the root
 obligation read through the final answers.
 
-`Command.Sound` is the obligation of a concrete command: every candidate it
+`Strategy.Sound` is the obligation of a concrete strategy: every candidate it
 answers is sound in every scoped store refining its commit. Under it, every
 transition keeps the state sound (`step_sound`), and a successful run reconstructs
 its answer instance (`run_reconstructs`, `run_init_reconstructs`). -/
@@ -35,7 +35,7 @@ theorem SoundFrom.refines {store next : Store Variable Literal Symbol} {obligati
     (refines : store.Refines next) : SoundFrom hoApplySymbol kb naf next obligation premises :=
   fun later further laterScoped => sound later (refines.trans further) laterScoped
 
-/-- What a command guarantees for one candidate: if the commit accepts it, its
+/-- What a strategy guarantees for one candidate: if the commit accepts it, its
 completion contract holds from the committed store on. Candidates the commit
 refuses need nothing. -/
 def CandidateSound (hoApplySymbol : Symbol) (kb : LogicalKb Variable Literal Symbol)
@@ -44,14 +44,14 @@ def CandidateSound (hoApplySymbol : Symbol) (kb : LogicalKb Variable Literal Sym
   ∀ next woken, store.commit obligation expansion.flexibles expansion.rigids expansion.premises expansion.bindings =
       .committed next woken → SoundFrom hoApplySymbol kb naf next obligation expansion.premises
 
-/-- A sound command: on a scoped store and a declared obligation, as every branch
+/-- A sound strategy: on a scoped store and a declared obligation, as every branch
 of a valid state supplies them, each candidate it answers (`candidates` or
 `incomplete`) is sound. Delays and unsupported answers carry no proof and need
 nothing. -/
-def Command.Sound (hoApplySymbol : Symbol) (kb : LogicalKb Variable Literal Symbol)
-    (naf : NafFailure Variable Literal Symbol) (command : Command Variable Literal Symbol Certificate) : Prop :=
+def Strategy.Sound (hoApplySymbol : Symbol) (kb : LogicalKb Variable Literal Symbol)
+    (naf : NafFailure Variable Literal Symbol) (strategy : Strategy Variable Literal Symbol Certificate) : Prop :=
   ∀ obligation store, store.Scoped → obligation.Declared store →
-    ∀ expansion ∈ (command obligation store).alternatives, CandidateSound hoApplySymbol kb naf store obligation expansion
+    ∀ expansion ∈ (strategy obligation store).alternatives, CandidateSound hoApplySymbol kb naf store obligation expansion
 
 /-- A scoped store reads a read term as itself: readings name no bound name. -/
 theorem Store.Scoped.resolve_resolve {store : Store Variable Literal Symbol} (valid : store.Scoped)
@@ -68,11 +68,11 @@ end Contracts
 
 /-! ## Building sound candidates
 
-Commands build candidates by matching against the store a candidate's commit
-prepares. These are the pieces every command needs to prove `Command.Sound`. -/
+Strategies build candidates by matching against the store a candidate's commit
+prepares. These are the pieces every strategy needs to prove `Strategy.Sound`. -/
 
 /-- A computed candidate: `some (some e)` a candidate, `some none` a miss, `none`
-a gap (an unsupported or violated match, or a capability the command lacks). -/
+a gap (an unsupported or violated match, or a capability the strategy lacks). -/
 abbrev Attempt (Variable Literal Symbol Certificate : Type) := Option (Option (Expansion Variable Literal Symbol Certificate))
 
 /-- A match as a candidate. -/
@@ -380,11 +380,11 @@ theorem State.init_sound (snapshot : Snapshot) (flexibles : List Variable)
     (State.init (Certificate := Certificate) snapshot flexibles context goal).Sound hoApplySymbol kb naf :=
   ⟨⟨trivial, by simp [State.init], by simp [State.init]⟩, by simp [State.init]⟩
 
-/-- Every transition of a sound command keeps a valid state sound. -/
-theorem step_sound (command : Command Variable Literal Symbol Certificate)
-    (commandSound : Command.Sound hoApplySymbol kb naf command)
+/-- Every transition of a sound strategy keeps a valid state sound. -/
+theorem step_sound (strategy : Strategy Variable Literal Symbol Certificate)
+    (strategySound : Strategy.Sound hoApplySymbol kb naf strategy)
     {state next : State Variable Literal Symbol Certificate Snapshot} (valid : state.Valid)
-    (sound : state.Sound hoApplySymbol kb naf) (stepped : step command state = .running next) :
+    (sound : state.Sound hoApplySymbol kb naf) (stepped : step strategy state = .running next) :
     next.Sound hoApplySymbol kb naf := by
   have branch := sound.branch
   have validBranch := valid.branch
@@ -396,7 +396,7 @@ theorem step_sound (command : Command Variable Literal Symbol Certificate)
     · cases stepped; exact ⟨branch.fail, sound.choices⟩
     · rename_i expansion rest responseEq
       cases stepped
-      have candidates := commandSound obligation state.store validBranch.storeScoped validBranch.declared
+      have candidates := strategySound obligation state.store validBranch.storeScoped validBranch.declared
       rw [responseEq] at candidates
       exact State.enter_sound branch sound.choices (candidates expansion List.mem_cons_self)
         fun other member => candidates other (List.mem_cons_of_mem _ member)
@@ -404,7 +404,7 @@ theorem step_sound (command : Command Variable Literal Symbol Certificate)
     · cases stepped; exact ⟨branch.fail, sound.choices⟩
     · rename_i expansion rest responseEq
       cases stepped
-      have candidates := commandSound obligation state.store validBranch.storeScoped validBranch.declared
+      have candidates := strategySound obligation state.store validBranch.storeScoped validBranch.declared
       rw [responseEq] at candidates
       exact State.enter_sound (state := { state with gaps := _ :: state.gaps }) branch sound.choices
         (candidates expansion List.mem_cons_self) fun other member => candidates other (List.mem_cons_of_mem _ member)
@@ -474,10 +474,10 @@ theorem step_sound (command : Command Variable Literal Symbol Certificate)
 /-- The success step of a sound state: every node of the completed tree, its
 references filled with the deferred proofs, is sound from the final store on,
 and the resume state is sound. -/
-theorem step_reconstructs (command : Command Variable Literal Symbol Certificate)
+theorem step_reconstructs (strategy : Strategy Variable Literal Symbol Certificate)
     {state resume : State Variable Literal Symbol Certificate Snapshot}
     {proof : CompletedProof Variable Literal Symbol Certificate Snapshot}
-    (sound : state.Sound hoApplySymbol kb naf) (stepped : step command state = .finished (.success proof resume)) :
+    (sound : state.Sound hoApplySymbol kb naf) (stepped : step strategy state = .finished (.success proof resume)) :
     proof.tree.Nodes (SoundFrom hoApplySymbol kb naf proof.store) ∧ resume.Sound hoApplySymbol kb naf := by
   have branch := sound.branch
   unfold step at stepped
@@ -486,42 +486,42 @@ theorem step_reconstructs (command : Command Variable Literal Symbol Certificate
   rw [‹state.focus = .proved _›] at branch
   exact ⟨ProofTree.Nodes.fillAll branch.records _ branch.focus, ⟨branch.fail, sound.choices⟩⟩
 
-/-- A successful run of a sound command reconstructs its answer instance: the
+/-- A successful run of a sound strategy reconstructs its answer instance: the
 root obligation read through the final answers is derivable. The resume state is
 valid and sound, so every further answer is reconstructed too. -/
-theorem run_reconstructs (command : Command Variable Literal Symbol Certificate)
-    (commandSound : Command.Sound hoApplySymbol kb naf command) :
+theorem run_reconstructs (strategy : Strategy Variable Literal Symbol Certificate)
+    (strategySound : Strategy.Sound hoApplySymbol kb naf strategy) :
     ∀ (fuel : Nat) {state resume : State Variable Literal Symbol Certificate Snapshot}
       {proof : CompletedProof Variable Literal Symbol Certificate Snapshot},
-      state.Valid → state.Sound hoApplySymbol kb naf → run command fuel state = .success proof resume →
+      state.Valid → state.Sound hoApplySymbol kb naf → run strategy fuel state = .success proof resume →
         ReadDerives hoApplySymbol kb naf proof.store proof.root ∧ resume.Valid ∧ resume.Sound hoApplySymbol kb naf
   | 0, _, _, _, _, _, ran => by cases ran
   | fuel + 1, state, resume, proof, valid, sound, ran => by
       unfold run at ran
       split at ran
       · rename_i next stepped
-        exact run_reconstructs command commandSound fuel (step_valid command valid stepped).1
-          (step_sound command commandSound valid sound stepped) ran
+        exact run_reconstructs strategy strategySound fuel (step_valid strategy valid stepped).1
+          (step_sound strategy strategySound valid sound stepped) ran
       · rename_i outcome stepped
         subst outcome
-        obtain ⟨completed, resumeValid, _⟩ := step_success command valid stepped
-        obtain ⟨nodes, resumeSound⟩ := step_reconstructs command sound stepped
+        obtain ⟨completed, resumeValid, _⟩ := step_success strategy valid stepped
+        obtain ⟨nodes, resumeSound⟩ := step_reconstructs strategy sound stepped
         have read := (nodes.mono fun _ _ from' => from' proof.store (.refl _) completed.answers).readDerives
           completed.coherent completed.complete
         rw [completed.proves, ← completed.rooted] at read
         exact ⟨read, resumeValid, resumeSound⟩
 
-/-- A query answered by a sound command is derivable for its answer instance:
+/-- A query answered by a sound strategy is derivable for its answer instance:
 the goal and context read through the final answers. -/
-theorem run_init_reconstructs (command : Command Variable Literal Symbol Certificate)
-    (commandSound : Command.Sound hoApplySymbol kb naf command) (fuel : Nat) (snapshot : Snapshot)
+theorem run_init_reconstructs (strategy : Strategy Variable Literal Symbol Certificate)
+    (strategySound : Strategy.Sound hoApplySymbol kb naf strategy) (fuel : Nat) (snapshot : Snapshot)
     (flexibles : List Variable) (context : ProofContext Variable Literal Symbol) (goal : Formula Variable Literal Symbol)
     {resume : State Variable Literal Symbol Certificate Snapshot}
     {proof : CompletedProof Variable Literal Symbol Certificate Snapshot}
-    (ran : run command fuel (State.init snapshot flexibles context goal) = .success proof resume) :
+    (ran : run strategy fuel (State.init snapshot flexibles context goal) = .success proof resume) :
     Derives hoApplySymbol kb (context.map proof.store.resolve) (proof.store.resolve goal) naf := by
-  obtain ⟨completed, _, _⟩ := run_success command fuel (State.init_valid snapshot flexibles context goal) ran
-  have read := (run_reconstructs command commandSound fuel (State.init_valid snapshot flexibles context goal)
+  obtain ⟨completed, _, _⟩ := run_success strategy fuel (State.init_valid snapshot flexibles context goal) ran
+  have read := (run_reconstructs strategy strategySound fuel (State.init_valid snapshot flexibles context goal)
     (State.init_sound snapshot flexibles context goal) ran).1
   rw [completed.rooted] at read
   simpa [ReadDerives, State.init, Obligation.root, Obligation.context] using read

@@ -3,9 +3,9 @@
 [Machine](../AnthillModKbSpec/Resolution/Machine.lean) implements S04 over the
 existing `Term`, `ProofContext`, and `HornClause` representations. It defines one
 abstract machine for every profile: the state, its continuations and choice
-points, the shared answer store, the proof trees built by successful commands,
+points, the shared answer store, the proof trees built by successful rule applications,
 and the outcomes of a run. It does not choose clauses, match terms, or decide
-when to stop. Concrete commands supply those choices ([S05 matching](machine-matching.md),
+when to stop. Concrete strategies supply those choices ([S05 matching](machine-matching.md),
 [S06 positive execution](machine-positive.md), S07 P0 evaluation); the machine checks their names and bindings and
 owns completion and rollback. S18 adds [delayed goals](machine-delay.md):
 suspensions in the store, woken continuations, deferred proofs filled at the
@@ -74,7 +74,7 @@ A name the store has not declared is therefore fresh for every obligation the
 store reads (`Obligation.Declared.fresh`). Store freshness replaces S04's check
 against the obligation's free and binder names. Binder names impose nothing,
 because the opening contracts rename a binder that would capture
-([S05](machine-matching.md)). That is all the commit needs. A command that
+([S05](machine-matching.md)). That is all the commit needs. A strategy that
 matches syntactically should still avoid the binder names of what it reads
 (`Store.readBinders`): a renamed binder is an alpha-variant, which the S05
 matcher reports as unsupported. One lemma, `Store.commit_fresh_resolved`, gives
@@ -94,18 +94,18 @@ the same depth share a level, so a witness created under one `∀` branch could 
 bound to the other branch's eigenvariable. A dependency set refuses that binding.
 
 There is no live KB in the state. `snapshot` names the program, registry, and
-context the commands were built for; closed-world nodes are relative to it.
+context the strategies were built for; closed-world nodes are relative to it.
 
-## Commands and candidates
+## Strategies and candidates
 
-A command maps the focused obligation and the store to a `Response`:
+A strategy maps the focused obligation and the store to a `Response`:
 
 | Response | Meaning |
 | --- | --- |
 | `candidates (e :: rest)` | OR alternatives. `e` is tried now; `rest` is saved with the current store, continuations, and deferred proofs |
 | `candidates []` | A miss on this path. The newest choice point resumes |
 | `unsupported` | No capability for this focus. The path is abandoned and recorded as a gap, never as failure |
-| `incomplete alternatives` | Both: the alternatives are tried as for `candidates`, and the focus is recorded as an unsupported gap for the candidates the command could not build (S06), so the run never reports exhaustion |
+| `incomplete alternatives` | Both: the alternatives are tried as for `candidates`, and the focus is recorded as an unsupported gap for the candidates the strategy could not build (S06), so the run never reports exhaustion |
 | `delay names` | The obligation waits until one of `names`, declared unbound flexible names, is bound ([delayed goals](machine-delay.md)) |
 
 Each candidate (`Expansion`) fixes a rule application and its explicit
@@ -133,7 +133,7 @@ them and removes them from the store (`Commit.committed store woken`).
 
 Binding a name to itself changes nothing. On success, the flexible names in the
 value are narrowed to the bound name's dependencies. `rejected` is an ordinary
-candidate miss. `violated` means the command broke the machine contract; the
+candidate miss. `violated` means the strategy broke the machine contract; the
 candidate is abandoned and the obligation recorded as a `contract` gap.
 `Store.freshFor` picks a name that passes the freshness check (`Store.freshFor_fresh`).
 
@@ -144,10 +144,10 @@ opens free of its eigenvariable (`Store.commit_fresh_premise`). A rigid name
 that went out of scope earlier cannot return through a premise, whether written
 or through a flexible name created in its scope, whose dependencies include it.
 By `Store.Scoped.resolve_within`, the premise's reading stays within its scope
-too. A command that leaves an undeclared or out-of-scope name in a premise is
+too. A strategy that leaves an undeclared or out-of-scope name in a premise is
 refused at the commit, before the premise is focused. A template name left
 unfreshened that collides with a declared name in scope cannot be detected;
-freshening every template name is the command's responsibility.
+freshening every template name is the strategy's responsibility.
 
 ### Transitions
 
@@ -177,7 +177,7 @@ freshening every template name is the command's responsibility.
 | Property | Theorem |
 | --- | --- |
 | An AND parent completes exactly once, after all its premises: `step` passes each subproof returning to a frame to `receive`; fewer subproofs leave the frame waiting, exactly one per premise completes it, more are refused | `step_waiting`, `step_complete`, `Frame.feed_partial`, `Frame.feed_exact`, `Frame.feed_overfull` |
-| Every transition keeps every branch valid (`Branch.Valid`, for the state and each choice point): every continuation, focus, and choice point linked to the obligation it continues, every store scoped, and every free name of every committed obligation, suspension, and deferred proof declared in its store, including after rollback to a saved store, whatever the command answers | `State.init_valid`, `step_valid`, `Store.commit_declared` |
+| Every transition keeps every branch valid (`Branch.Valid`, for the state and each choice point): every continuation, focus, and choice point linked to the obligation it continues, every store scoped, and every free name of every committed obligation, suspension, and deferred proof declared in its store, including after rollback to a saved store, whatever the strategy answers | `State.init_valid`, `step_valid`, `Store.commit_declared` |
 | A successful run proves the root obligation, each subproof proves exactly its premise under the parent scope extended only by that premise, the final answers are scoped, every obligation of the tree names only names the final store declares, and no goal is still delayed | `run_success` (`CompletedProof.Valid`), `ProofTree.CoherentPremises.subproof_context`, `ProofTree.Declared` |
 | AND siblings share answers in sequence: a sibling starts from the store the previous one left, commits only add the candidate's bindings, and a bound answer is never rebound | `step_proved_store`, `Store.commit_extends`, `Store.bind_bound` |
 | OR alternatives start from the saved store: bindings, suspensions, and deferred proofs of a failed alternative are discarded | `step_backtrack`, `State.enter_store` |
@@ -230,7 +230,7 @@ search.
 
 ### Monotonic and snapshot-indexed evidence
 
-Closed-world nodes retain the certificate the command produced
+Closed-world nodes retain the certificate the strategy produced
 (`ClosedWorldEvidence`: kind and certificate). The `Certificate` type is a
 parameter of the machine: S07 and S10 define the certificates and S08 checks
 them, so exporting a proof never recomputes a failure or a cover. A tree carries
@@ -260,13 +260,13 @@ reads only the signature naming.
 | Outcome | Meaning |
 | --- | --- |
 | `success proof resume` | A complete, coherent tree for the root obligation (delayed goals' proofs filled in, their records kept as provenance), the final store with no goal still delayed, and a state from which search resumes for further answers |
-| `exhausted` | Every alternative of this command strategy was tried, and no path was abandoned. Not complete failure (P0 needs `GroundSearch.Fails`, S07), non-derivability, or refutation |
+| `exhausted` | Every alternative of this strategy was tried, and no path was abandoned. Not complete failure (P0 needs `GroundSearch.Fails`, S07), non-derivability, or refutation |
 | `unknown gaps` | Some path was abandoned for lack of capability or a contract breach, or floundered with goals still delayed. No evidence either way |
 | `interrupted state` | The step budget ran out |
 
 ## Named command contracts
 
-Each contract fixes one candidate. Concrete commands decide when to offer which.
+Each contract fixes one candidate. Concrete strategies decide when to offer which.
 `Expansion.Sound` states the completion contract: derivations of all premises in
 their own scopes give a derivation of the obligation. It is proved for every
 contract below, for candidates without answer bindings. For obligations read
@@ -289,7 +289,7 @@ through committed answers, S05's `Expansion.SoundUnder` states and proves it
 
 `body[e/x]` is `Term.instantiate`, which renames an inner binder of `body` that
 would capture `e` ([S05](machine-matching.md)). An opened name therefore needs
-to be fresh only for free names, also when a command opens the goal as read
+to be fresh only for free names, also when a strategy opens the goal as read
 through the answers, whose binders the commit does not see.
 
 ## Traces
@@ -308,22 +308,22 @@ outcome is checked by `#guard`.
 | `(p → p) ∧ p` | Exhausted: the first conjunct's assumption does not reach the second |
 | `q ∨ p` under `p ∨ q` | `disjElim` with cases proved under `p` and under `q` separately |
 | `p(X) ∧ q(X)` under `p(a), q(b)` | Incompatible shared answer: exhausted, no proof tree |
-| A command rebinding `X` | Refused by the store; recorded as a gap, outcome unknown |
-| `∃y. (p(y) → p(y))`, `X = X`, a command binding `X := X` | Success: self-binding is no change |
+| A strategy rebinding `X` | Refused by the store; recorded as a gap, outcome unknown |
+| `∃y. (p(y) → p(y))`, `X = X`, a strategy binding `X := X` | Success: self-binding is no change |
 | `∀x. ∃y. y = x` / `∃y. ∀x. y = x` | Success / exhausted by the dependency check |
 | `∀x. X = x` with answer `X` | Exhausted: a root answer cannot capture an opened rigid name |
 | `(∃x. p(x)) → ∃y. p(y)` / `∃y. ((∃x. p(x)) → p(y))` | Success through `existsElim` / exhausted: the opened witness cannot become an earlier name's answer |
-| `(∀x. ∃y. true) ∧ (∀z. true)`, a command binding `y := z` | Refused; success without the binding. A level number would accept it |
+| `(∀x. ∃y. true) ∧ (∀z. true)`, a strategy binding `y := z` | Refused; success without the binding. A level number would accept it |
 | `p(1) → ∀x. p(x)` | Exhausted: the free name 1 is a declared parameter, so opening `∀x` does not reuse it |
-| `∀x. (p(x) → p(x))`, a command opening `∀x` with `x` itself | Success: a binder name of the obligation is a new name of the store |
+| `∀x. (p(x) → p(x))`, a strategy opening `∀x` with `x` itself | Success: a binder name of the obligation is a new name of the store |
 | `naf p`; `naf q ∨ p` under `p` | Unknown; success, then unknown on resume (the gap persists) |
-| `p ∧ naf q` under `p`, with a command producing a toy certificate | Success; the NAF node retains its certificate, read back from `ProofTree.closedWorld` |
+| `p ∧ naf q` under `p`, with a strategy producing a toy certificate | Success; the NAF node retains its certificate, read back from `ProofTree.closedWorld` |
 | Small budget | Interrupted |
-| A command binding a rigid name, or opening a name free in the obligation | Contract gap, outcome unknown |
-| A command whose premise goal or discharged assumption names an undeclared name | Contract gap on the expanded obligation, outcome unknown |
+| A strategy binding a rigid name, or opening a name free in the obligation | Contract gap, outcome unknown |
+| A strategy whose premise goal or discharged assumption names an undeclared name | Contract gap on the expanded obligation, outcome unknown |
 | An `existsElim` whose existential names its own eigenvariable | Contract gap: a rigid name opened for one premise is out of scope in its siblings |
-| `(∀x. true) ∧ q`, a command whose premise for `q` names the closed eigenvariable | Contract gap on `q`: the name is declared but out of scope |
-| `(∀x. ∃y. y = x) ∧ q`, a command whose premise for `q` names `y` | Contract gap on `q`: `y` depends on the closed `x` |
+| `(∀x. true) ∧ q`, a strategy whose premise for `q` names the closed eigenvariable | Contract gap on `q`: the name is declared but out of scope |
+| `(∀x. ∃y. y = x) ∧ q`, a strategy whose premise for `q` names `y` | Contract gap on `q`: `y` depends on the closed `x` |
 | A commit whose premise claims to open a declared rigid parameter | Refused: a premise opens only the candidate's new rigid names |
 | `∃2. (q(2) ∧ ∀1. p(1, 2))` under `q(a)`, `∀1. p(1, a)` | Success: the witness avoids the read binder names, so the conjunct reads as the assumption itself |
 
@@ -331,19 +331,19 @@ The `#guard` checks evaluate compiled code; the kernel cannot reduce the existin
 well-founded `Term.freeVars` and `Term.instantiate?`. The commit's premise check
 computes `Term.freeVars`, so a concrete commit is evaluated, not proved by
 `decide` or `rfl`. The generic theorems above
-hold for every command and need no trace.
+hold for every strategy and need no trace.
 
 ## Boundaries
 
-- The machine does not compare terms. Commands read goals through the store
+- The machine does not compare terms. Strategies read goals through the store
   before matching (`Store.resolve`); the machine refuses unresolved values and
   rebinding. S05's matcher (`Store.unify`) computes bindings the commit replays.
 - `Store.resolve` renames a binder on a capture hazard (S05); a hazard is never
   failure.
-- The test driver here is not the S05 matcher or the S06 command set, and does
+- The test driver here is not the S05 matcher or the S06 strategy, and does
   not reconstruct `Derives` for answers. S05 supplies the per-node contracts
   (`Expansion.SoundUnder`); S06 composes them along a run for every sound
-  command (`run_reconstructs`, [S06](machine-positive.md)).
+  strategy (`run_reconstructs`, [S06](machine-positive.md)).
 - The store has a slot for unresolved constraints and no solver; solver jobs
   and checked success evidence (S08) are not part of this state.
 - No termination, fairness, or completeness is claimed. `exhausted` and

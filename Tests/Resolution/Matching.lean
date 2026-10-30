@@ -176,8 +176,8 @@ assumption with a fresh witness, and every clause freshened for this use; each
 is matched against the store its commit prepares. New names avoid the read
 binder names (`Store.readBinders`): the commit would accept them, but the
 renamed binder would be an alpha-variant the matcher does not admit. This is a
-test driver, not the S06 command set. -/
-def driver (program : Program) : Command Nat Nat Sym Unit := fun obligation store =>
+test driver, not the S06 strategy. -/
+def driver (program : Program) : Strategy Nat Nat Sym Unit := fun obligation store =>
   let goal := store.resolve obligation.goal
   let scope := obligation.scope
   let identity := scope.assumptions.map fun assumption =>
@@ -274,9 +274,9 @@ def scopeMiss := solve [] (query [0] [] (.disj (.forallVar 10 (.equal (.var 0) (
 #guard rulesOf scopeMiss = some [.disjRight, .equalRefl]
 #guard (resume [] scopeMiss).kind = .exhausted
 
--- A command that skips matching and proposes X := x directly: the store rejects
+-- A strategy that skips matching and proposes X := x directly: the store rejects
 -- the commit, an ordinary miss with no gap, and the next alternative succeeds.
-def naive : Command Nat Nat Sym Unit := fun obligation store =>
+def naive : Strategy Nat Nat Sym Unit := fun obligation store =>
   match store.resolve obligation.goal with
   | .equal (.var name) value => .candidates [{ rule := .equalRefl, bindings := [(name, value)] }]
   | _ => driver [] obligation store
@@ -361,7 +361,7 @@ the goal as read (`binderOf`). The commit checks only store freshness, so these
 names are accepted; the opening renames the inner binder that would capture. If
 the name is already declared the focus is unsupported, so a trace that cannot
 reuse a binder name is never mistaken for one that did. -/
-def reuseBinders (program : Program) : Command Nat Nat Sym Unit := fun obligation store =>
+def reuseBinders (program : Program) : Strategy Nat Nat Sym Unit := fun obligation store =>
   match store.resolve obligation.goal with
   | .forallVar x body =>
       if store.info? (binderOf x body) = none then .candidates [.forallIntro x body (binderOf x body)]
@@ -387,7 +387,7 @@ def binderNames := run (reuseBinders []) 100
 def keepBindersQuery : State Nat Nat Sym Unit Nat :=
   query [] [atom .q [k .a], .forallVar 1 (atom .p [.var 1, k .a])]
     (.existsVar 2 (.conj (atom .q [.var 2]) (.forallVar 1 (atom .p [.var 1, .var 2]))))
-def storeFreshOnly : Command Nat Nat Sym Unit := fun obligation store =>
+def storeFreshOnly : Strategy Nat Nat Sym Unit := fun obligation store =>
   match store.resolve obligation.goal with
   | .existsVar x body => .candidates [.existsIntro x body store.freshFor]
   | _ => driver [] obligation store
@@ -404,11 +404,11 @@ def storeFreshOnly : Command Nat Nat Sym Unit := fun obligation store =>
 
 /-! ### Undeclared names in premises -/
 
--- r(X) :- s(X, Z) used by a command that freshens only the head's names: the
+-- r(X) :- s(X, Z) used by a strategy that freshens only the head's names: the
 -- body still names the template Z, which the store has not declared. The commit
 -- refuses the candidate, a contract gap on r(Y) itself, before the body is
 -- focused. Freshening every template name answers a.
-def headOnly : Command Nat Nat Sym Unit := fun obligation store =>
+def headOnly : Strategy Nat Nat Sym Unit := fun obligation store =>
   let head := atom .r [.var 50]
   let fresh := store.freshen head.freeVars
   match store.resolve obligation.goal,

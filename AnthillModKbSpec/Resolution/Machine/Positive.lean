@@ -8,7 +8,7 @@ open AdmissionSignature InductiveDomains
 
 /-! # Ordinary clause selection and positive execution (S06)
 
-The first executable command set of the machine. `positive` answers truth,
+The first executable strategy of the machine. `positive` answers truth,
 conjunction, disjunction, implication, and quantifier goals by their
 introduction rules, closes goals by assumptions, instantiates local rules, and
 selects clauses of an effective `Program` for atomic goals and denial clauses
@@ -16,14 +16,14 @@ for falsity. A range guard on an unbound flexible name delays instead of
 enumerating ahead of the clause body. Matching is the S05 matcher against the
 store each candidate's commit prepares: `unsupported` and `violated` matches are
 gaps, recorded beside the other candidates (`Response.incomplete`), and
-`mismatch` drops the candidate. `positive_sound` proves the command sound, so a
+`mismatch` drops the candidate. `positive_sound` proves the strategy sound, so a
 successful run reconstructs `Derives` for its answer instance
 (`positive_reconstructs`). -/
 
 variable {Domain Variable Literal Symbol Certificate Snapshot : Type}
   [DecidableEq Variable] [DecidableEq Symbol] [DecidableEq Literal] [FreshNames Variable]
 
-/-! ## The command -/
+/-! ## The strategy -/
 
 /-- The index of atomic and falsity goals: the same symbol and arity, or both
 falsity. -/
@@ -68,7 +68,7 @@ def mayConclude (hoApplySymbol : Symbol) (goal : Term Variable Literal Symbol) :
   | bound, .var name => decide (name ∈ bound)
   | _, conclusion => mayMatch hoApplySymbol goal conclusion
 
-/-- The command's reading of the context: each assumption with its reading. -/
+/-- The strategy's reading of the context: each assumption with its reading. -/
 def Store.readContext (store : Store Variable Literal Symbol) (obligation : Obligation Variable Literal Symbol) :
     List (Term Variable Literal Symbol × Term Variable Literal Symbol) :=
   obligation.scope.assumptions.map fun assumption => (assumption, store.resolve assumption)
@@ -82,7 +82,7 @@ theorem Store.mem_readContext {store : Store Variable Literal Symbol} {obligatio
   exact ⟨inside, rfl⟩
 
 /-- The binder names of the goal and context as read: `Store.readBinders`, from
-the readings the command already holds. Fresh names avoid them. -/
+the readings the strategy already holds. Fresh names avoid them. -/
 def readAvoid (goal : Term Variable Literal Symbol) (context : List (Term Variable Literal Symbol × Term Variable Literal Symbol)) :
     List Variable :=
   (goal :: context.map Prod.snd).flatMap Term.binderNames
@@ -386,15 +386,15 @@ def respondTo (hoApplySymbol : Symbol) (program : Program Variable Literal Symbo
       | .app _ _ | .falsity => atomResponse hoApplySymbol program obligation store goal context
       | _ => compositeResponse program obligation store goal context
 
-/-- Ordinary clause selection and positive execution. The command reads the goal
+/-- Ordinary clause selection and positive execution. The strategy reads the goal
 and the context through the store once per focus; the matcher reads the sides
 it compares again. A guard on an unbound name delays until a later goal binds
 it, and still delayed at the end it flounders. -/
 def positive (hoApplySymbol : Symbol) (program : Program Variable Literal Symbol) :
-    Command Variable Literal Symbol Certificate := fun obligation store =>
+    Strategy Variable Literal Symbol Certificate := fun obligation store =>
   respondTo hoApplySymbol program obligation store (store.resolve obligation.goal) (store.readContext obligation)
 
-/-! ## Soundness of the command -/
+/-! ## Soundness of the strategy -/
 
 variable {hoApplySymbol : Symbol} {kb : LogicalKb Variable Literal Symbol} {naf : NafFailure Variable Literal Symbol}
   {obligation : Obligation Variable Literal Symbol} {store : Store Variable Literal Symbol}
@@ -601,13 +601,13 @@ theorem respondTo_sound (valid : store.Scoped) (declared : obligation.Declared s
       | exact atomResponse_sound valid reads expansion member
       | exact compositeResponse_sound valid declared reads expansion member
 
-/-- The command is sound for the KB its program denotes, whatever the NAF
+/-- The strategy is sound for the KB its program denotes, whatever the NAF
 provider: it builds no closed-world node. -/
 theorem positive_sound (program : Program Variable Literal Symbol) :
-    Command.Sound hoApplySymbol program.kb naf (positive (Certificate := Certificate) hoApplySymbol program) :=
+    Strategy.Sound hoApplySymbol program.kb naf (positive (Certificate := Certificate) hoApplySymbol program) :=
   fun _ _ valid declared => respondTo_sound valid declared rfl
 
-/-- A successful run of the command reconstructs `Derives` for its answer
+/-- A successful run of the strategy reconstructs `Derives` for its answer
 instance: the goal and context read through the final answers. -/
 theorem positive_reconstructs (program : Program Variable Literal Symbol) (fuel : Nat) (snapshot : Snapshot)
     (flexibles : List Variable) (context : ProofContext Variable Literal Symbol) (goal : Formula Variable Literal Symbol)

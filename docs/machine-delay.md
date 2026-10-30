@@ -1,7 +1,7 @@
 # Delayed goals in the machine
 
 [Machine](../AnthillModKbSpec/Resolution/Machine.lean) implements S18 on the S04
-[machine](machine-state.md): a command may delay the focused obligation until a
+[machine](machine-state.md): a strategy may delay the focused obligation until a
 name it waits on is bound, the commit that binds the name wakes it, and a goal
 still delayed when the branch would succeed flounders as a gap. Traces are in
 [Tests/Resolution/Delay.lean](../Tests/Resolution/Delay.lean).
@@ -45,12 +45,12 @@ with a choice point.
 
 ### Response
 
-A command may answer `delay names` (`Response.delay`): the focused obligation
+A strategy may answer `delay names` (`Response.delay`): the focused obligation
 cannot proceed until one of `names` is bound. Every name must be a declared,
 unbound flexible name, and the list must be nonempty (`Store.delayable`,
 `Store.delayable_spec`); otherwise the answer breaks the contract and is
 recorded as a gap. Waiting on a rigid name is never useful, since no transition
-assigns it; a command that needs a rigid name's value takes another route (for
+assigns it; a strategy that needs a rigid name's value takes another route (for
 NAF, a scoped certificate, S10).
 
 ### State: wakeups and constraints live in the store
@@ -106,7 +106,7 @@ success.
   after the name is bound and is never residual: it has no proof obligation
   left, so it never blocks success or causes floundering.
 - **Constraints are unresolved obligations.** A wakeup is re-asked through the
-  command and produces a proof. A constraint in `Store.constraints` is a
+  strategy and produces a proof. A constraint in `Store.constraints` is a
   condition the store tracks until its solver discharges it with evidence:
   disequalities, constructive-negation answers in S10, or the under-determined
   case of a type check. Each needs a decidable check at each binding, a rule
@@ -208,10 +208,10 @@ when it retains no closed-world evidence (`CompletedProof.Valid.monotonic_iff`).
 
 ## Boundaries
 
-- Commands decide when to delay (S06 for guards, S10 for NAF); the machine
+- Strategies decide when to delay (S06 for guards, S10 for NAF); the machine
   checks the names and owns waking, recording, and floundering.
 - No constraint solver: S18 adds the slot only.
-- The test driver is not S06's command set. S06 rebuilds `Derives` from a
+- The test driver is not S06's strategy. S06 rebuilds `Derives` from a
   completed tree read through the final answers ([S06](machine-positive.md));
   S16 composes it through elaboration.
 - No fairness or termination is claimed: woken goals run oldest first, before
