@@ -550,9 +550,9 @@ this ticket. `P`, `C`, `G` refer to the same program, context, and goal througho
 | `Machine.success_toDerives` | Instantiate/compose the existing ground or general reconstruction lemmas | S06, S16 |
 | `Admission.ready_no_missing_capability` | Progress plus preservation for an entire run under its declared input contracts | S15 |
 | `Elaboration.satisfies`, `elaboration_substitutes` | Preserve range semantics and capture-safe substitution over existing Term | S03 |
-| `ProofImport.checked_sound`, `admit_import` | Separate logical validity from safe automatic use of a proved statement | S08 |
-| `ProofTree.check`, `check_accepts_iff`, `checked_toDerives` | Term-encoded finite trees; known terminating rule checks; validity independent of automatic P1 discovery | S08; rule-specific nodes/checks S09-S14 |
-| `Machine.exportProof`, `exportProof_checked` | Successful P2 execution exports a Term tree accepted by P1 for the same answer instance, snapshot/context, and NAF provider | S04 interfaces; S06-S14 construction/checking; S15-S16 composition; S17 regressions |
+| `ProofImport.checked_sound`, `admit_import` | Separate logical validity from safe automatic use of a proved statement | S08 (`ProofImport.checked_sound`, `admitImports`) |
+| `ProofTree.check`, `check_accepts_iff`, `checked_toDerives` | Term-encoded finite trees; known terminating rule checks; validity independent of automatic P1 discovery | S08 (`P1.check`, `checkProof`, `checkProof_accept_iff`, `checked_toDerives`); rule-specific nodes/checks S09-S14 |
+| `Machine.exportProof`, `exportProof_checked` | Successful P2 execution exports a Term tree accepted by P1 for the same answer instance, snapshot/context, and NAF provider | S04 interfaces; S06-S14 construction/checking (S08: `P1.exportProof`, and `Plan.exportProof_checked` for P0 runs); S15-S16 composition; S17 regressions |
 | `Machine.p0_model_exists`, `Machine.sound` | Supply the model witness and compose with existing soundness, distinguishing new certificate rules | S16 |
 
 S07 implements its rows as `Admission.P0Input` and `Acyclic` (with the rank
@@ -564,6 +564,15 @@ witness carried by the plan's run input), `Admission.check`,
 (`Admits`), so no plan pairs one input with another's run, and `check` answers
 `invalid` for a program that is not the snapshot's effective program (a forged
 or a missing generated clause). The composed P1/P2 forms remain S15's.
+
+S08 implements the explicit-proof rows. A supplied tree is a `Term` checked by
+`P1.checkProof`; acceptance is exactly `CheckedProof` (`checkProof_accept_iff`)
+and reconstructs `Derives` with the checker's KB, context, and NAF provider
+(`checked_toDerives`). Derived rules of S09–S14 enter as `RuleCheck`s, NAF
+evidence through a `NafCheck`, and references through an import table.
+Missing capabilities answer NeedsEvidence before checking. Every successful
+P0 run exports an accepted term (`Plan.exportProof_checked`); the general S06
+export theorem is S15/S16's ([details](proof-checking.md)).
 
 For general answer substitutions the reconstruction conclusion is derivability
 of the permitted instantiated query under the correspondingly tracked context,
@@ -593,6 +602,7 @@ cannot establish Ready. Proof checking and proof discovery are distinct tasks.
 | `GroundSearch.Program`, `Context`, `Succeeds`, `Fails` | P0 finite presentation and evidence judgments | — (S07 adds ranks, `decided`, and the evaluator on the machine) |
 | `Machine` P0 evaluation (S07) | `Response.negate` with NAF barriers and entries, `Strategy.withNegation`, rank construction (`topoRank_decreases`), certificate totality under a rank (`GroundSearch.decided`), the P0 command set and its exact answers (`Ground.strategy_eq`), the run invariant and measure (`step_inv`), `Admission.check` with requests and exact guard decisions (`guardHolds_iff`), failure witnesses with a structural checker (`checkFailure_sound`, `NegativeCertificate.check`), `check_ready_sound`, `check_p0_complete`, `ready_no_missing_capability`, `run_total_of_p0`, `run_correct_of_p0`, `P0.run_semantic` ([details](machine-p0.md)) | A completed-model witness for admitted inputs (S16); composition into `E(KB)` with the guard facts (S16) |
 | `GroundSearch.succeeds_toDerives`, `succeeds_not_fails` | Reconstruction and certificate consistency | No general `Derives` completeness conclusion |
+| `P1` proof checking (S08) | Supplied trees as `Term`, a decided substitution relation (`substitutes_iff`), one procedure per rule (`nodeCheck`), the checker (`check_iff`), reconstruction (`Valid.derives`, `checked_toDerives`), `NafCheck` and `RuleCheck` interfaces, references re-checked over an import table, `checkProof` with NeedsEvidence for missing capabilities, `DecisionContract` and `proofRoute`, export of machine trees (`exportTree_refs`), P0 exports checked against the input's effective program (`Plan.exportProof_checked`, `Plan.exportProof_derives`), imports and their operational admission (`ProofImport.checked_sound`, `admitImports`, `admit`) ([details](proof-checking.md)) | The general S06 export theorem (S15/S16); a weakening lemma for reused references; public proof syntax |
 | `CompletedGround` | `ground_certificates_sound`, `ground_failure_adequate`, `ground_completed_sound` | Completion is a hypothesis, not generic model existence or search termination |
 | `VariableSearch`, `ScopedSearch` | Instances, answers, freshness, `LocalInstance.toDerives`, `answers_toDerives` | Exhaustive-instance covers are evidence, not a general enumeration algorithm; raw scoped failure is inadequate |
 | `CertifiedRefutation` | `Refutes.sound`, `failureAdequate`, `Refutes.toDerives` | NAF introduction still requires closed operands; semantic certificates are not automatically proofs in unchanged `Derives` |

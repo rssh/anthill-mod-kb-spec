@@ -3,9 +3,9 @@
 - id: WI-20261026-ZPV53-s08-define-checked-proof
 - created: 2026-10-26T08:32:26Z
 
-- status: Open
-- status_agent: user
-- status_at: 2026-10-26T08:32:26Z
+- status: Delivered
+- status_agent: claude
+- status_at: 2026-10-30T21:25:12Z
 
 - acceptance: lake build
 
@@ -38,3 +38,10 @@ Test a valid lemma import, an unproved claim, and a true recursive theorem whose
 
 Validation: lake build and focused Lean tests/examples appropriate to the changed definitions and proofs. Documentation-only work is checked against its stated deliverables; a build alone does not establish them.
 Design references: docs/resolution-state-machine.md and docs/resolution-implementation-plan.md.
+
+## Changes
+
+### 2026-10-30T21:25:11Z — feedback — user
+
+Delivered in docs/proof-checking.md and Resolution/P1. Scope decision (user, 2026-10-30): export is defined for every completed run; the theorem that exported trees pass the checker is proved for P0 runs (Plan.exportProof_checked, Plan.exportProof_derives). The general S06 export theorem is left to S15/S16, where the contract places exportProof_checked. References are re-checked at each use (no Derives weakening lemma); imports reach execution only as closed facts/rules proved under no assumptions.
+

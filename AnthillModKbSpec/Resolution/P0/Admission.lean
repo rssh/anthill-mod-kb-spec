@@ -591,15 +591,6 @@ variable [DecidableEq Variable] [DecidableEq Literal] [DecidableEq Symbol] [Fres
 
 attribute [local instance] termEq
 
-@[reducible] def clauseEq : DecidableEq (HornClause Variable Literal Symbol)
-  | .definite head body, .definite head' body' =>
-      if same : head = head' ∧ body = body' then isTrue (by obtain ⟨rfl, rfl⟩ := same; rfl)
-      else isFalse fun equal => by cases equal; exact same ⟨rfl, rfl⟩
-  | .goal body, .goal body' =>
-      if same : body = body' then isTrue (by rw [same]) else isFalse fun equal => by cases equal; exact same rfl
-  | .definite _ _, .goal _ => isFalse fun equal => by cases equal
-  | .goal _, .definite _ _ => isFalse fun equal => by cases equal
-
 attribute [local instance] clauseEq
 
 def isLowered : ClauseSource → Bool
@@ -1151,23 +1142,25 @@ theorem run_total_of_p0 (plan : Plan Domain Variable Literal Symbol hoApplySymbo
 /-- `Machine.run_correct_of_p0`: the run of a Ready plan answers the original
 query. Success proves the goal with a success certificate for the plan's
 program and the input's context; the tree's NAF nodes hold valid certificates
-for exactly that program and context; and the goal is derivable with the
-ground failure provider of that program and context. Exhaustion gives a
-complete-failure certificate. No run is `unknown`. -/
+for exactly that program and context; the goal is derivable with the ground
+failure provider of that program and context; and every node is a rule
+application of the run (`P0.Built`), which S08's export checks. Exhaustion
+gives a complete-failure certificate. No run is `unknown`. -/
 theorem run_correct_of_p0 (ready : check hoApplySymbol input = .ready plan) (fuel : Nat) :
     (∀ proof resume, plan.run fuel = .success proof resume →
       proof.snapshot = input ∧ Succeeds plan.ground.program plan.ground.context input.goal ∧
       (∀ evidence ∈ proof.tree.closedWorld, evidence.certificate.Valid plan.ground.program plan.ground.context) ∧
       Derives hoApplySymbol plan.ground.program.toKb input.context input.goal
-        (failureEvidence plan.ground.program plan.ground.context)) ∧
+        (failureEvidence plan.ground.program plan.ground.context) ∧
+      P0.Built plan.ground proof.tree) ∧
     (plan.run fuel = .exhausted → Fails plan.ground.program plan.ground.context input.goal) ∧
     ∀ gaps, plan.run fuel ≠ .unknown gaps := by
   have admitted := check_ready_sound ready
   obtain ⟨success, exhausted, unknown⟩ := P0.run_correct plan.ground plan.input fuel
   rw [admitted.admits.goal] at success exhausted
   refine ⟨fun proof resume ran => ?_, exhausted, unknown⟩
-  obtain ⟨_, _, proved, valid, derives⟩ := success proof resume ran
-  refine ⟨?_, proved, valid, admitted.admits.context ▸ derives⟩
+  obtain ⟨_, _, proved, valid, derives, built, _⟩ := success proof resume ran
+  refine ⟨?_, proved, valid, admitted.admits.context ▸ derives, built⟩
   have snapshotEq : proof.snapshot = plan.input := by
     rw [run_snapshot _ fuel ran, plan.ground.init_eq]
   rw [snapshotEq, admitted.exact]

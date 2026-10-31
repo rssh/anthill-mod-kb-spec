@@ -221,6 +221,7 @@ The run invariant `P0.Inv` has three parts besides `State.Valid`:
 | Success proves the original goal: a success certificate, valid certificates in every NAF node, and `Derives` with the exact ground failure provider. Exhaustion gives a complete-failure certificate. No run is `unknown` | `P0.run_correct`, `Machine.run_correct_of_p0` |
 | In a model completed for the program and context with complement NAF, success makes the goal true and exhaustion false | `P0.run_semantic` |
 | Every state a plan's run reaches records no gap and gets candidates or ground NAF: never a missing capability | `ready_no_missing_capability` |
+| Every node of a successful run's tree is a P0 rule application, the final store is empty, and the tree is coherent; its export is checked by S08 | `P0.run_correct` (`Built`), [`Plan.exportProof_checked`](proof-checking.md#exporting-machine-proofs) |
 | The completed proof records the run's snapshot, the plan's input | `run_snapshot` |
 
 ## Evidence and invalidation

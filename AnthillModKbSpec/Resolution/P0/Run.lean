@@ -241,10 +241,32 @@ def Holds (obligation : Obligation Variable Literal Symbol) (premises : List (Pr
   (∀ premise ∈ premises, Succeeds ground.program ground.context premise.goal) →
     Succeeds ground.program ground.context obligation.goal
 
-/-- A finished subtree of the run: no reference, and every closed-world node
-holds a valid certificate for the run's exact program and context. -/
+/-- The rule application a node of the run records, as S08 checks it: its
+rule with its parameters, its obligation's goal, and its premises, against the
+run's program and context. -/
+inductive NodeOk : RuleApp Variable Literal Symbol (Certificate Variable Literal Symbol) →
+    Obligation Variable Literal Symbol → List (Premise Variable Literal Symbol) → Prop where
+  | truth (goal : obligation.goal = .truth) : NodeOk .truth obligation []
+  | conjIntro (goal : obligation.goal = .conj left right) :
+      NodeOk .conjIntro obligation [{ goal := left }, { goal := right }]
+  | assumption (member : obligation.goal ∈ ground.context.assumptions) : NodeOk .assumption obligation []
+  | clause (member : HornClause.definite head body ∈ ground.program.clauses) (goal : obligation.goal = head) :
+      NodeOk (.clause (.definite head body) []) obligation [{ goal := .conjunction body }]
+  | negation (goal : obligation.goal = .defaultNeg certificate.operand)
+      (valid : certificate.Valid ground.program ground.context) :
+      NodeOk (.defaultNegIntro certificate) obligation []
+
+/-- Every node of the tree is a rule application of the run. -/
+inductive Built : ProofTree Variable Literal Symbol (Certificate Variable Literal Symbol) → Prop where
+  | node (step : NodeOk ground rule obligation premises) (children : ∀ tree ∈ subproofs, Built tree) :
+      Built (.node rule obligation premises subproofs)
+
+/-- A finished subtree of the run: no reference, every closed-world node holds
+a valid certificate for the run's exact program and context, and every node is
+a rule application of the run. -/
 def TreeOk (tree : ProofTree Variable Literal Symbol (Certificate Variable Literal Symbol)) : Prop :=
-  tree.refs = [] ∧ ∀ evidence ∈ tree.closedWorld, evidence.certificate.Valid ground.program ground.context
+  tree.refs = [] ∧ (∀ evidence ∈ tree.closedWorld, evidence.certificate.Valid ground.program ground.context) ∧
+    Built ground tree
 
 structure FrameOk (frame : Frame Variable Literal Symbol (Certificate Variable Literal Symbol)) : Prop where
   parent : ObligationOk ground frame.parent
@@ -253,6 +275,7 @@ structure FrameOk (frame : Frame Variable Literal Symbol (Certificate Variable L
   proved : ∀ premise ∈ frame.before, Succeeds ground.program ground.context premise.goal
   done : ∀ tree ∈ frame.done, TreeOk ground tree
   plain : frame.rule.closedWorld? = none
+  node : NodeOk ground frame.rule frame.parent frame.premises
 
 def ContinuationOk : Continuation Variable Literal Symbol (Certificate Variable Literal Symbol) → Prop
   | .frame frame => FrameOk ground frame
@@ -270,6 +293,7 @@ structure ExpansionOk (obligation : Obligation Variable Literal Symbol)
   premises : ∀ premise ∈ expansion.premises, PremiseOk ground premise
   holds : Holds ground obligation expansion.premises
   plain : expansion.rule.closedWorld? = none
+  node : NodeOk ground expansion.rule obligation expansion.premises
 
 def BarrierOk (point : ChoicePoint Variable Literal Symbol (Certificate Variable Literal Symbol)) : Prop :=
   ∃ certificate : Certificate Variable Literal Symbol, point.alternatives = [Expansion.negation certificate] ∧
@@ -463,14 +487,15 @@ theorem start_ok {obligation : Obligation Variable Literal Symbol}
     {frames : List (Continuation Variable Literal Symbol (Certificate Variable Literal Symbol))}
     (parent : ObligationOk ground obligation) (premises : ∀ premise ∈ expansion.premises, PremiseOk ground premise)
     (holds : Holds ground obligation expansion.premises) (plain : expansion.rule.closedWorld? = none)
+    (node : NodeOk ground expansion.rule obligation expansion.premises)
     (framesOk : ∀ continuation ∈ frames, ContinuationOk ground continuation) :
     FocusOk ground (expansion.start obligation frames).1 ∧
       ∀ continuation ∈ (expansion.start obligation frames).2, ContinuationOk ground continuation := by
   unfold Expansion.start
   split
   · rename_i none
-    rw [none] at holds
-    refine ⟨⟨holds (fun _ member => by cases member), ?_, ?_⟩, framesOk⟩
+    rw [none] at holds node
+    refine ⟨⟨holds (fun _ member => by cases member), ?_, ?_, .node node fun _ member => by cases member⟩, framesOk⟩
     · simp [ProofTree.refs, ProofTree.refsOf]
     · simp [ProofTree.closedWorld, ProofTree.closedWorldOf, plain]
   · rename_i premise pending premisesEq
@@ -478,10 +503,12 @@ theorem start_ok {obligation : Obligation Variable Literal Symbol}
     rcases List.mem_cons.mp member with rfl | member
     · have samePremises : (Frame.start obligation expansion.rule premise pending).premises = expansion.premises := by
         simp [Frame.start, Frame.premises, premisesEq]
-      refine ⟨parent, ?_, ?_, by simp [Frame.start], by simp [Frame.start], plain⟩
+      refine ⟨parent, ?_, ?_, by simp [Frame.start], by simp [Frame.start], plain, ?_⟩
       · rw [samePremises]; exact premises
       · show Holds ground obligation (Frame.start obligation expansion.rule premise pending).premises
         rw [samePremises]; exact holds
+      · show NodeOk ground expansion.rule obligation (Frame.start obligation expansion.rule premise pending).premises
+        rw [samePremises]; exact node
     · exact framesOk continuation member
 
 omit [DecidableEq Variable] [DecidableEq Literal] [DecidableEq Symbol] [FreshNames Variable] in
@@ -534,12 +561,12 @@ theorem _root_.AnthillModKbSpec.Machine.Ordinary.conjunction {goals : List (Term
   | cons goal rest ih =>
       exact .conj (each goal List.mem_cons_self) (ih fun other member => each other (List.mem_cons_of_mem _ member))
 
-omit [DecidableEq Variable] [DecidableEq Literal] [DecidableEq Symbol] [FreshNames Variable] in
+omit [FreshNames Variable] in
 theorem truth_ok {obligation : Obligation Variable Literal Symbol} (goal : obligation.goal = .truth) :
     ExpansionOk ground obligation (Expansion.truth (Certificate := Certificate Variable Literal Symbol)) :=
-  ⟨rfl, rfl, by simp [Expansion.truth], fun _ => goal ▸ .truth, rfl⟩
+  ⟨rfl, rfl, by simp [Expansion.truth], fun _ => goal ▸ .truth, rfl, .truth goal⟩
 
-omit [DecidableEq Variable] [DecidableEq Literal] [DecidableEq Symbol] [FreshNames Variable] in
+omit [FreshNames Variable] in
 theorem conj_ok {obligation : Obligation Variable Literal Symbol} {left right : Term Variable Literal Symbol}
     (goal : obligation.goal = .conj left right) (ok : GoalOk ground (.conj left right)) :
     ExpansionOk ground obligation (Expansion.conjIntro (Certificate := Certificate Variable Literal Symbol) left right) := by
@@ -550,7 +577,7 @@ theorem conj_ok {obligation : Obligation Variable Literal Symbol} {left right : 
       cases ordinary with
       | conj leftOrdinary rightOrdinary =>
           simp only [level_conj, Nat.max_le] at below
-          refine ⟨rfl, rfl, fun premise member => ?_, fun proved => ?_, rfl⟩
+          refine ⟨rfl, rfl, fun premise member => ?_, fun proved => ?_, rfl, .conjIntro goal⟩
           · simp only [Expansion.conjIntro, List.mem_cons, List.not_mem_nil, or_false] at member
             rcases member with rfl | rfl
             · exact ⟨rfl, leftValid, leftOrdinary, below.1⟩
@@ -569,7 +596,8 @@ theorem atomCandidates_ok {obligation : Obligation Variable Literal Symbol} {sym
     cases ok.valid with
     | atom ground => exact ground
   rcases mem_atomCandidates member with ⟨rfl, inside⟩ | ⟨body, rfl, entry, entryMember, definite⟩
-  · exact ⟨rfl, rfl, by simp [Expansion.assumption], fun _ => goal ▸ .assumption atomic inside, rfl⟩
+  · exact ⟨rfl, rfl, by simp [Expansion.assumption], fun _ => goal ▸ .assumption atomic inside, rfl,
+      .assumption (goal ▸ inside)⟩
   · have listed : HornClause.definite (.app symbol args) body ∈ ground.program.clauses :=
       definite ▸ Ground.mem_clauses entryMember
     have bodyValid : IsGoal hoApplySymbol (Term.conjunction body) := by
@@ -580,13 +608,14 @@ theorem atomCandidates_ok {obligation : Obligation Variable Literal Symbol} {sym
     have bodyBelow := ground.ranked.level_body listed
     have atomBelow := ok.below
     rw [level_app] at atomBelow
-    refine ⟨rfl, rfl, fun premise inside => ?_, fun proved => ?_, rfl⟩
+    refine ⟨rfl, rfl, fun premise inside => ?_, fun proved => ?_, rfl, ?_⟩
     · rw [clause_premises] at inside
       simp only [List.mem_singleton] at inside
       subst inside
       exact ⟨rfl, bodyValid, bodyOrdinary, by dsimp only; omega⟩
     · rw [goal]
       exact .clause atomic listed (proved _ (by rw [clause_premises]; exact List.mem_singleton_self _))
+    · rw [clause_premises]; exact .clause listed goal
 
 omit [FreshNames Variable] in
 theorem save_ok {Snapshot : Type} {state : State Variable Literal Symbol (Certificate Variable Literal Symbol) Snapshot}
@@ -623,7 +652,7 @@ theorem inv_enter {Snapshot : Type} {state : State Variable Literal Symbol (Cert
   have first := candidates expansion List.mem_cons_self
   have others := fun candidate member => candidates candidate (List.mem_cons_of_mem _ member)
   rw [enter_eq store parent.1 first.flexibles first.bindings first.premises]
-  obtain ⟨focusOk, startedOk⟩ := start_ok parent first.premises first.holds first.plain framesOk
+  obtain ⟨focusOk, startedOk⟩ := start_ok parent first.premises first.holds first.plain first.node framesOk
   obtain ⟨sameTarget, sameEntries⟩ := start_frames (ground := ground) (obligation := obligation)
     (expansion := expansion) (frames := state.frames)
   refine ⟨⟨root, rfl, deferred, gaps, focusOk, startedOk,
@@ -865,9 +894,10 @@ certificate, is a finished subtree of the run. -/
 theorem TreeOk.node {rule : RuleApp Variable Literal Symbol (Certificate Variable Literal Symbol)}
     {obligation : Obligation Variable Literal Symbol} {premises : List (Premise Variable Literal Symbol)}
     {subproofs : List (ProofTree Variable Literal Symbol (Certificate Variable Literal Symbol))}
-    (plain : rule.closedWorld? = none) (children : ∀ tree ∈ subproofs, TreeOk ground tree) :
+    (plain : rule.closedWorld? = none) (step : NodeOk ground rule obligation premises)
+    (children : ∀ tree ∈ subproofs, TreeOk ground tree) :
     TreeOk ground (.node rule obligation premises subproofs) := by
-  refine ⟨?_, fun evidence member => ?_⟩
+  refine ⟨?_, fun evidence member => ?_, .node step fun tree inside => (children tree inside).2.2⟩
   · simp only [ProofTree.refs]
     exact List.eq_nil_iff_forall_not_mem.mpr fun ref found => by
       obtain ⟨tree, inside, here⟩ := ProofTree.mem_refsOf.mp found
@@ -875,7 +905,7 @@ theorem TreeOk.node {rule : RuleApp Variable Literal Symbol (Certificate Variabl
       cases here
   · simp only [ProofTree.closedWorld, plain, Option.toList_none, List.nil_append] at member
     obtain ⟨tree, inside, here⟩ := mem_closedWorldOf.mp member
-    exact (children tree inside).2 evidence here
+    exact (children tree inside).2.1 evidence here
 
 omit [DecidableEq Variable] [DecidableEq Literal] [DecidableEq Symbol] [FreshNames Variable] in
 theorem cutNegation_sum (cost : ChoicePoint Variable Literal Symbol (Certificate Variable Literal Symbol) → Nat) :
@@ -924,7 +954,7 @@ theorem inv_proved {tree : ProofTree Variable Literal Symbol (Certificate Variab
           simp only [Frame.receive] at stepped
           cases stepped
           have node : TreeOk ground (.node rule parent (before ++ [current]) (done ++ [tree])) :=
-            TreeOk.node frameOk.plain fun child member => by
+            TreeOk.node frameOk.plain (by simpa [Frame.premises] using frameOk.node) fun child member => by
               rcases List.mem_append.mp member with old | last
               · exact frameOk.done child old
               · rw [List.mem_singleton.mp last]; exact treeOk
@@ -950,7 +980,7 @@ theorem inv_proved {tree : ProofTree Variable Literal Symbol (Certificate Variab
                 simpa [Frame.premises] using member), by
                   have holds := frameOk.holds
                   simpa [Frame.premises] using holds, fun premise member => ?_, fun child member => ?_,
-                frameOk.plain⟩
+                frameOk.plain, by simpa [Frame.premises] using frameOk.node⟩
               · rcases List.mem_append.mp member with old | last
                 · exact frameOk.proved premise old
                 · rw [List.mem_singleton.mp last]; exact currentProof
@@ -1087,7 +1117,14 @@ theorem inv_failed (inv : Inv ground state) (focused : state.focus = .failed)
                 pointOk.store pointOk.obligation.1 rfl rfl (by simp [Expansion.negation])
               rw [entered] at valid ⊢
               simp only [Expansion.start, Expansion.negation, State.save] at valid ⊢
-              refine ⟨⟨valid, ⟨root, rfl, pointOk.deferred, gaps, ⟨?_, ?_, ?_⟩, pointOk.frames, othersOk, holes⟩, below,
+              have certified : certificate.Valid ground.program ground.context := by
+                obtain ⟨tree, witnessed, checked⟩ := evaluate_failure ground.ranked operandValid operandBelow failed
+                refine ⟨clauses, context, ?_⟩
+                simp only [NegativeCertificate.check]
+                rw [witnessEq, Ground.witness, context, sameOperand, witnessed, clauses]
+                exact checked
+              refine ⟨⟨valid, ⟨root, rfl, pointOk.deferred, gaps, ⟨?_, ?_, ?_, ?_⟩, pointOk.frames, othersOk, holes⟩,
+                below,
                 targetOf ground point.frames, fun _ => ⟨rfl, entriesEq⟩, rest'.mono fun live => live.2⟩, ?_⟩
               · show Succeeds ground.program ground.context point.obligation.goal
                 rw [targetGoal]; exact .defaultNeg failed
@@ -1096,11 +1133,8 @@ theorem inv_failed (inv : Inv ground state) (focused : state.focus = .failed)
                 simp only [ProofTree.closedWorld, RuleApp.closedWorld?, ProofTree.closedWorldOf, Option.toList_some,
                   List.append_nil, List.mem_singleton] at member
                 subst member
-                obtain ⟨tree, witnessed, checked⟩ := evaluate_failure ground.ranked operandValid operandBelow failed
-                refine ⟨clauses, context, ?_⟩
-                simp only [NegativeCertificate.check]
-                rw [witnessEq, Ground.witness, context, sameOperand, witnessed, clauses]
-                exact checked
+                exact certified
+              · exact .node (.negation negationGoal certified) fun _ member => by cases member
               · rw [measured]
                 simp [measure, focusCost, pointCost, alternativesEq, Expansion.negation, pendingWith]
                 omega
@@ -1157,7 +1191,8 @@ theorem step_finished {state : State Variable Literal Symbol (Certificate Variab
     (stepped : step ground.strategy state = .finished outcome) :
     (∃ proof resume, outcome = .success proof resume ∧ proof.root = ⟨ground.scope, ground.goal⟩ ∧
         proof.tree.obligation = ⟨ground.scope, ground.goal⟩ ∧
-        Succeeds ground.program ground.context ground.goal ∧ TreeOk ground proof.tree) ∨
+        Succeeds ground.program ground.context ground.goal ∧ TreeOk ground proof.tree ∧
+          proof.store = Store.empty ∧ proof.tree.Coherent) ∨
       (outcome = .exhausted ∧ Fails ground.program ground.context ground.goal) := by
   obtain ⟨root, store, deferred, gaps, focusOk, framesOk, choicesOk, holes⟩ := inv.shape
   obtain ⟨depth, target, current, covers⟩ := inv.complete
@@ -1177,13 +1212,14 @@ theorem step_finished {state : State Variable Literal Symbol (Certificate Variab
         rw [store] at stepped
         simp only [Store.residual, Store.empty, List.map_nil, List.append_nil] at stepped
         cases stepped
-        obtain ⟨proves, _⟩ := branchValid
+        obtain ⟨proves, coherent⟩ := branchValid
         rw [framesEq] at proves
-        refine .inl ⟨_, _, rfl, root, ?_, ?_, ?_⟩
+        refine .inl ⟨_, _, rfl, root, ?_, ?_, ?_, rfl, ?_⟩
         · simp only [deferred, List.length_nil, ProofTree.fillAll]; rw [proves, root]; rfl
         · have goalEq : tree.obligation.goal = ground.goal := by rw [proves, root]; rfl
           rw [← goalEq]; exact focusOk.1
         · simp only [deferred, List.length_nil, ProofTree.fillAll]; exact focusOk.2
+        · simp only [deferred, List.length_nil, ProofTree.fillAll]; exact coherent
       all_goals (try split at stepped) <;> cases stepped
   | failed =>
       rw [focused] at stepped covers
@@ -1206,7 +1242,8 @@ theorem run_outcome : ∀ (fuel : Nat) (state : State Variable Literal Symbol (C
     Inv ground state →
       (∀ proof resume, run ground.strategy fuel state = .success proof resume →
         proof.root = ⟨ground.scope, ground.goal⟩ ∧ proof.tree.obligation = ⟨ground.scope, ground.goal⟩ ∧
-          Succeeds ground.program ground.context ground.goal ∧ TreeOk ground proof.tree) ∧
+          Succeeds ground.program ground.context ground.goal ∧ TreeOk ground proof.tree ∧
+          proof.store = Store.empty ∧ proof.tree.Coherent) ∧
       (run ground.strategy fuel state = .exhausted → Fails ground.program ground.context ground.goal) ∧
       (∀ gaps, run ground.strategy fuel state ≠ .unknown gaps) ∧
       (measure ground state < fuel → ∀ stopped, run ground.strategy fuel state ≠ .interrupted stopped)
@@ -1252,13 +1289,14 @@ theorem run_correct (snapshot : Snapshot) (fuel : Nat) :
       Succeeds ground.program ground.context ground.goal ∧
       (∀ evidence ∈ proof.tree.closedWorld, evidence.certificate.Valid ground.program ground.context) ∧
       Derives hoApplySymbol ground.program.toKb ground.context.assumptions ground.goal
-        (failureEvidence ground.program ground.context)) ∧
+        (failureEvidence ground.program ground.context) ∧
+      Built ground proof.tree ∧ proof.store = Store.empty ∧ proof.tree.Coherent) ∧
     (run ground.strategy fuel (ground.init snapshot) = .exhausted → Fails ground.program ground.context ground.goal) ∧
     ∀ gaps, run ground.strategy fuel (ground.init snapshot) ≠ .unknown gaps := by
   obtain ⟨success, exhausted, unknown, _⟩ := run_outcome ground fuel (ground.init snapshot) (ground.init_inv snapshot)
   refine ⟨fun proof resume ran => ?_, exhausted, unknown⟩
-  obtain ⟨root, proves, proof, treeOk⟩ := success proof resume ran
-  exact ⟨root, proves, proof, treeOk.2, succeeds_toDerives proof⟩
+  obtain ⟨root, proves, proof, treeOk, emptied, coherent⟩ := success proof resume ran
+  exact ⟨root, proves, proof, treeOk.2.1, succeeds_toDerives proof, treeOk.2.2, emptied, coherent⟩
 
 /-- The semantic reading of a completed run, in a model completed for the
 program and context with complement NAF: success makes the goal true and

@@ -148,6 +148,17 @@ theorem identical_iff {left right : Term Variable Literal Symbol} : identical le
 @[reducible] def termEq : DecidableEq (Term Variable Literal Symbol) :=
   fun left right => decidable_of_iff (identical left right = true) identical_iff
 
+attribute [local instance] termEq in
+/-- Equality of clauses, from `termEq`. -/
+@[reducible] def clauseEq : DecidableEq (HornClause Variable Literal Symbol)
+  | .definite head body, .definite head' body' =>
+      if same : head = head' ∧ body = body' then isTrue (by obtain ⟨rfl, rfl⟩ := same; rfl)
+      else isFalse fun equal => by cases equal; exact same ⟨rfl, rfl⟩
+  | .goal body, .goal body' =>
+      if same : body = body' then isTrue (by rw [same]) else isFalse fun equal => by cases equal; exact same rfl
+  | .definite _ _, .goal _ => isFalse fun equal => by cases equal
+  | .goal _, .definite _ _ => isFalse fun equal => by cases equal
+
 /-- Corresponding immediate parts of two terms with the same structural
 constructor. An application splits into its first argument and the application
 to the rest, so every split shrinks the problem. -/

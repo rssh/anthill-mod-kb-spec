@@ -1,5 +1,6 @@
 -- Shared search, matching, certificate, and admission groundwork.
 import AnthillModKbSpec.Resolution.P0
+import AnthillModKbSpec.Resolution.P1
 import AnthillModKbSpec.Resolution.Miller
 import AnthillModKbSpec.Resolution.MillerCertificates
 import AnthillModKbSpec.Resolution.CoreMatcherCertificate
