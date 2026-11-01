@@ -545,7 +545,7 @@ this ticket. `P`, `C`, `G` refer to the same program, context, and goal througho
 | `Admission.P2Admitted`, `StrategyContract` | Check command modes, scopes, evidence reconstruction, and whole-plan termination; permit Unknown | S08–S15 |
 | `Admission.p0_to_p1`, `p1_to_p2`, `Machine.embedding_preserves_run` | Nested admission and unchanged execution of embedded plans | S15 |
 | `Machine.run`, `run_total_of_p0`, `run_total_of_p1`, `run_total_of_p2` | One interpreter with termination theorems under each admission contract | S06–S07, S15 |
-| `Machine.run_decides_of_p1` | Sound and complete Yes/No decision for the specified problem; no completed Unknown result | S15–S16 |
+| `Machine.run_decides_of_p1` | Sound and complete Yes/No decision for the specified problem; no completed Unknown result | S15–S16 (the P0 case: `Plan.answer_true`, `Plan.answer_false`, `checkProgram_decides`, S07) |
 | `Machine.run_correct_of_p0` | Returned certificate corresponds to the original P, C, G; use consistency to obtain completeness for these certificate judgments | S07 |
 | `Machine.success_toDerives` | Instantiate/compose the existing ground or general reconstruction lemmas | S06, S16 |
 | `Admission.ready_no_missing_capability` | Progress plus preservation for an entire run under its declared input contracts | S15 |
@@ -560,7 +560,10 @@ witness carried by the plan's run input), `Admission.check`,
 `check_ready_sound`, `check_p0_complete`, `Machine.run_total_of_p0`,
 `Machine.run_correct_of_p0`, and, for P0 plans, `ready_no_missing_capability`
 (the no-missing-capability invariant along every reached state) and `step_inv`
-(preservation with a decreasing measure). A plan carries its admission
+(preservation with a decreasing measure). `Plan.answer` decides a Ready
+plan's query with no fuel (`Plan.answer_true`, `Plan.answer_false`), and
+`checkProgram` admits a program for every P0 query at once
+(`checkProgram_decides`). A plan carries its admission
 (`Admits`), so no plan pairs one input with another's run, and `check` answers
 `invalid` for a program that is not the snapshot's effective program (a forged
 or a missing generated clause). The composed P1/P2 forms remain S15's.

@@ -35,3 +35,17 @@ Validation: lake build and focused Lean tests/examples appropriate to the change
 Design references: docs/resolution-state-machine.md and docs/resolution-implementation-plan.md.
 
 Profile composition acceptance (S01 revision): use one syntax and one Step/run. Prove P0-to-P1-to-P2 admission inclusion and preservation of embedded plans. P1 requires totality, soundness, and completeness for a named decision problem, with no completed Unknown result. P2 may exhaust a terminating proof strategy with Unknown. A decision request cannot silently fall back to P2. Generic induction/law search is P2 unless a complete decision contract is supplied; keep non-derivability distinct from semantic refutation and NAF evidence. See docs/lean-admission-contract.md.
+## Changes
+
+### 2026-10-31T19:37:46Z — feedback — user
+
+Add a program-level admission check across the P1 routes (requested 2026-10-31): for a program and a declared query class, decide statically that some admitted route answers every query in the class with Yes/No, and prove it (the P1 analogue of Admission.checkProgram / checkProgram_decides from S07). It is sufficient, not complete; it must state the query class (ground vs open queries); explicit-proof routes do not count, but imported facts do (admitImports changes the program).
+
+### 2026-10-31T20:10:39Z — feedback — user
+
+For the program-level check: split Admission.Input into a program/snapshot part and a query part, so a program-level check reads no query by its type (today checkProgram takes a whole Input and runs check on input.ask [] .truth).
+
+### 2026-10-31T20:41:25Z — feedback — user
+
+For the program-level check, keep a reusable admission: today checkProgram discards the plan of the empty query, so every query re-runs the whole check (requests over all KB clauses, topoRank, cycle search). A program-level artifact (consistency, KB classes, rank witness) from which each query's plan is built, checking only that query's classes and guard facts, would avoid it.
+

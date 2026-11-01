@@ -379,6 +379,71 @@ def wokenThenFails := program [rule (k .q) [atom .isNat [.var 7], atom .r [.var 
 #guard (runNegating (program [rule (k .q) [atom .r [.var 7], k .s], fact (atom .r [zero])]) [] [] (naf (k .q))).kind
   = .success
 
+/-! ### Deciding queries, and every query of a program -/
+
+/-- The answer of a Ready plan; `none` if admission did not answer Ready. -/
+def decided (query : Input Dom Nat Nat Sym) : Option Bool :=
+  match admission query with
+  | .ready plan => some plan.answer
+  | _ => none
+
+#guard decided r01 = some true
+#guard decided (input [rule (k .p) [k .q], rule (k .p) [k .r]] [] (k .p)) = some false
+#guard decided r03 = some true
+#guard decided (input [rule (k .p) [naf (k .q)], fact (k .q)] [] (k .p)) = some false
+
+def decides : ProgramResult Nat Nat Sym → Bool
+  | .decides => true
+  | _ => false
+
+theorem decides_iff {result : ProgramResult Nat Nat Sym} : decides result = true ↔ result = .decides := by
+  cases result <;> simp [decides]
+
+def programInvalid : ProgramResult Nat Nat Sym → Option Diagnostic
+  | .invalid diagnostic => some diagnostic
+  | _ => none
+
+def programRequested : ProgramResult Nat Nat Sym → List (Site × List Nat × Capability)
+  | .needsEvidence request more => (request :: more).map fun request => (request.site, request.path, request.capability)
+  | _ => []
+
+/-- A program of KB clauses, without a query. -/
+def base (clauses : List Clause) : ProgramInput Dom Nat Nat Sym := (input clauses [] .truth).base
+
+/-- The answer to a query on a program, if the query is Ready. -/
+def asked (program : ProgramInput Dom Nat Nat Sym) (context : List T) (goal : T) : Option Bool :=
+  match check .ha (program.ask context goal) with
+  | .ready plan => some plan.answer
+  | _ => none
+
+-- A ground acyclic program decides every P0 query; the check takes no query.
+def chain := base [rule (k .p) [k .q], fact (k .q)]
+#guard decides (checkProgram .ha chain)
+#guard decides (checkProgram .ha (base [rule (k .p) [naf (k .q)], rule (k .w) [atom .isNat [succ zero]]]))
+-- A cycle, or a clause outside P0, is reported, and the check covers no query
+-- of that program. That does not make the queries undecidable: with `p :- p`
+-- beside the fact `p`, `p` holds.
+#guard programRequested (checkProgram .ha (base [rule (k .p) [k .p], fact (k .p)]))
+  = [(.head 0, [], .acyclicStrategy)]
+#guard programRequested (checkProgram .ha (base [rule (k .p) [naf (k .p)]]))
+  = [(.head 0, [], .acyclicStrategy)]
+#guard programRequested (checkProgram .ha (base [rule (atom .p [.var 1]) [atom .q [.var 1]]]))
+  = [(.head 0, [0], .groundInstance), (.body 0 0, [0], .groundInstance)]
+-- The program's declarations are checked as `check` checks them.
+#guard programInvalid (checkProgram .ha forged.base) = some (.signatureClause 0)
+#guard programInvalid (checkProgram .ha bare.base) = some (.missingSignatureClause 0)
+-- Queries on an accepted program are Ready, and decided, also those asking for
+-- guard facts the empty query does not: a guard goal, a guard under an assumed
+-- membership, and NAF of a guard.
+#guard asked chain [k .r] (.conj (k .p) (naf (k .r))) = some false
+#guard asked chain [] (.conj (k .p) (naf (k .r))) = some true
+#guard asked chain [] (atom .isNat [succ zero]) = some true
+#guard asked chain [atom .isNat [k .b]] (atom .isNat [succ (k .b)]) = some true
+#guard asked chain [] (naf (atom .isNat [k .b])) = some true
+#guard asked chain [] (atom .allData [k .b]) = some false
+-- A query outside P0 still asks for evidence on an accepted program.
+#guard asked chain [.var 1] (.imp (k .p) (k .q)) = none
+
 /-! ### The theorems, instantiated -/
 
 -- Every plan's run finishes with a success or an exhaustion: a plan carries
@@ -400,5 +465,15 @@ example (plan : Plan Dom Nat Nat Sym .ha)
     {state : State Nat Nat Sym (P0.Certificate Nat Nat Sym) (Input Dom Nat Nat Sym)}
     (reached : Reaches plan.ground.strategy (plan.ground.init plan.input) state) : state.gaps = [] :=
   (ready_no_missing_capability plan reached).1
+
+-- On a program the check accepts, every P0 query is decided; the kernel
+-- evaluates the check.
+example :
+    ∃ plan, check .ha (chain.ask [] (k .w)) = .ready plan ∧
+      (plan.answer = true ↔ GroundSearch.Succeeds plan.ground.program plan.ground.context (k .w)) ∧
+      (plan.answer = false ↔ GroundSearch.Fails plan.ground.program plan.ground.context (k .w)) :=
+  checkProgram_decides (decides_iff.mp (by decide))
+    ⟨.atom (.app (by decide) fun _ member => by cases member), .app (by decide) fun _ member => by cases member⟩
+    (fun _ member => by cases member)
 
 end P0AdmissionTests

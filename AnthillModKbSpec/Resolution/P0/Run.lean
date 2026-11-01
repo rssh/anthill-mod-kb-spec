@@ -1235,6 +1235,36 @@ theorem step_finished {state : State Variable Literal Symbol (Certificate Variab
         exact .inr ⟨rfl, fails_of_not_succeeds ground.ranked ground.valid missing⟩
       · split at stepped <;> (try split at stepped) <;> cases stepped
 
+/-- Run an invariant state to its finish, with no fuel: every step decreases
+the measure (`step_inv`), which only the termination proof uses, so the
+measure is never computed. -/
+def runToEnd (state : State Variable Literal Symbol (Certificate Variable Literal Symbol) Snapshot)
+    (inv : Inv ground state) : Outcome Variable Literal Symbol (Certificate Variable Literal Symbol) Snapshot :=
+  match stepped : step ground.strategy state with
+  | .running next => runToEnd next (step_inv inv stepped).1
+  | .finished outcome => outcome
+termination_by measure ground state
+decreasing_by exact (step_inv inv stepped).2
+
+/-- A run to the finish succeeds exactly with a success certificate for the
+root goal, and is otherwise exhausted, with a complete-failure certificate. -/
+theorem runToEnd_finished (state : State Variable Literal Symbol (Certificate Variable Literal Symbol) Snapshot)
+    (inv : Inv ground state) :
+    ((∃ proof resume, runToEnd ground state inv = .success proof resume) ∧
+        Succeeds ground.program ground.context ground.goal) ∨
+      (runToEnd ground state inv = .exhausted ∧ Fails ground.program ground.context ground.goal) := by
+  induction state, inv using runToEnd.induct ground with
+  | case1 state inv next stepped ih =>
+      rw [runToEnd]
+      split <;> rename_i again <;> rw [stepped] at again <;> cases again
+      exact ih
+  | case2 state inv outcome stepped =>
+      rw [runToEnd]
+      split <;> rename_i again <;> rw [stepped] at again <;> cases again
+      rcases step_finished ground inv stepped with ⟨proof, resume, rfl, _, _, proved, _⟩ | ⟨rfl, failed⟩
+      · exact .inl ⟨⟨proof, resume, rfl⟩, proved⟩
+      · exact .inr ⟨rfl, failed⟩
+
 /-- Along a P0 run from an invariant state: success proves the root goal with
 valid certificates, exhaustion refutes it with a complete-failure certificate,
 the run is never `unknown`, and it finishes within the measure. -/

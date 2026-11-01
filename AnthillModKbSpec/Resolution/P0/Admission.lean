@@ -16,8 +16,10 @@ the input contradicts its own declarations.
 
 `Ready` is admission evidence, not a proof of the goal: the plan runs on the
 shared machine (`Plan.run`), and that run terminates with a success or a
-complete-failure certificate (`run_total_of_p0`, `run_correct_of_p0`). P0
-rejection is not a negative answer: a P1 or P2 route may admit the same input. -/
+complete-failure certificate (`run_total_of_p0`, `run_correct_of_p0`).
+`Plan.answer` decides the query with no fuel. `checkProgram` admits a program
+for every P0 query at once. P0 rejection is not a negative answer: a P1 or P2
+route may admit the same input. -/
 
 variable {Domain Variable Literal Symbol : Type}
 
@@ -45,6 +47,31 @@ structure Input (Domain Variable Literal Symbol : Type) where
   marked : ∀ symbol, program.guard symbol = true ↔ symbol ∈ guardSymbols signature
   context : ProofContext Variable Literal Symbol
   goal : Formula Variable Literal Symbol
+
+/-- An input without its query: the snapshot with its listed rules, and the
+effective program. A program-level check takes only this. -/
+structure ProgramInput (Domain Variable Literal Symbol : Type) where
+  signature : SignatureSnapshot Domain Symbol
+  names : Nat → Variable
+  rules : List (Rule Domain Symbol)
+  listed : ∀ rule ∈ rules, signature.signature.data.definitions rule
+  complete : ∀ rule, signature.signature.data.definitions rule → rule ∈ rules
+  distinct : DistinctNames signature.signature.data.definitions names
+  program : Machine.Program Variable Literal Symbol
+  marked : ∀ symbol, program.guard symbol = true ↔ symbol ∈ guardSymbols signature
+
+/-- The program asked a query. -/
+def ProgramInput.ask (base : ProgramInput Domain Variable Literal Symbol) (context : ProofContext Variable Literal Symbol)
+    (goal : Formula Variable Literal Symbol) : Input Domain Variable Literal Symbol :=
+  ⟨base.signature, base.names, base.rules, base.listed, base.complete, base.distinct, base.program, base.marked,
+    context, goal⟩
+
+/-- An input's program, without its query. -/
+def Input.base (input : Input Domain Variable Literal Symbol) : ProgramInput Domain Variable Literal Symbol :=
+  ⟨input.signature, input.names, input.rules, input.listed, input.complete, input.distinct, input.program, input.marked⟩
+
+theorem Input.base_ask (input : Input Domain Variable Literal Symbol) :
+    input.base.ask input.context input.goal = input := rfl
 
 /-- The capability a formula outside P0 needs. Each names a route of a later
 profile; none is a negative answer about the formula. -/
@@ -353,6 +380,88 @@ theorem clauseRequests_nil (guard : Symbol → Bool) (index : Nat) (clause : Hor
             exact ⟨⟨⟨atomic, headOrdinary⟩, notGuard _ _ rfl⟩, fun goal member => ⟨goals goal member, bodyOrdinary goal member⟩⟩
 
 end Characterization
+
+/-! ### Where requests sit -/
+
+section Sites
+
+variable [DecidableEq Symbol] {hoApplySymbol : Symbol}
+
+mutual
+theorem dataRequests_site : ∀ (site : Site) (path : List Nat) (term : Term Variable Literal Symbol),
+    ∀ request ∈ dataRequests hoApplySymbol site path term, request.site = site
+  | site, path, .app symbol args => by
+      unfold dataRequests
+      split
+      · simp
+      · exact argsRequests_site site path 0 args
+  | _, _, .lit _ | _, _, .var _ | _, _, .dictionaryCall _ _ _ _ | _, _, .truth | _, _, .falsity | _, _, .conj _ _
+  | _, _, .disj _ _ | _, _, .imp _ _ | _, _, .defaultNeg _ | _, _, .forallVar _ _ | _, _, .existsVar _ _
+  | _, _, .equal _ _ => by simp [dataRequests]
+
+theorem argsRequests_site : ∀ (site : Site) (path : List Nat) (index : Nat) (args : List (Term Variable Literal Symbol)),
+    ∀ request ∈ argsRequests hoApplySymbol site path index args, request.site = site
+  | _, _, _, [] => by simp [argsRequests]
+  | site, path, index, arg :: rest => by
+      simp only [argsRequests, List.mem_append]
+      rintro request (inside | inside)
+      · exact dataRequests_site site _ arg request inside
+      · exact argsRequests_site site path _ rest request inside
+end
+
+theorem goalRequests_site : ∀ (site : Site) (path : List Nat) (goal : Term Variable Literal Symbol),
+    ∀ request ∈ goalRequests hoApplySymbol site path goal, request.site = site
+  | site, path, .app symbol args => by
+      unfold goalRequests
+      split
+      · simp
+      · exact argsRequests_site site path 0 args
+  | site, path, .conj left right => by
+      simp only [goalRequests, List.mem_append]
+      rintro request (inside | inside)
+      · exact goalRequests_site site _ left request inside
+      · exact goalRequests_site site _ right request inside
+  | site, path, .defaultNeg body => by
+      simpa only [goalRequests] using goalRequests_site site _ body
+  | _, _, .truth | _, _, .falsity | _, _, .var _ | _, _, .equal _ _ | _, _, .dictionaryCall _ _ _ _ | _, _, .lit _
+  | _, _, .disj _ _ | _, _, .imp _ _ | _, _, .forallVar _ _ | _, _, .existsVar _ _ => by simp [goalRequests]
+
+/-- A KB clause's requests sit at its head or at one of its body goals. -/
+theorem clauseRequests_site (guard : Symbol → Bool) (index : Nat) (clause : HornClause Variable Literal Symbol) :
+    ∀ request ∈ clauseRequests hoApplySymbol guard index clause,
+      request.site = .head index ∨ ∃ position, request.site = .body index position := by
+  have body : ∀ (position : Nat) (goals : List (Term Variable Literal Symbol)),
+      ∀ request ∈ bodyRequests hoApplySymbol index position goals, ∃ position, request.site = .body index position := by
+    intro position goals
+    induction goals generalizing position with
+    | nil => simp [bodyRequests]
+    | cons goal rest ih =>
+        simp only [bodyRequests, List.mem_append]
+        rintro request (inside | inside)
+        · exact ⟨position, goalRequests_site _ _ goal request inside⟩
+        · exact ih (position + 1) request inside
+  cases clause with
+  | goal _ => simp [clauseRequests]
+  | definite head goals =>
+      simp only [clauseRequests, List.mem_append]
+      rintro request (inside | inside)
+      · left
+        cases head with
+        | app symbol args =>
+            by_cases ho : symbol = hoApplySymbol
+            · simp only [headRequests, ho, ↓reduceIte, List.mem_singleton] at inside
+              rw [inside]
+            · simp only [headRequests, ho, ↓reduceIte, List.mem_append] at inside
+              rcases inside with guarded | inside
+              · by_cases guardHead : guard symbol = true
+                · simp only [guardHead, ↓reduceIte, List.mem_singleton] at guarded
+                  rw [guarded]
+                · simp [guardHead] at guarded
+              · exact argsRequests_site _ _ 0 args request inside
+        | _ => simp only [headRequests, List.mem_singleton] at inside; rw [inside]
+      · exact .inr (body 0 goals request inside)
+
+end Sites
 
 /-! ## Guard atoms
 
@@ -908,6 +1017,14 @@ theorem Plan.admitted (plan : Plan Domain Variable Literal Symbol hoApplySymbol)
   ⟨rfl, plan.admits⟩
 
 omit [FreshNames Variable] in
+/-- A Ready plan's rank witnesses that its input's KB clauses are acyclic. -/
+theorem Plan.acyclic (plan : Plan Domain Variable Literal Symbol hoApplySymbol) : Acyclic plan.input := by
+  refine ⟨plan.ground.rank, fun head body member atom inside => plan.ground.ranked head body ?_ atom inside⟩
+  rw [← plan.ground.listed, plan.admits.entries]
+  obtain ⟨pair, pairMember, same⟩ := List.mem_map.mp member
+  exact List.mem_map.mpr ⟨⟨.lowered pair.1, pair.2⟩, List.mem_append_left _ (List.mem_map_of_mem pairMember), same⟩
+
+omit [FreshNames Variable] in
 /-- `check_ready_sound`: a computed Ready is the admission judgment. -/
 theorem check_ready_sound {plan : Plan Domain Variable Literal Symbol hoApplySymbol}
     (ready : check hoApplySymbol input = .ready plan) : P0Admitted hoApplySymbol input plan := by
@@ -972,6 +1089,46 @@ theorem check_p0_complete (consistent : input.forged = []) (generated : input.un
         · exact ⟨_, rfl⟩
         · rename_i first rest unrankedEq; rw [unrankedEq] at noCycle; cases noCycle
 
+/-- What the program-level check answers. -/
+inductive ProgramResult (Variable Literal Symbol : Type) where
+  /-- Every P0 query on the program is Ready, and so decided. -/
+  | decides
+  /-- KB clauses outside the P0 classes or on a cycle, with what each needs. -/
+  | needsEvidence (request : Request Variable Literal Symbol) (more : List (Request Variable Literal Symbol))
+  /-- The program contradicts its declarations, for every query. -/
+  | invalid (diagnostic : Diagnostic)
+
+/-- P0 admission of a program for every query at once: `check` on the program
+with the empty query (goal `true`, no assumptions). That query asks nothing of
+its own, so every request and diagnostic is about the program. -/
+def checkProgram (hoApplySymbol : Symbol) (base : ProgramInput Domain Variable Literal Symbol) :
+    ProgramResult Variable Literal Symbol :=
+  match check hoApplySymbol (base.ask [] .truth) with
+  | .ready _ => .decides
+  | .needsEvidence request more => .needsEvidence request more
+  | .invalid diagnostic => .invalid diagnostic
+
+omit [FreshNames Variable] in
+/-- `checkProgram_ready`: a program the check accepts makes every P0 query
+Ready, that is, every ground goal of the P0 classes under a ground atomic
+context. The check is sufficient, not necessary: a recursive program may
+decide its queries and still be rejected. -/
+theorem checkProgram_ready {base : ProgramInput Domain Variable Literal Symbol}
+    (accepted : checkProgram hoApplySymbol base = .decides)
+    {context : ProofContext Variable Literal Symbol} {goal : Formula Variable Literal Symbol}
+    (goalOk : IsGoal hoApplySymbol goal ∧ Ordinary hoApplySymbol goal)
+    (contextOk : ∀ atom ∈ context, IsAtom hoApplySymbol atom ∧ Ordinary hoApplySymbol atom) :
+    ∃ plan, check hoApplySymbol (base.ask context goal) = .ready plan := by
+  unfold checkProgram at accepted
+  split at accepted
+  · rename_i plan ready
+    have admitted := check_ready_sound ready
+    have acyclic := admitted.exact ▸ plan.acyclic
+    exact check_p0_complete (input := base.ask context goal) admitted.admits.consistent admitted.admits.generated
+      ⟨goalOk, contextOk, admitted.admits.classes.clauses⟩ acyclic
+  · cases accepted
+  · cases accepted
+
 omit [FreshNames Variable] in
 /-- Invalid only for a contradicted declaration: a clause marked as generated
 that the signature does not generate, or a generated clause the program does
@@ -1031,6 +1188,89 @@ theorem check_needsEvidence {request : Request Variable Literal Symbol} {more : 
             cases needs
             exact ⟨consistent, generated, .inr ⟨valid, by simp [unrankedEq], .inr ⟨cyclesEq, unrankedEq⟩⟩⟩
 
+omit [FreshNames Variable] in
+/-- Every request of the program-level check sits at a KB clause's head or
+body: the empty query asks for nothing. -/
+theorem checkProgram_needsEvidence {base : ProgramInput Domain Variable Literal Symbol}
+    {request : Request Variable Literal Symbol} {more : List (Request Variable Literal Symbol)}
+    (needs : checkProgram hoApplySymbol base = .needsEvidence request more) :
+    ∀ found ∈ request :: more, ∃ index, found.site = .head index ∨ ∃ position, found.site = .body index position := by
+  unfold checkProgram at needs
+  split at needs
+  · cases needs
+  · rename_i first rest asked
+    cases needs
+    have headSite : ∀ {requests : List (Request Variable Literal Symbol)},
+        (∀ found ∈ requests, ∃ index, found.site = .head index) →
+          ∀ found ∈ requests, ∃ index, found.site = .head index ∨ ∃ position, found.site = .body index position :=
+      fun sited found inside => (sited found inside).elim fun index same => ⟨index, .inl same⟩
+    have kbSites : ∀ found ∈ (base.ask [] .truth).kbClauses.flatMap
+        (fun pair => clauseRequests hoApplySymbol (base.ask [] .truth).guard pair.1 pair.2),
+        ∃ index, found.site = .head index ∨ ∃ position, found.site = .body index position := by
+      intro found inside
+      obtain ⟨pair, _, inside⟩ := List.mem_flatMap.mp inside
+      exact ⟨pair.1, clauseRequests_site _ _ _ found inside⟩
+    have rankSites : ∀ found ∈ (base.ask [] .truth).unranked, ∃ index, found.site = .head index := by
+      intro found inside
+      obtain ⟨pair, _, made⟩ := List.mem_filterMap.mp inside
+      revert made
+      cases pair.2 with
+      | definite head body =>
+          dsimp only
+          split <;> intro made <;> cases made <;> exact ⟨_, rfl⟩
+      | goal _ => intro made; cases made
+    have cycleSites : ∀ found ∈ (base.ask [] .truth).cycleRequests, ∃ index, found.site = .head index := by
+      intro found inside
+      obtain ⟨pair, _, made⟩ := List.mem_filterMap.mp inside
+      revert made
+      cases pair.2 with
+      | definite head body =>
+          dsimp only
+          split <;> intro made <;> cases made <;> exact ⟨_, rfl⟩
+      | goal _ => intro made; cases made
+    obtain ⟨_, _, found⟩ := check_needsEvidence asked
+    rcases found with requested | ⟨_, _, cycles | ⟨_, unranked⟩⟩
+    · intro found inside
+      rw [← requested] at inside
+      simp only [Input.requests, ProgramInput.ask, goalRequests, contextRequests, List.nil_append] at inside
+      exact kbSites found inside
+    · rw [← cycles]; exact headSite cycleSites
+    · rw [← unranked]; exact headSite rankSites
+  · cases needs
+
+omit [FreshNames Variable] in
+/-- A program the check finds invalid is invalid for every query, with the
+same diagnostic: the diagnostics are about the program. -/
+theorem checkProgram_invalid {base : ProgramInput Domain Variable Literal Symbol} {diagnostic : Diagnostic}
+    (invalid : checkProgram hoApplySymbol base = .invalid diagnostic)
+    (context : ProofContext Variable Literal Symbol) (goal : Formula Variable Literal Symbol) :
+    check hoApplySymbol (base.ask context goal) = .invalid diagnostic := by
+  unfold checkProgram at invalid
+  split at invalid
+  · cases invalid
+  · cases invalid
+  · rename_i found asked
+    cases invalid
+    have forgedEq : (base.ask context goal).forged = (base.ask [] .truth).forged := rfl
+    have unlistedEq : (base.ask context goal).unlisted = (base.ask [] .truth).unlisted := rfl
+    rcases check_invalid asked with ⟨position, rest, forged, rfl⟩ | ⟨consistent, clause, rest, unlisted, rfl⟩
+    · unfold check
+      split
+      · next position' rest' forged' =>
+          rw [forgedEq, forged] at forged'
+          cases forged'
+          rfl
+      · next none => rw [forgedEq, forged] at none; cases none
+    · unfold check
+      split
+      · next position' rest' forged' => rw [forgedEq, consistent] at forged'; cases forged'
+      · split
+        · next clause' rest' unlisted' =>
+            rw [unlistedEq, unlisted] at unlisted'
+            cases unlisted'
+            rfl
+        · next none => rw [unlistedEq, unlisted] at none; cases none
+
 omit [DecidableEq Literal] [FreshNames Variable] in
 /-- Lowering takes only the signature's naming, so a change of registry,
 domains, or revision that keeps the naming leaves every lowered formula as it
@@ -1059,6 +1299,69 @@ its input. -/
 def Plan.run (plan : Plan Domain Variable Literal Symbol hoApplySymbol) (fuel : Nat) :
     Outcome Variable Literal Symbol (P0.Certificate Variable Literal Symbol) (Input Domain Variable Literal Symbol) :=
   Machine.run plan.ground.strategy fuel (plan.ground.init plan.input)
+
+/-- `Plan.answer`: the answer to the plan's query, `true` when its run
+succeeds and `false` when it is exhausted. The run needs no fuel: it ends by
+the decreasing measure, which is never computed (`P0.runToEnd`). -/
+def Plan.answer (plan : Plan Domain Variable Literal Symbol hoApplySymbol) : Bool :=
+  match P0.runToEnd plan.ground (plan.ground.init plan.input) (plan.ground.init_inv plan.input) with
+  | .success _ _ => true
+  | .exhausted => false
+  -- A run to the finish is never unknown or interrupted (`P0.runToEnd_finished`).
+  | .unknown _ | .interrupted _ => false
+
+/-- The answer is `true` with a success certificate or `false` with a
+complete-failure certificate. -/
+theorem Plan.answer_spec (plan : Plan Domain Variable Literal Symbol hoApplySymbol) :
+    (plan.answer = true ∧ Succeeds plan.ground.program plan.ground.context plan.input.goal) ∨
+      (plan.answer = false ∧ Fails plan.ground.program plan.ground.context plan.input.goal) := by
+  rw [← plan.admits.goal]
+  unfold Plan.answer
+  rcases P0.runToEnd_finished plan.ground (plan.ground.init plan.input) (plan.ground.init_inv plan.input) with
+    ⟨⟨proof, resume, ran⟩, proved⟩ | ⟨ran, failed⟩
+  · exact .inl ⟨by simp [ran], proved⟩
+  · exact .inr ⟨by simp [ran], failed⟩
+
+/-- `true` exactly when the query has a success certificate. -/
+theorem Plan.answer_true (plan : Plan Domain Variable Literal Symbol hoApplySymbol) :
+    plan.answer = true ↔ Succeeds plan.ground.program plan.ground.context plan.input.goal := by
+  rcases plan.answer_spec with ⟨answered, proved⟩ | ⟨answered, failed⟩
+  · exact ⟨fun _ => proved, fun _ => answered⟩
+  · rw [answered]
+    exact ⟨fun same => (by cases same), fun proved => absurd failed (succeeds_not_fails proved)⟩
+
+/-- `false` exactly when the query has a complete-failure certificate. -/
+theorem Plan.answer_false (plan : Plan Domain Variable Literal Symbol hoApplySymbol) :
+    plan.answer = false ↔ Fails plan.ground.program plan.ground.context plan.input.goal := by
+  rcases plan.answer_spec with ⟨answered, proved⟩ | ⟨answered, failed⟩
+  · rw [answered]
+    exact ⟨fun same => (by cases same), fun failed => absurd failed (succeeds_not_fails proved)⟩
+  · exact ⟨fun _ => failed, fun _ => answered⟩
+
+omit [FreshNames Variable] in
+/-- A Ready check of an asked input keeps the asked goal: the plan answers
+that query. -/
+theorem check_ask {base : ProgramInput Domain Variable Literal Symbol} {context : ProofContext Variable Literal Symbol}
+    {goal : Formula Variable Literal Symbol} {plan : Plan Domain Variable Literal Symbol hoApplySymbol}
+    (ready : check hoApplySymbol (base.ask context goal) = .ready plan) : plan.input.goal = goal := by
+  rw [(check_ready_sound ready).exact]; rfl
+
+/-- `checkProgram_decides`: on a program the check accepts, every P0 query is
+decided: `Plan.answer` answers `true` exactly when it succeeds and `false`
+exactly when it fails completely. Each query is decided against its own
+plan's program, the KB clauses with the guard facts that query asks for;
+relating its failure to the effective program is S16's. -/
+theorem checkProgram_decides {base : ProgramInput Domain Variable Literal Symbol}
+    (accepted : checkProgram hoApplySymbol base = .decides)
+    {context : ProofContext Variable Literal Symbol} {goal : Formula Variable Literal Symbol}
+    (goalOk : IsGoal hoApplySymbol goal ∧ Ordinary hoApplySymbol goal)
+    (contextOk : ∀ atom ∈ context, IsAtom hoApplySymbol atom ∧ Ordinary hoApplySymbol atom) :
+    ∃ plan, check hoApplySymbol (base.ask context goal) = .ready plan ∧
+      (plan.answer = true ↔ Succeeds plan.ground.program plan.ground.context goal) ∧
+      (plan.answer = false ↔ Fails plan.ground.program plan.ground.context goal) := by
+  obtain ⟨plan, ready⟩ := checkProgram_ready accepted goalOk contextOk
+  have asked := check_ask ready
+  exact ⟨plan, ready, asked ▸ plan.answer_true, asked ▸ plan.answer_false⟩
 
 /-- `Admission.ready_no_missing_capability`: every state a plan's run reaches
 records no gap, keeps the empty store, and gets a next step from the command

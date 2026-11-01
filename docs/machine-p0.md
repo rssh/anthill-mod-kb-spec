@@ -15,8 +15,8 @@ Traces are in [Tests/Resolution/P0/Admission.lean](../Tests/Resolution/P0/Admiss
 | [P0/Rank](../AnthillModKbSpec/Resolution/P0/Rank.lean) | Atoms of a goal, dependency edges, rank witnesses (`Ranked`), levels, totality of the certificates (`decided`), rank construction (`topoRank`, `topoRank_decreases`) |
 | [P0/Witness](../AnthillModKbSpec/Resolution/P0/Witness.lean) | Finite success and failure trees, their structural checkers (`checkSuccess_sound`, `checkFailure_sound`), and the ranked evaluator that builds them (`evaluate_sound`, `evaluate_total`) |
 | [P0/Strategy](../AnthillModKbSpec/Resolution/P0/Strategy.lean) | The run input (`Ground`), negative certificates with their failure witnesses, the P0 command set (`Ground.strategy`) and its exact answer on ground goals (`Ground.strategy_eq`) |
-| [P0/Run](../AnthillModKbSpec/Resolution/P0/Run.lean) | The measure, the run invariant, `step_inv`, `run_total`, `run_correct`, `run_semantic` |
-| [P0/Admission](../AnthillModKbSpec/Resolution/P0/Admission.lean) | Inputs, evidence requests, guard decisions, `check`, plans, the admission theorems, `Machine.run_total_of_p0`, `Machine.run_correct_of_p0` |
+| [P0/Run](../AnthillModKbSpec/Resolution/P0/Run.lean) | The measure, the run invariant, `step_inv`, `run_total`, `run_correct`, `run_semantic`, the fuel-free run `runToEnd` (`runToEnd_finished`) |
+| [P0/Admission](../AnthillModKbSpec/Resolution/P0/Admission.lean) | Inputs and program inputs (`ProgramInput`), evidence requests, guard decisions, `check`, plans, the admission theorems, `Plan.answer`, the program-level check (`checkProgram`, `ProgramResult`), `Machine.run_total_of_p0`, `Machine.run_correct_of_p0` |
 
 ## NAF in the machine
 
@@ -223,6 +223,36 @@ The run invariant `P0.Inv` has three parts besides `State.Valid`:
 | Every state a plan's run reaches records no gap and gets candidates or ground NAF: never a missing capability | `ready_no_missing_capability` |
 | Every node of a successful run's tree is a P0 rule application, the final store is empty, and the tree is coherent; its export is checked by S08 | `P0.run_correct` (`Built`), [`Plan.exportProof_checked`](proof-checking.md#exporting-machine-proofs) |
 | The completed proof records the run's snapshot, the plan's input | `run_snapshot` |
+| A Ready plan's query is decided, with no fuel: `true` exactly on a success certificate, `false` exactly on a complete-failure certificate | `Plan.answer_true`, `Plan.answer_false`, `Plan.answer_spec`, `P0.runToEnd_finished` |
+| On a program `checkProgram` accepts, every P0 query is Ready and decided | `checkProgram_ready`, `checkProgram_decides` |
+| The program-level check's requests sit at KB clause heads and bodies; its diagnostics hold for every query | `checkProgram_needsEvidence`, `checkProgram_invalid` |
+
+### Deciding queries, and every query of a program
+
+`Plan.answer` answers a Ready plan's query: `true` when its run succeeds and
+`false` when it is exhausted. It runs with no fuel (`P0.runToEnd`): each step
+decreases the run's measure, which only the termination proof uses, so the
+measure is never computed and the run is never interrupted. `true` holds
+exactly when the goal has a success certificate, and `false` exactly when it
+has a complete-failure certificate (`Plan.answer_true`, `Plan.answer_false`).
+`false` is closed-world: failure in the plan's program under its context.
+
+`checkProgram` admits a program for every query at once. It takes a
+`ProgramInput`, an input without its query (`ProgramInput.ask` adds one), and
+is `check` on the program with the empty query (goal `true`, no assumptions).
+That query asks nothing of its own: every request sits at a KB clause's head or
+body (`checkProgram_needsEvidence`), and a diagnostic holds for every query on
+the program (`checkProgram_invalid`). On a program it accepts, every P0 query
+(a ground goal of the P0 classes under a ground atomic context) is Ready and
+decided (`checkProgram_ready`, `checkProgram_decides`). Each query is decided
+against its own plan's program: the KB clauses with the guard facts that query
+asks for. Relating a failure to the effective program itself is S16's.
+
+The check is sufficient, not necessary: a recursive program may decide its
+queries and still be rejected, and a query outside the P0 classes still asks
+for evidence. Every query repeats the whole `check`, rank included, since the
+program-level check keeps no reusable result; a program-level check across all
+P1 routes, with a reusable admission, is S15's.
 
 ## Evidence and invalidation
 
@@ -273,6 +303,9 @@ formulas do not, since lowering takes only the naming
 | A built program with recursive membership clauses: `w :- isNat(succ(zero))`, `s :- isNat(b)` | Ready; `w` succeeds from the decided fact, `s` is exhausted |
 | `allData(succ(succ(zero)))`; `isPred(p)` / `isPred(q)`; `naf isNat(b)` | Success; success / exhausted; success |
 | Under the assumption `isNat(b)`: `isNat(succ(b))`, `naf isNat(succ(b))`, `allData(succ(b))`; under `isNat(c)`: `isNat(succ(b))` | Success, exhausted, success; exhausted |
+| `Plan.answer` on R01; on `p :- q`, `p :- r`; on `p :- naf q` without and with `q` | `true`; `false`; `true`, `false` |
+| `checkProgram` on `p :- q`, `q`; on `p :- p`, `p` and `p :- naf p`; on `p(X) :- q(X)`; on a forged or missing signature clause | Decides; `acyclicStrategy` for clause 0 each; `groundInstance` at head 0 and body 0 0; `invalid` with the diagnostic `check` gives |
+| Queries on the accepted `p :- q`, `q`: `p ∧ naf r` under `r` and without it, `isNat(succ(zero))`, `isNat(succ(b))` under `isNat(b)`, `naf isNat(b)`, `allData(b)`; `p → q` under a variable | `false`, `true`, `true`, `true`, `true`, `false`; needs evidence |
 | A rule list adding or omitting a declared rule | Cannot satisfy the input contract |
 | A forged signature clause | `invalid (signatureClause 0)` |
 | `w :- isNat(succ(zero))` without the generated clauses; with them | `invalid (missingSignatureClause 0)`; Ready |
@@ -302,9 +335,10 @@ formulas do not, since lowering takes only the naming
   the operand, with no memoization of nested NAF. Building the witness from the
   machine's own exhausted search would need failure evidence in its choice
   points.
-- **Fuel.** Below the measure a run may be `interrupted`, which is neither a
-  termination failure nor a refutation. The measure is a bound, not a cost
-  claim: search repeats work, with no memoization.
+- **Fuel.** Below the measure a `Plan.run` may be `interrupted`, which is
+  neither a termination failure nor a refutation. `Plan.answer` runs with no
+  fuel and is never interrupted. The measure is a bound, not a cost claim:
+  search repeats work, with no memoization.
 - **Runs from the query.** The theorems are about a plan's run from its query.
   The resume state of a success searches for further proofs of the same goal;
   its outcome is not covered, and its exhaustion is not a failure certificate.
