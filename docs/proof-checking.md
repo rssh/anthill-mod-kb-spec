@@ -110,11 +110,13 @@ interface whose soundness is a proof obligation in the shared logic:
   operand under a context, together with the proof that what it accepts holds
   for the checker's NAF provider. A failed search is never evidence: the
   procedure checks a certificate.
-- **Derived rules** (`RuleCheck`, for S09–S14): a name, the assumptions each
+- **Derived rules** (`RuleCheck`, for S10–S14): a name, the assumptions each
   premise adds, a terminating procedure that checks one application, and a
   proof that derivations of the premises give a derivation of the conclusion
   in `Derives`. A later command adds its rule by registering a `RuleCheck`. The
   procedure checks the application, and the tree supplies the premises' proofs.
+  S09's commands need none: each is a composition of the shared rules and
+  exports as their nodes ([left rules](machine-left.md#proof-trees)).
 - **References** to previously checked proofs, by name, over an import table
   ordered newest first. A reference stands for the statement its import was
   supplied for: its goal must be the import's goal, and the import's
@@ -165,8 +167,10 @@ certificate into its evidence term. For an existential elimination it records
 the opened body that its second premise assumes; a node whose premise assumes
 anything else exports nothing. A derived rule's closed-world evidence travels
 as its last parameter. A tree that still holds a reference to a delayed goal
-is an unresolved hole and exports nothing (`exportTree_refs`). `exportProof`
-exports a `CompletedProof` and encodes it.
+is an unresolved hole and exports nothing (`exportTree_refs`). An S09 command
+node exports as the logical nodes it stands for, with its subproofs spliced in
+(`exportNode`, `exportDerived`). `exportProof` exports a `CompletedProof` and
+encodes it.
 
 For a Ready P0 plan (`Plan.exportProof`), the export is checked by
 `Plan.checker`:
@@ -275,7 +279,9 @@ evidence into `E(KB)` under one provider is S16's.
   theorem that exported trees pass the checker holds for P0 runs. For other
   S06 runs (non-ground goals, quantifiers, local rules, answers read through
   the final store) it needs S06's reconstruction restated syntactically, and
-  it belongs to S15/S16, where the contract places `exportProof_checked`.
+  it belongs to S15/S16, where the contract places `exportProof_checked`. S09
+  proves its constructions valid given valid premise trees
+  (`Unfold.*_proves`); the theorem for its whole runs is S15/S16's too.
 - **References are re-checked at each use.** There is no weakening lemma for
   `Derives`, so a lemma is not reused without re-checking under the use site's
   context. Nothing is memoized: a chain of lemmas each referencing the previous

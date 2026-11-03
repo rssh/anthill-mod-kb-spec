@@ -225,6 +225,7 @@ that the conclusion and premises do not determine:
 | `equalSubst` | The replaced name and template |
 | `defaultNegIntro` | The certificate of the operand's complete failure |
 | `extension` | A rule name in the symbol namespace, term parameters, and the closed-world evidence (kind and certificate) it uses, if any |
+| `derived` | An S09 command (`Derived`): the selected assumption as read, with witnesses or an eigenvariable, or a program clause with its renaming and a conjunct path. It composes `Derives` rules and exports as S08 logical nodes ([left rules](machine-left.md)) |
 | Other `Derives` rules | None; premises and conclusion determine them |
 
 Discharged assumptions and rigid names are each premise's `Discharge`.

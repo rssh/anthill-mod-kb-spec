@@ -1,4 +1,5 @@
 import AnthillModKbSpec.Resolution.P1.Encoding
+import AnthillModKbSpec.Resolution.P1.Derived
 import AnthillModKbSpec.Resolution.P0.Admission
 
 /-! # Exporting machine proofs as checked terms (S08)
@@ -171,11 +172,23 @@ def exportRule (evidence : Certificate → Term Variable Literal Symbol) (store 
   | .equalSubst name template, _ => some (.equalSubst name (store.resolve template))
   | .extension name parameters closedWorld, _ =>
       some (.extension name (parameters.map store.resolve ++ (closedWorld.map fun found => evidence found.certificate).toList))
+  | .derived _, _ => none
+
+/-- A machine node as a supplied proof, given its goal as read and its exported
+subproofs: one node for a rule of the logic or an extension, and the logical
+nodes of an S09 command. -/
+def exportNode (evidence : Certificate → Term Variable Literal Symbol) (store : Store Variable Literal Symbol)
+    (rule : RuleApp Variable Literal Symbol Certificate) (premises : List (Premise Variable Literal Symbol))
+    (goal : Formula Variable Literal Symbol) (children : List (Proof Variable Literal Symbol)) :
+    Option (Proof Variable Literal Symbol) :=
+  match rule with
+  | .derived command => exportDerived store goal command children
+  | rule => (exportRule evidence store rule premises).map fun exported => .node exported goal children
 
 mutual
 /-- A machine tree as a supplied proof, read through the store. `replace` may
 stand in for a node by a checked node of its own; a reference to a delayed
-goal, or a rule that does not export, exports nothing. -/
+goal, or a node that does not export, exports nothing. -/
 def exportTree (evidence : Certificate → Term Variable Literal Symbol) (store : Store Variable Literal Symbol)
     (replace : RuleApp Variable Literal Symbol Certificate → Formula Variable Literal Symbol →
       Option (Proof Variable Literal Symbol)) :
@@ -184,9 +197,9 @@ def exportTree (evidence : Certificate → Term Variable Literal Symbol) (store 
       match replace rule (store.resolve obligation.goal) with
       | some proof => some proof
       | none =>
-          match exportRule evidence store rule premises, exportTrees evidence store replace subproofs with
-          | some exported, some children => some (.node exported (store.resolve obligation.goal) children)
-          | _, _ => none
+          match exportTrees evidence store replace subproofs with
+          | some children => exportNode evidence store rule premises (store.resolve obligation.goal) children
+          | none => none
   | .deferred _ _ => none
 
 def exportTrees (evidence : Certificate → Term Variable Literal Symbol) (store : Store Variable Literal Symbol)
@@ -209,7 +222,7 @@ theorem exportTree_refs (evidence : Certificate → Term Variable Literal Symbol
   | .node rule obligation premises subproofs, proof, exported => by
       simp only [exportTree] at exported
       split at exported
-      · rename_i exportedRule children _ exportedChildren
+      · rename_i children exportedChildren
         simp only [ProofTree.refs]
         exact exportTrees_refs evidence store subproofs exportedChildren
       · cases exported
@@ -361,7 +374,7 @@ theorem Plan.export_valid {tree : ProofTree Variable Literal Symbol (P0.Certific
       | @truth _ goal =>
           cases coherentChildren
           refine ⟨.node .truth obligation.goal [], ?_, rfl, ?_⟩
-          · simp [exportTree, exportTrees, exportRule, Plan.replace]
+          · simp [exportTree, exportTrees, exportNode, exportRule, Plan.replace]
           · rw [goal]; exact .node .truth (by simp)
       | @conjIntro _ left right goal =>
           obtain _ | ⟨firstOpened, firstCoherent, rest⟩ := coherentChildren
@@ -378,7 +391,7 @@ theorem Plan.export_valid {tree : ProofTree Variable Literal Symbol (P0.Certific
           rw [firstOpened] at firstGoal
           rw [secondOpened] at secondGoal
           refine ⟨.node .conjIntro obligation.goal [firstProof, secondProof], ?_, rfl, ?_⟩
-          · simp [exportTree, exportTrees, exportRule, Plan.replace, firstExport, secondExport]
+          · simp [exportTree, exportTrees, exportNode, exportRule, Plan.replace, firstExport, secondExport]
           · rw [goal]
             refine .node (contexts := [[], []]) ?_ (by simpa using ⟨firstValid, secondValid⟩)
             simp only [List.map_cons, List.map_nil, firstGoal, secondGoal, Obligation.premise]
@@ -386,7 +399,7 @@ theorem Plan.export_valid {tree : ProofTree Variable Literal Symbol (P0.Certific
       | assumption member =>
           cases coherentChildren
           refine ⟨.node .assumption obligation.goal [], ?_, rfl, ?_⟩
-          · simp [exportTree, exportTrees, exportRule, Plan.replace]
+          · simp [exportTree, exportTrees, exportNode, exportRule, Plan.replace]
           · exact .node (.assumption (context ▸ member)) (by simp)
       | @clause head body _ member goal =>
           obtain _ | ⟨opened, bodyCoherent, rest⟩ := coherentChildren
@@ -412,7 +425,7 @@ theorem Plan.export_valid {tree : ProofTree Variable Literal Symbol (P0.Certific
               cases entry.source <;> simp
               intro same; rw [← pairClause, ← same]
             refine ⟨.node (.clause (.definite head body) []) obligation.goal [bodyProof], ?_, rfl, ?_⟩
-            · simp [exportTree, exportTrees, exportRule, Plan.replace_none notGuard, bodyExport]
+            · simp [exportTree, exportTrees, exportNode, exportRule, Plan.replace_none notGuard, bodyExport]
             · refine .node (contexts := [[]]) ?_ (by simpa using bodyValid)
               simp only [List.map_cons, List.map_nil, bodyGoal, Obligation.premise]
               rw [goal]
@@ -445,7 +458,7 @@ theorem Plan.export_valid {tree : ProofTree Variable Literal Symbol (P0.Certific
           split at checked
           · rename_i witness witnessed
             refine ⟨.node (.defaultNegIntro (witnessTerm vocab certificate)) obligation.goal [], ?_, rfl, ?_⟩
-            · simp [exportTree, exportTrees, exportRule, Plan.replace]
+            · simp [exportTree, exportTrees, exportNode, exportRule, Plan.replace]
             · rw [goal]
               refine .node (contexts := []) (.defaultNegIntro closed rfl ?_) (by simp)
               simp only [Plan.negation, witnessTerm, witnessed, decodeFailure_encodeFailure, Bool.and_eq_true,

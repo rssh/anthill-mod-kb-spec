@@ -15,12 +15,14 @@ inductive ClosedWorld where
   deriving DecidableEq, Repr
 
 /-- Rule identity, independent of parameters. Each name is a `Derives` rule,
-except `extension`, a derived or certificate rule added by S08-S14. -/
+except `extension`, a derived or certificate rule added by S08-S14, and the
+S09 commands from `conjUse` on, compositions of `Derives` rules (`Derived`). -/
 inductive RuleId where
   | assumption | truth | conjIntro | conjLeft | conjRight | disjLeft | disjRight | disjElim
   | impIntro | impElim | falsityElim | forallIntro | forallElim | existsIntro | existsElim
   | clause | goalClause | defaultNegIntro | hoApplyIntro | hoApplyElim
   | equalRefl | equalSymm | equalTrans | equalSubst | extension
+  | conjUse | disjCases | existsOpen | forallUse | impUse | headUse | headProject | headDenial
   deriving DecidableEq, Repr
 
 /-- Closed-world evidence retained in a proof node: its kind and the certificate
@@ -34,6 +36,42 @@ structure ClosedWorldEvidence (Certificate : Type) where
   deriving Repr
 
 variable {Variable Literal Symbol Certificate Snapshot : Type}
+
+/-- An S09 command: one machine step that composes `Derives` rules, so that a
+selected assumption or a clause with a compound head is used with its
+continuation. A command's premises are exactly the obligations it leaves, in
+the order they run, and it exports as the S08 logical nodes it stands for
+(`P1.exportDerived`), so no new rule is checked. An assumption is recorded as
+the strategy read it when it selected the command, and is read through the
+final answers like every other node parameter; the scope holds it as written.
+A clause is a program clause with the renaming of its template names to fresh
+flexible names, as for `RuleApp.clause`. -/
+inductive Derived (Variable Literal Symbol : Type) where
+  /-- `A ∧ B` assumed: the goal under both components. -/
+  | conjUse (assumption : Formula Variable Literal Symbol)
+  /-- `A ∨ B` assumed: the goal under `A`, and the goal under `B`. -/
+  | disjCases (assumption : Formula Variable Literal Symbol)
+  /-- `∃x. A` assumed: the goal under `A` opened at a fresh rigid witness. -/
+  | existsOpen (assumption : Formula Variable Literal Symbol) (eigen : Variable)
+  /-- `∀x₁…xₙ. A` assumed: the goal under the instance at the witnesses. -/
+  | forallUse (assumption : Formula Variable Literal Symbol) (witnesses : List (Term Variable Literal Symbol))
+  /-- `∀x₁…xₙ. (A → B)` assumed: the instance of `A`, then the goal under the
+  instance of `B`. -/
+  | impUse (assumption : Formula Variable Literal Symbol) (witnesses : List (Term Variable Literal Symbol))
+  /-- A clause `H :- body`: its body, then the goal under its head. -/
+  | headUse (clause : HornClause Variable Literal Symbol) (fresh : List (Variable × Variable))
+  /-- A clause with a conjunctive head, split: the conjunct at `path` (`false`
+  the left component, `true` the right one) concludes the goal; its body. -/
+  | headProject (clause : HornClause Variable Literal Symbol) (fresh : List (Variable × Variable)) (path : List Bool)
+  /-- A clause with head `A → false`, as the denial `false :- body, A`: its body,
+  then the instance of `A`, for a falsity goal. -/
+  | headDenial (clause : HornClause Variable Literal Symbol) (fresh : List (Variable × Variable))
+  deriving Repr
+
+def Derived.id : Derived Variable Literal Symbol → RuleId
+  | .conjUse _ => .conjUse | .disjCases _ => .disjCases | .existsOpen _ _ => .existsOpen
+  | .forallUse _ _ => .forallUse | .impUse _ _ => .impUse | .headUse _ _ => .headUse
+  | .headProject _ _ _ => .headProject | .headDenial _ _ => .headDenial
 
 /-- A rule application with the parameters its conclusion and premises do not
 determine: eigenvariables, witnesses, the clause and its finite instantiation,
@@ -72,6 +110,9 @@ inductive RuleApp (Variable Literal Symbol Certificate : Type) where
   carries the closed-world evidence it uses, if any. -/
   | extension (name : Symbol) (parameters : List (Term Variable Literal Symbol))
       (closedWorld : Option (ClosedWorldEvidence Certificate))
+  /-- An S09 command, a composition of `Derives` rules; it retains no
+  closed-world evidence. -/
+  | derived (command : Derived Variable Literal Symbol)
   deriving Repr
 
 def RuleApp.id : RuleApp Variable Literal Symbol Certificate → RuleId
@@ -83,7 +124,7 @@ def RuleApp.id : RuleApp Variable Literal Symbol Certificate → RuleId
   | .clause _ _ => .clause | .goalClause _ _ => .goalClause | .defaultNegIntro _ => .defaultNegIntro
   | .hoApplyIntro => .hoApplyIntro | .hoApplyElim => .hoApplyElim | .equalRefl => .equalRefl
   | .equalSymm => .equalSymm | .equalTrans => .equalTrans | .equalSubst _ _ => .equalSubst
-  | .extension _ _ _ => .extension
+  | .extension _ _ _ => .extension | .derived command => command.id
 
 def RuleApp.closedWorld? : RuleApp Variable Literal Symbol Certificate → Option (ClosedWorldEvidence Certificate)
   | .defaultNegIntro certificate => some ⟨.completeFailure, certificate⟩

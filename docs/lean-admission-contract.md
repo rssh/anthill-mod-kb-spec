@@ -537,8 +537,8 @@ this ticket. `P`, `C`, `G` refer to the same program, context, and goal througho
 | `Admission.check`, `check_ready_sound` | Computed Ready entails the actual admission judgment | S07 |
 | `Admission.check_p0_complete` | Every structurally valid acyclic P0 input is Ready; not completeness for arbitrary formulas | S07 |
 | `Machine.State`, `Frame`, `Step` | Explicit focus, context, continuation, and choice-point semantics | S04, S06 |
-| `Machine.WellScoped`, `step_preserves_scope` | No captured-name mutation or witness escape | S04–S06, S09 |
-| `Machine.ResidualProof`, `step_reconstruct` | Evidence for the next obligations plus saved frames yields evidence for the previous obligations | S06, S09–S14 |
+| `Machine.WellScoped`, `step_preserves_scope` | No captured-name mutation or witness escape | S04–S06, S09 (left rules within the S04 invariant: `step_valid`, `Store.commit_no_escape_resolved`) |
+| `Machine.ResidualProof`, `step_reconstruct` | Evidence for the next obligations plus saved frames yields evidence for the previous obligations | S06, S09–S14 (S09: `left_sound`, `left_reconstructs`) |
 | `Machine.step_preserves_admission` | Every reachable obligation has an admitted capability/strategy | S07, S15 |
 | `Machine.progress` | An admitted nonterminal state has a next step, never a missing-capability state | S07, S15 |
 | `Admission.P1Admitted`, `DecisionContract` | Check procedure input restrictions, totality, soundness, completeness, and negative-result meaning | S07–S15 |
@@ -551,7 +551,7 @@ this ticket. `P`, `C`, `G` refer to the same program, context, and goal througho
 | `Admission.ready_no_missing_capability` | Progress plus preservation for an entire run under its declared input contracts | S15 |
 | `Elaboration.satisfies`, `elaboration_substitutes` | Preserve range semantics and capture-safe substitution over existing Term | S03 |
 | `ProofImport.checked_sound`, `admit_import` | Separate logical validity from safe automatic use of a proved statement | S08 (`ProofImport.checked_sound`, `admitImports`) |
-| `ProofTree.check`, `check_accepts_iff`, `checked_toDerives` | Term-encoded finite trees; known terminating rule checks; validity independent of automatic P1 discovery | S08 (`P1.check`, `checkProof`, `checkProof_accept_iff`, `checked_toDerives`); rule-specific nodes/checks S09-S14 |
+| `ProofTree.check`, `check_accepts_iff`, `checked_toDerives` | Term-encoded finite trees; known terminating rule checks; validity independent of automatic P1 discovery | S08 (`P1.check`, `checkProof`, `checkProof_accept_iff`, `checked_toDerives`); S09 commands as S08 logical nodes (`Unfold.*_proves`); rule-specific nodes/checks S10-S14 |
 | `Machine.exportProof`, `exportProof_checked` | Successful P2 execution exports a Term tree accepted by P1 for the same answer instance, snapshot/context, and NAF provider | S04 interfaces; S06-S14 construction/checking (S08: `P1.exportProof`, and `Plan.exportProof_checked` for P0 runs); S15-S16 composition; S17 regressions |
 | `Machine.p0_model_exists`, `Machine.sound` | Supply the model witness and compose with existing soundness, distinguishing new certificate rules | S16 |
 
@@ -571,11 +571,22 @@ or a missing generated clause). The composed P1/P2 forms remain S15's.
 S08 implements the explicit-proof rows. A supplied tree is a `Term` checked by
 `P1.checkProof`; acceptance is exactly `CheckedProof` (`checkProof_accept_iff`)
 and reconstructs `Derives` with the checker's KB, context, and NAF provider
-(`checked_toDerives`). Derived rules of S09–S14 enter as `RuleCheck`s, NAF
+(`checked_toDerives`). Derived rules of S10–S14 enter as `RuleCheck`s, NAF
 evidence through a `NafCheck`, and references through an import table.
 Missing capabilities answer NeedsEvidence before checking. Every successful
 P0 run exports an accepted term (`Plan.exportProof_checked`); the general S06
 export theorem is S15/S16's ([details](proof-checking.md)).
+
+S09 implements the left-rule and compound-head rows of the P2 table as machine
+commands: conjunctive, disjunctive, existential, universal, and implication
+assumptions with their continuations, and compound clause heads assumed after
+their body, split, or read as a denial. Each command reconstructs `Derives` by
+the shared rules (`Expansion.*_soundUnder`, `left_sound`, `left_reconstructs`)
+and exports as S08 logical nodes, valid given valid premise trees
+(`Unfold.*_proves`). `Request.proofLayer` and `diagnose` name the commands that
+use a formula P0 asks evidence for; that capability is never Ready
+(`diagnose_not_ready`), and no termination of the left strategy is claimed
+([details](machine-left.md)). R11 and R12 are its traces.
 
 For general answer substitutions the reconstruction conclusion is derivability
 of the permitted instantiated query under the correspondingly tracked context,
@@ -598,7 +609,8 @@ cannot establish Ready. Proof checking and proof discovery are distinct tasks.
 | `Machine` matching (S05) | Total `Store.resolve` with alpha-renaming, triangular bindings, store refinement and the scope of resolved answers, clause and local-rule freshening, the matcher with `unified`/`mismatch`/`unsupported`/`violated` outcomes, read-through contracts; `Store.unify_sound`, `Store.commit_unify`, `Store.unify_supported`, `Store.commit_no_escape_resolved`, `Store.commit_fresh_resolved`, `Expansion.clause_soundUnder` ([details](machine-matching.md)) | Matching up to alpha-equivalence, operation evaluation (S14), `ho_apply` conversion (S11); no completeness of the matcher |
 | `Machine` declared names (S19) | Every free name of every committed obligation is declared in its store: the commit checks that every name a premise mentions is within its scope, store freshness replaces obligation-name freshness, and one lemma gives opened names their freshness for read obligations; `State.Valid`, `Store.commit_declared`, `Store.commit_fresh_resolved`, `run_success` ([details](machine-state.md#declared-names)) | — |
 | `Machine` delayed goals (S18) | Delay responses, suspensions and constraint slots in the store, exactly-once wakeup at the binding commit, woken continuations under their own scopes, deferred proofs filled at the end, floundering as gaps; suspended and woken obligations declared; `Store.commit_wakes`, `step_valid`, `run_success`, `ProofTree.fillAll_complete`, `run_not_exhausted` ([details](machine-delay.md)) | Constraint solvers (S10 and later); rejection of references in supplied trees (S08) |
-| `Machine` positive execution (S06) | Effective programs with generated signature clauses and reported lowering rejections, the `positive` strategy (introductions, identity, local rules by exact universal elimination, clause and denial-clause selection, falsity as an ordinary goal, delaying guards, gaps recorded beside the remaining candidates by `Response.incomplete`), sound strategies and their reconstruction along a run; `Program.build_sound`, `positive_sound`, `run_reconstructs`, `positive_reconstructs_elaborated` ([details](machine-positive.md)) | Compound heads, curried rules, and left rules (S09), scoped and evidence-first NAF (S10), `ho_apply` conversion (S11); termination and completeness only for P0 (S07) |
+| `Machine` positive execution (S06) | Effective programs with generated signature clauses and reported lowering rejections, the `positive` strategy (introductions, identity, local rules by exact universal elimination, clause and denial-clause selection, falsity as an ordinary goal, delaying guards, gaps recorded beside the remaining candidates by `Response.incomplete`), sound strategies and their reconstruction along a run; `Program.build_sound`, `positive_sound`, `run_reconstructs`, `positive_reconstructs_elaborated` ([details](machine-positive.md)) | Scoped and evidence-first NAF (S10), `ho_apply` conversion (S11); termination and completeness only for P0 (S07) |
+| `Machine` left rules (S09) | One-step commands on selected assumptions and compound heads, the left strategy run by an explicit selection, constructions in S08 logical nodes, proof-layer diagnostics; `Expansion.impUse_soundUnder`, `left_sound`, `left_reconstructs`, `Unfold.impUse_proves`, `Unfold.disjCases_proves`, `leadingSteps_instances`, `diagnose_not_ready` ([details](machine-left.md)) | The whole-run export theorem (S15/S16); termination or completeness of left search; matching up to alpha-equivalence |
 | `Substitution`, `Opening` | Capture-avoiding substitution and rigid-name opening proofs; free names of instances, agreement, and cancellation (S05) | — |
 | `ClauseInstantiation` | `instantiate?_sound` validates a partial computed instance; `Term.instantiate` (S05) renames binders on capture hazards, agrees with `instantiate?` when it succeeds, and composes | — |
 | `Freshening` (S05) | Clause template names, fresh names, renaming with captured names kept, local-rule binder instantiation | — |

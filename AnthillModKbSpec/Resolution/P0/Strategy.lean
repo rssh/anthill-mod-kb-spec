@@ -379,7 +379,7 @@ theorem identityAttempts_ground {symbol : Symbol} {args : List (Term Variable Li
         ((Store.empty : Store Variable Literal Symbol).readContext ⟨ground.scope, .app symbol args⟩) =
       ground.context.assumptions.map fun assumption =>
         if identical (.app symbol args) assumption then some (some (Expansion.assumption [])) else some none := by
-  rw [Store.empty_readContext, identityAttempts, List.map_map]
+  rw [Store.empty_readContext, identityAttempts, matchAttempts, List.map_map]
   apply List.map_congr_left
   intro assumption member
   simp only [Function.comp_def]
@@ -431,7 +431,7 @@ theorem clauseAttempt_ground {symbol : Symbol} {args : List (Term Variable Liter
     intro avoided
     rw [noTemplates]
     rfl
-  unfold clauseAttempt
+  unfold clauseAttempt Store.clauseNames
   rw [definite]
   dsimp only
   by_cases candidate : mayMatch hoApplySymbol (.app symbol args) head = true
@@ -591,7 +591,7 @@ theorem Ground.positive_eq {goal : Term Variable Literal Symbol} (valid : IsGoal
       rfl
   | falsity =>
       simp only [Store.empty_resolve, positive, respondTo,
-        waiting?_empty, Ground.response, atomResponse]
+        waiting?_empty, Ground.response, atomResponse, List.append_nil]
       have atoms := ground.contextAtoms
       have clausesPlain := ground.clausesPlain
       have allNone : ∀ attempt ∈ identityAttempts (Certificate := NegativeCertificate Variable Literal Symbol)
@@ -607,7 +607,7 @@ theorem Ground.positive_eq {goal : Term Variable Literal Symbol} (valid : IsGoal
             (readAvoid .falsity ((Store.empty : Store Variable Literal Symbol).readContext ⟨ground.scope, .falsity⟩))),
           attempt = some none := by
         intro attempt member
-        simp only [Store.empty_readContext, Ground.scope_assumptions, List.mem_append, identityAttempts,
+        simp only [Store.empty_readContext, Ground.scope_assumptions, List.mem_append, identityAttempts, matchAttempts,
           List.map_map, List.mem_map, exFalso, List.map_nil, List.not_mem_nil, or_false] at member
         rcases member with (⟨atom, inside, rfl⟩ | ⟨atom, inside, rfl⟩) | ⟨entry, inside, rfl⟩
         · obtain ⟨f, xs, rfl, _⟩ := atoms atom inside

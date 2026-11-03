@@ -83,7 +83,8 @@ S11's, so it is a gap. So is an
 assumption from which the goal might follow by rules this slice lacks
 (`mayConclude`): a conjunction, disjunction, or existential (left rules), a rule
 with a compound or curried conclusion, or one concluding its own binder
-(`∀P. P`). Left rules and compound heads are S09's.
+(`∀P. P`). Left rules and compound heads are S09's: the
+[left strategy](machine-left.md) offers them instead of the gap.
 
 | Candidate | Rule | New names | Premises |
 | --- | --- | --- | --- |
@@ -271,8 +272,9 @@ The run-level theorems hold for every sound strategy, so later strategies
 ## Boundaries
 
 - Arbitrary compound clause heads, curried local rules, and left rules on
-  compound assumptions (conjunction, disjunction, existential) are S09's; where
-  the goal might follow from them, the focus records a gap. Proving `false` from
+  compound assumptions (conjunction, disjunction, existential) are S09's
+  ([left rules](machine-left.md)); where the goal might follow from them,
+  `positive` records a gap, and the left strategy offers its commands instead. Proving `false` from
   negations or denial clauses in order to close another goal is contradiction
   search, also S09's: only an assumption reading as `false` gives ex falso.
 - NAF is S07's (nested ground NAF and exhaustive failure for P0) and S10's

@@ -233,7 +233,7 @@ def SoundUnder (hoApplySymbol : Symbol) (kb : LogicalKb Variable Literal Symbol)
     Prop :=
   NodeSound hoApplySymbol kb naf store obligation expansion.premises
 
-private theorem read_premise {obligation : Obligation Variable Literal Symbol} {premise : Premise Variable Literal Symbol} :
+theorem read_premise {obligation : Obligation Variable Literal Symbol} {premise : Premise Variable Literal Symbol} :
     ReadDerives hoApplySymbol kb naf store (obligation.premise premise) ↔
       Derives hoApplySymbol kb (premise.discharge.assumptions.map store.resolve ++ obligation.context.map store.resolve)
         (store.resolve premise.goal) naf := by
