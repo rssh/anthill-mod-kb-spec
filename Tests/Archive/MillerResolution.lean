@@ -69,7 +69,7 @@ private theorem baseCase (rigids : List String) (context : ProofContext String U
   · simp [database, nafBase]
   · simp [Term.instantiate?, reachable, zero, List.mapM_cons]
   · simp [Term.instantiate?, Term.conjunction]
-  · exact .conj (.defaultNeg (by simp [Term.freeVars]) .falsity) .truth
+  · exact .conj (.defaultNeg .falsity) .truth
 
 private theorem stepCase (context : ProofContext String Unit Symbol) (fresh : FreshForContext "n" context) :
     Proof ["a"] context (step predicate) := by

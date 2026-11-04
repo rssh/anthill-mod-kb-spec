@@ -12,7 +12,8 @@ stays outside P0, and nothing claims that a search using these commands
 terminates.
 
 `Request.proofLayer` names, for one request, the S09 commands that use its
-formula, or the introduction rules for a scoped goal. `diagnose` annotates
+formula, or the introduction rules for a scoped goal; `Request.proofLayerIn`
+also marks a name inside a NAF operand with S10's refutation route. `diagnose` annotates
 P0's own answer, so a proof-layer capability is reported only for an input P0
 does not admit (`diagnose_not_ready`), and diagnosing changes no admission
 result. -/
@@ -32,8 +33,13 @@ inductive ProofLayer where
   /-- A scoped goal: the introduction rules (S06) and the left commands under
   the scope they open. -/
   | introduction
-  /-- No S09 command: the request needs another capability (S10–S14), or none
-  is implemented. -/
+  /-- A name inside a NAF operand, where P0 needs a ground instance: evidence-
+  first NAF (S10) refutes the operand in the completed program, the name a
+  rigid parameter, and the refutation is checked by the explicit-proof route.
+  Nothing claims the refutation search terminates. -/
+  | refutation
+  /-- No S09 or S10 command: the request needs another capability (S11–S14),
+  or none is implemented. -/
   | none
   deriving DecidableEq, Repr
 
@@ -75,6 +81,41 @@ def Request.proofLayer (request : Request Variable Literal Symbol) : ProofLayer 
   | .goal, .scopedProof | .body _ _, .scopedProof => .introduction
   | _, _ => .none
 
+/-- The path, inside a NAF operand, ends in the arguments of an atom. -/
+def inAtomData : List Nat → Term Variable Literal Symbol → Bool
+  | 0 :: rest, .conj left _ => inAtomData rest left
+  | 1 :: rest, .conj _ right => inAtomData rest right
+  | 0 :: rest, .defaultNeg operand => inAtomData rest operand
+  | _ :: _, .app _ _ => true
+  | _, _ => false
+
+/-- The goal path, as `goalRequests` builds it, enters a NAF operand and ends
+inside the arguments of one of its atoms: a name in data, which the refutation
+route treats as a parameter. A formula variable as the operand, or as a goal
+inside it, is not refuted. -/
+def nafAlong : List Nat → Term Variable Literal Symbol → Bool
+  | 0 :: rest, .defaultNeg operand => inAtomData rest operand
+  | 0 :: rest, .conj left _ => nafAlong rest left
+  | 1 :: rest, .conj _ right => nafAlong rest right
+  | _, _ => false
+
+/-- The goal formula at a site: the query goal or a KB clause's body goal. -/
+def Input.goalAt? (input : Input Domain Variable Literal Symbol) : Site → Option (Term Variable Literal Symbol)
+  | .goal => some input.goal
+  | .body clause position =>
+      (input.kbClauses.find? (·.1 == clause)).bind fun pair =>
+        match pair.2 with
+        | .definite _ body | .goal body => body[position]?
+  | _ => none
+
+/-- The proof-layer capability for one request of an input: a ground-instance
+request inside a NAF operand has the refutation route. -/
+def Request.proofLayerIn (input : Input Domain Variable Literal Symbol) (request : Request Variable Literal Symbol) :
+    ProofLayer :=
+  if request.capability == .groundInstance && ((input.goalAt? request.site).map (nafAlong request.path)).getD false then
+    .refutation
+  else request.proofLayer
+
 variable [DecidableEq Variable] [DecidableEq Literal] [DecidableEq Symbol]
 
 /-- P0's requests for an input, each with its proof-layer capability. An input
@@ -82,7 +123,7 @@ P0 admits, or declares invalid, gets none. -/
 def diagnose (hoApplySymbol : Symbol) (input : Input Domain Variable Literal Symbol) :
     List (Request Variable Literal Symbol × ProofLayer) :=
   match check hoApplySymbol input with
-  | .needsEvidence request more => (request :: more).map fun found => (found, found.proofLayer)
+  | .needsEvidence request more => (request :: more).map fun found => (found, found.proofLayerIn input)
   | _ => []
 
 /-- A diagnosis is P0's answer annotated: every diagnosed formula is one P0
@@ -90,7 +131,7 @@ asks evidence for. -/
 theorem diagnose_requests {hoApplySymbol : Symbol} {input : Input Domain Variable Literal Symbol}
     {entry : Request Variable Literal Symbol × ProofLayer} (member : entry ∈ diagnose hoApplySymbol input) :
     ∃ request more, check hoApplySymbol input = .needsEvidence request more ∧ entry.1 ∈ request :: more ∧
-      entry.2 = entry.1.proofLayer := by
+      entry.2 = entry.1.proofLayerIn input := by
   unfold diagnose at member
   split at member
   · rename_i request more checked

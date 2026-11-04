@@ -267,7 +267,7 @@ theorem failureAdequate (model : Model Literal Symbol Value hoApplySymbol)
     (realizes : Realizes model sigma membershipSymbol) (negation : model.ComplementNAF)
     (kb : LogicalKb Variable Literal Symbol) :
     model.FailureAdequate kb (failureEvidence sigma model membershipSymbol kb) := by
-  intro context formula closed evidence environment valid
+  intro context formula evidence environment valid
   rcases evidence with ⟨_, _, goal, rfl, counterexamples⟩
   exact goal.naf_of_refutation model realizes negation environment (counterexamples environment valid)
 

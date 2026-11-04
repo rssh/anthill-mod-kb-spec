@@ -184,10 +184,8 @@ private def emptySearchFailure : NafFailure String Nat String :=
     applicationSymbol = "ho_apply" ∧ database = (∅ : K) ∧ context = [] ∧ goal = p (.lit 0)
 
 -- Explicit complete-failure evidence introduces default negation.
-example : Derives "ho_apply" (∅ : K) [] (.defaultNeg (p (.lit 0))) emptySearchFailure := by
-  apply Derives.defaultNegIntro
-  · simp [p, Term.freeVars]
-  · exact ⟨rfl, rfl, rfl, rfl⟩
+example : Derives "ho_apply" (∅ : K) [] (.defaultNeg (p (.lit 0))) emptySearchFailure :=
+  .defaultNegIntro ⟨rfl, rfl, rfl, rfl⟩
 
 -- NAF can discharge a rule body, with the same evidence relation throughout.
 private def nafClause : HornClause String Nat String :=
@@ -205,7 +203,7 @@ example : Derives "ho_apply" ({nafClause} : K) [] (q (.lit 0)) ruleSearchFailure
   · exact .app (.cons .lit .nil)
   · exact .conj (.defaultNeg (.app (.cons .lit .nil))) .truth
   · apply Derives.conjIntro
-    · exact .defaultNegIntro (by simp [p, Term.freeVars]) ⟨rfl, rfl, rfl, rfl⟩
+    · exact .defaultNegIntro ⟨rfl, rfl, rfl, rfl⟩
     · exact .truth
 
 -- Evidence is tied to the exact KB, local context, and goal. A failure result

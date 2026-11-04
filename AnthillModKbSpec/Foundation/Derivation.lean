@@ -35,8 +35,8 @@ the positive calculus. All premises of a rule use the same evidence relation.
 This is a natural-deduction specification, not a search procedure. Clause
 application chooses a capture-avoiding instance and proves its body. Goal-clause
 instances derive falsity when their bodies are proved. `defaultNegIntro` requires
-a ground operand and separate evidence of complete empty search under the same
-KB and context. Lack of a proof by itself does not introduce default negation.
+separate evidence for its operand under the same KB and context. Lack of a proof
+by itself does not introduce default negation.
 There is no explicit negation, predicate closure policy, indexing, unification algorithm,
 termination assumption, or completeness claim about the Anthill resolver.
 
@@ -110,13 +110,16 @@ inductive Derives {Variable Literal Symbol : Type} [DecidableEq Variable]
       (bodyInstance : Substitutes σ (.conjunction body) instantiatedBody)
       (proof : Derives hoApplySymbol kb context instantiatedBody naf) :
       Derives hoApplySymbol kb context .falsity naf
-  /-- Ground negation as failure. Complete empty search is a separate positive
-  premise, not `¬ Derives ... goal`. A failed, suspended, or bounded proof attempt
-  cannot be substituted for this evidence. The context is part of the evidence,
-  so failure in an outer context cannot simply be reused under new assumptions.
-  Free goal names (including eigenvariables) conservatively block this rule. -/
-  | defaultNegIntro (ground : goal.freeVars = [])
-      (refuted : naf hoApplySymbol kb context goal) :
+  /-- Negation as failure. The evidence is a separate positive premise, not
+  `¬ Derives ... goal`. A failed, suspended, or bounded proof attempt cannot be
+  substituted for it. The context is part of the evidence, so failure in an
+  outer context cannot simply be reused under new assumptions. The operand may
+  name free parameters, including eigenvariables: they stand for every value
+  the context allows, so evidence for such an operand must hold for all of
+  them. That is the provider's obligation (`Model.FailureAdequate`), not a
+  side condition of the rule; a failed search with a parameter read as a
+  constant is not such evidence. -/
+  | defaultNegIntro (refuted : naf hoApplySymbol kb context goal) :
       Derives hoApplySymbol kb context (.defaultNeg goal) naf
   /-- A concrete symbol predicate and its explicit `ho_apply` form are
   interchangeable in proofs, including when obtained from local assumptions.

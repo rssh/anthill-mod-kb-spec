@@ -27,6 +27,27 @@ def Substitution.bind {Variable Literal Symbol : Type} [DecidableEq Variable]
     (value : Term Variable Literal Symbol) : Substitution Variable Literal Symbol :=
   fun candidate => if candidate = name then value else σ candidate
 
+/-- Names bound to values, as a substitution; the first pair for a name wins. -/
+def Substitution.ofPairs {Variable Literal Symbol : Type} [DecidableEq Variable] :
+    List (Variable × Term Variable Literal Symbol) → Substitution Variable Literal Symbol
+  | [] => Term.var
+  | (name, value) :: rest => Substitution.bind (Substitution.ofPairs rest) name value
+
+/-- Distinct names zipped with values are bound to those values. -/
+theorem Substitution.ofPairs_zip {Variable Literal Symbol : Type} [DecidableEq Variable] :
+    ∀ {names : List Variable} {values : List (Term Variable Literal Symbol)},
+      names.Nodup → names.length = values.length →
+        names.map (fun name => Substitution.ofPairs (names.zip values) name) = values
+  | [], [], _, _ => rfl
+  | name :: names, value :: values, distinct, lengths => by
+      simp only [List.nodup_cons] at distinct
+      have rest := Substitution.ofPairs_zip (values := values) distinct.2 (by simpa using lengths)
+      simp only [List.zip_cons_cons, List.map_cons, Substitution.ofPairs, Substitution.bind, ite_true,
+        List.cons.injEq, true_and]
+      refine (List.map_congr_left fun other member => ?_).trans rest
+      have different : other ≠ name := fun same => distinct.1 (same ▸ member)
+      simp [different]
+
 /-- Replace one free variable and leave all other names unchanged. -/
 def Substitution.single {Variable Literal Symbol : Type} [DecidableEq Variable]
     (name : Variable) (value : Term Variable Literal Symbol) : Substitution Variable Literal Symbol :=

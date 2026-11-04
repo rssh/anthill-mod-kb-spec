@@ -451,8 +451,6 @@ theorem Plan.export_valid {tree : ProofTree Variable Literal Symbol (P0.Certific
               simp [Plan.membership, decided]
       | @negation certificate _ goal certified =>
           cases coherentChildren
-          have failed := certified.fails
-          have closed : certificate.operand.freeVars = [] := (fails_isGoal failed).closed
           obtain ⟨clauses, assumptions, checked⟩ := certified
           simp only [P0.NegativeCertificate.check] at checked
           split at checked
@@ -460,7 +458,7 @@ theorem Plan.export_valid {tree : ProofTree Variable Literal Symbol (P0.Certific
             refine ⟨.node (.defaultNegIntro (witnessTerm vocab certificate)) obligation.goal [], ?_, rfl, ?_⟩
             · simp [exportTree, exportTrees, exportNode, exportRule, Plan.replace]
             · rw [goal]
-              refine .node (contexts := []) (.defaultNegIntro closed rfl ?_) (by simp)
+              refine .node (contexts := []) (.defaultNegIntro rfl ?_) (by simp)
               simp only [Plan.negation, witnessTerm, witnessed, decodeFailure_encodeFailure, Bool.and_eq_true,
                 decide_eq_true_eq]
               refine ⟨context.symm, ?_⟩

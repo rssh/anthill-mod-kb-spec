@@ -493,12 +493,13 @@ example {store next later : Store Nat Nat Sym} (valid : store.Scoped) {scope : S
   Expansion.existsElim_soundUnder fresh.1
     (fresh.2 { goal := .existsVar binder body } (by simp [Expansion.existsElim]) (by simp)).goal
 
--- On ordinary, well-scoped readings the only failure is a mismatch.
-example (store : Store Nat Nat Sym) (scope : Scope Nat Nat Sym) {left right : T}
+-- On ordinary, well-scoped readings, outside the closing phase, the only
+-- failure is a mismatch.
+example (store : Store Nat Nat Sym) (scope : Scope Nat Nat Sym) {left right : T} (opening : store.closing = false)
     (leftOrdinary : Ordinary Sym.ha (store.resolve left)) (rightOrdinary : Ordinary Sym.ha (store.resolve right))
     (usable : ∀ name ∈ (store.resolve left).freeVars ++ (store.resolve right).freeVars,
       store.usable scope name = true) :
     store.unify scope .ha left right ≠ .unsupported ∧ store.unify scope .ha left right ≠ .violated :=
-  ⟨store.unify_supported leftOrdinary rightOrdinary, store.unify_wellScoped usable⟩
+  ⟨store.unify_supported opening leftOrdinary rightOrdinary, store.unify_wellScoped usable⟩
 
 end MatchingTests

@@ -276,8 +276,8 @@ def callerScope := solve (query [X] [atom .p [k .a]]
 
 /-! ### Floundering and discarded suspensions -/
 
--- Still delayed at the end: unknown with a floundered gap, never success or
--- exhaustion.
+-- Still delayed at the end, also after closing: unknown with a floundered gap,
+-- never success or exhaustion.
 def flounder := solve (query [X] [] (atom .r [.var X]))
 #guard flounder.kind = .unknown
 #guard gapReasons flounder = [.floundered]
@@ -293,6 +293,63 @@ def flounderThenSuccess := solve (query [X] [atom .p [k .a], atom .r [k .a]]
   (.disj (atom .r [.var X]) (.conj (atom .r [.var X]) (atom .p [.var X])))) splitting
 #guard flounderThenSuccess.kind = .success
 #guard (resume flounderThenSuccess splitting).kind = .unknown
+
+-- Closing: a goal still delayed when the branch is proved runs once more,
+-- knowing no binding will come. A driver that closes r(X) then, for every X,
+-- succeeds with X unbound and the goal's proof recorded under its id.
+def closingAware : Strategy Nat Nat Sym Unit := fun obligation store =>
+  match store.resolve obligation.goal with
+  | .app .r [arg] => if store.closing then .candidates [{ rule := .extension .r [arg] none }] else delaying obligation store
+  | _ => delaying obligation store
+def closed := solve (query [X] [] (atom .r [.var X])) closingAware
+#guard closed.kind = .success
+#guard answerIs closed X (.var X)
+#guard recordsAre closed [(0, atom .r [.var X])]
+-- No name is bound while closing: a driver that binds X then is refused, and
+-- the refusal is recorded as floundering, never as a miss.
+def closingBinder : Strategy Nat Nat Sym Unit := fun obligation store =>
+  match store.resolve obligation.goal with
+  | .app .r [arg] =>
+      match unbound? store arg with
+      | some name =>
+          if store.closing then .candidates [{ rule := .extension .r [arg] none, bindings := [(name, k .a)] }]
+          else .delay [name]
+      | none => delaying obligation store
+  | _ => delaying obligation store
+#guard (solve (query [X] [] (atom .r [.var X])) closingBinder).kind = .unknown
+#guard gapReasons (solve (query [X] [] (atom .r [.var X])) closingBinder) = [.floundered]
+-- A real miss while closing stays a miss: binding X := p(X) fails the occurs
+-- check before the closing refusal is reached, and the run is exhausted.
+def closingOccurs : Strategy Nat Nat Sym Unit := fun obligation store =>
+  match store.resolve obligation.goal with
+  | .app .r [arg] =>
+      match unbound? store arg with
+      | some name =>
+          if store.closing then .candidates [{ rule := .extension .r [arg] none, bindings := [(name, atom .p [.var name])] }]
+          else .delay [name]
+      | none => delaying obligation store
+  | _ => delaying obligation store
+#guard (solve (query [X] [] (atom .r [.var X])) closingOccurs).kind = .exhausted
+-- So a NAF barrier is not opened by a refused binding: below, r(X) asked while
+-- closing needs naf q(a), run in the same run, and q(a) holds by an instance
+-- that binds a fresh name. Alone, naf q(a) is exhausted; asked while closing,
+-- the refusal leaves a gap and the NAF is not established.
+def closingNegation : Strategy Nat Nat Sym Unit := fun obligation store =>
+  match store.resolve obligation.goal with
+  | .app .r [arg] =>
+      match unbound? store arg with
+      | some name =>
+          if store.closing then
+            .candidates [{ rule := .extension .r [arg] none, premises := [{ goal := .defaultNeg (atom .q [k .a]) }] }]
+          else .delay [name]
+      | none => .candidates []
+  | .defaultNeg _ => .negate ()
+  | .app .q [arg] => .candidates [{ rule := .extension .q [arg] none, flexibles := [9], bindings := [(9, arg)] }]
+  | _ => .unsupported
+#guard (solve (query [] [] (.defaultNeg (atom .q [k .a]))) closingNegation).kind = .exhausted
+#guard (solve (query [X] [] (atom .r [.var X])) closingNegation).kind = .unknown
+-- Delayed again while closing, a goal flounders: the branch closes once.
+#guard gapReasons (solve (query [X] [] (.conj (atom .r [.var X]) (atom .r [.var X])))) = [.floundered, .floundered]
 
 -- An unresolved constraint left at the end flounders too. S18 adds the slot and
 -- no solver, so this state is built by hand.
@@ -386,12 +443,12 @@ example (strategy : Strategy Nat Nat Sym Unit) (fuel : Nat) (proof : CompletedPr
     proof.tree.Monotonic ↔ proof.tree.closedWorld = [] :=
   (run_success strategy fuel (State.init_valid _ _ _ _) ran).1.monotonic_iff
 
--- Once a branch floundered, the run never reports exhaustion.
+-- Once a closing branch floundered, the run never reports exhaustion.
 example (strategy : Strategy Nat Nat Sym Unit) (fuel : Nat) {state : State Nat Nat Sym Unit Nat}
     {tree : Tree} (focused : state.focus = .proved tree) (framesEq : state.frames = [])
-    (residual : state.store.residual ≠ []) {next : State Nat Nat Sym Unit Nat}
+    (residual : state.store.residual ≠ []) (closing : state.store.closing = true) {next : State Nat Nat Sym Unit Nat}
     (stepped : step strategy state = .running next) : run strategy fuel next ≠ .exhausted := by
-  rw [step_flounder strategy focused framesEq residual] at stepped
+  rw [step_flounder strategy focused framesEq residual closing] at stepped
   cases stepped
   obtain ⟨pending, more, residualEq⟩ := List.exists_cons_of_ne_nil residual
   exact run_not_exhausted strategy fuel (by simp [residualEq])

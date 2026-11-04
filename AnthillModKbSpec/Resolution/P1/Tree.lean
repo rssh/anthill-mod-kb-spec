@@ -122,10 +122,6 @@ structure Checker (Variable Literal Symbol : Type) [DecidableEq Variable] where
   negation : Option (NafCheck snapshot provider)
   rules : List (RuleCheck snapshot provider)
 
-/-- An instantiation as a substitution; the first pair for a name wins. -/
-def ofPairs : List (Variable × Term Variable Literal Symbol) → Substitution Variable Literal Symbol
-  | [] => Term.var
-  | (name, value) :: rest => Substitution.bind (ofPairs rest) name value
 
 variable [DecidableEq Symbol]
 
@@ -167,13 +163,13 @@ inductive Local (checker : Checker Variable Literal Symbol)
       (opening : Substitutes (Substitution.single binder (.var eigen)) body opened) :
       Local checker refs context (.existsElim eigen opened) goal [.existsVar binder body, goal] [[], [opened]]
   | clause (member : HornClause.definite head body ∈ checker.snapshot.clauses)
-      (headInstance : Substitutes (ofPairs instantiation) head goal)
-      (bodyInstance : Substitutes (ofPairs instantiation) (.conjunction body) instantiated) :
+      (headInstance : Substitutes (Substitution.ofPairs instantiation) head goal)
+      (bodyInstance : Substitutes (Substitution.ofPairs instantiation) (.conjunction body) instantiated) :
       Local checker refs context (.clause (.definite head body) instantiation) goal [instantiated] [[]]
   | goalClause (member : HornClause.goal body ∈ checker.snapshot.clauses)
-      (bodyInstance : Substitutes (ofPairs instantiation) (.conjunction body) instantiated) :
+      (bodyInstance : Substitutes (Substitution.ofPairs instantiation) (.conjunction body) instantiated) :
       Local checker refs context (.goalClause (.goal body) instantiation) .falsity [instantiated] [[]]
-  | defaultNegIntro (ground : operand.freeVars = []) (negation : checker.negation = some naf)
+  | defaultNegIntro (negation : checker.negation = some naf)
       (accepted : naf.check context operand evidence = true) :
       Local checker refs context (.defaultNegIntro evidence) (.defaultNeg operand) [] []
   | hoApplyIntro :
@@ -297,19 +293,19 @@ def nodeCheck (checker : Checker Variable Literal Symbol)
       match clause, premises with
       | .definite head body, [instantiated] =>
           if HornClause.definite head body ∈ checker.snapshot.clauses ∧
-              substitutes (ofPairs instantiation) head conclusion = true ∧
-              substitutes (ofPairs instantiation) (.conjunction body) instantiated = true then some [[]] else none
+              substitutes (Substitution.ofPairs instantiation) head conclusion = true ∧
+              substitutes (Substitution.ofPairs instantiation) (.conjunction body) instantiated = true then some [[]] else none
       | _, _ => none
   | .goalClause clause instantiation =>
       match clause, conclusion, premises with
       | .goal body, .falsity, [instantiated] =>
           if HornClause.goal body ∈ checker.snapshot.clauses ∧
-              substitutes (ofPairs instantiation) (.conjunction body) instantiated = true then some [[]] else none
+              substitutes (Substitution.ofPairs instantiation) (.conjunction body) instantiated = true then some [[]] else none
       | _, _, _ => none
   | .defaultNegIntro evidence =>
       match conclusion, premises, checker.negation with
       | .defaultNeg operand, [], some naf =>
-          if operand.freeVars = [] ∧ naf.check context operand evidence = true then some [] else none
+          if naf.check context operand evidence = true then some [] else none
       | _, _, _ => none
   | .hoApplyIntro =>
       match conclusion, premises with
@@ -406,7 +402,7 @@ theorem nodeCheck_complete (agree : ∀ name context goal, refsB name context go
   | clause member headInstance bodyInstance =>
       simp [nodeCheck, member, substitutes_iff.mpr headInstance, substitutes_iff.mpr bodyInstance]
   | goalClause member bodyInstance => simp [nodeCheck, member, substitutes_iff.mpr bodyInstance]
-  | defaultNegIntro ground negation accepted => simp [nodeCheck, negation, ground, accepted]
+  | defaultNegIntro negation accepted => simp [nodeCheck, negation, accepted]
   | equalSubst leftInstance rightInstance =>
       simp [nodeCheck, substitutes_iff.mpr leftInstance, substitutes_iff.mpr rightInstance]
   | extension found accepted lengths => simp [nodeCheck, found, accepted, lengths]
@@ -552,7 +548,7 @@ theorem nodeCheck_sound (agree : ∀ name context goal, refsB name context goal 
       split at checked
       · rename_i naf negation
         split at checked
-        · rename_i holds; cases checked; exact .defaultNegIntro holds.1 negation holds.2
+        · rename_i holds; cases checked; exact .defaultNegIntro negation holds
         · cases checked
       · cases checked
   | hoApplyIntro =>
@@ -707,7 +703,7 @@ theorem Local.derives {context : ProofContext Variable Literal Symbol} {rule : R
   case existsElim => exact .existsElim proved.1 ‹_› ‹_› ‹_› ‹_› proved.2
   case clause => exact .clause ‹_› ‹_› ‹_› proved
   case goalClause => exact .goalClause ‹_› ‹_› proved
-  case defaultNegIntro => exact .defaultNegIntro ‹_› (‹NafCheck _ _›.sound _ _ _ ‹_›)
+  case defaultNegIntro => exact .defaultNegIntro (‹NafCheck _ _›.sound _ _ _ ‹_›)
   case hoApplyIntro => exact .hoApplyIntro proved
   case hoApplyElim => exact .hoApplyElim proved
   case equalRefl => exact .equalRefl

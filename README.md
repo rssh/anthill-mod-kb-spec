@@ -37,7 +37,7 @@ Modules are grouped under `AnthillModKbSpec/`:
 | `Deriving/` | Generation of constructor-domain presentations from Lean inductive data |
 | `Resolution/` | Shared matching, search certificates, admission signatures, and reconstruction proofs |
 | `Resolution/P0/` | Ground success/failure certificates and completed-model semantics, ranks, the P0 command set, total P0 runs, and the P0 admission checker |
-| `Resolution/P1/` | Supplied proof trees as `Term`, their checker and reconstruction, proof imports, checked exports of machine runs, and the logical nodes of S09 commands |
+| `Resolution/P1/` | Supplied proof trees as `Term`, their checker and reconstruction, proof imports, checked exports of machine runs, the logical nodes of S09 and S10 commands, and evidence-first NAF |
 | `Archive/` | Opt-in historical approaches |
 
 `import AnthillModKbSpec.Foundation` loads the generic logic independently of
@@ -64,12 +64,13 @@ class is in the foundation; its generation metaprogram is imported separately.
 | Guarded quantifier, context, and rule-template elaboration | [Elaboration](AnthillModKbSpec/Resolution/Elaboration.lean), [range and substitution contracts](docs/guarded-elaboration.md) |
 | Generated domain-membership clauses for derivable guards | [MembershipClauses](AnthillModKbSpec/Foundation/MembershipClauses.lean) |
 | Abstract machine states, continuations, and proof evidence | [Machine](AnthillModKbSpec/Resolution/Machine.lean), [state and evidence contracts](docs/machine-state.md) |
-| Delayed goals: suspension, exactly-once wakeup, deferred proofs, floundering | [State](AnthillModKbSpec/Resolution/Machine/State.lean), [delayed goals](docs/machine-delay.md), [traces](Tests/Resolution/Delay.lean) |
+| Delayed goals: suspension, exactly-once wakeup, deferred proofs, the closing phase, floundering | [State](AnthillModKbSpec/Resolution/Machine/State.lean), [delayed goals](docs/machine-delay.md), [traces](Tests/Resolution/Delay.lean) |
 | Alpha-renaming instantiation, clause freshening, and scope-safe matching | [Freshening](AnthillModKbSpec/Foundation/Freshening.lean), [Unification](AnthillModKbSpec/Resolution/Machine/Unification.lean), [matching contracts](docs/machine-matching.md) |
 | Ordinary clause selection and positive execution; reconstruction of successful runs | [Positive](AnthillModKbSpec/Resolution/Machine/Positive.lean), [Reconstruction](AnthillModKbSpec/Resolution/Machine/Reconstruction.lean), [strategy and guarantees](docs/machine-positive.md), [traces](Tests/Resolution/Positive.lean) |
 | P0 admission and total evaluation: NAF in the same run, guard decisions, ranks, Ready plans, runs from the query that end in `Succeeds` or `Fails` | [Admission](AnthillModKbSpec/Resolution/P0/Admission.lean), [Run](AnthillModKbSpec/Resolution/P0/Run.lean), [Negation](AnthillModKbSpec/Resolution/Machine/Negation.lean), [design and guarantees](docs/machine-p0.md), [traces](Tests/Resolution/P0/Admission.lean) |
 | P1 proof checking: supplied trees as `Term`, a terminating checker that decides validity and reconstructs `Derives`, proof imports, checked exports of P0 runs | [Tree](AnthillModKbSpec/Resolution/P1/Tree.lean), [Encoding](AnthillModKbSpec/Resolution/P1/Encoding.lean), [Export](AnthillModKbSpec/Resolution/P1/Export.lean), [Import](AnthillModKbSpec/Resolution/P1/Import.lean), [design and guarantees](docs/proof-checking.md), [traces](Tests/Resolution/P1/Check.lean) |
 | Left rules and compound clause heads: selected conjunction, disjunction, existential, universal, and implication assumptions with their continuations, compound heads, the left strategy, constructions in S08 logical nodes, proof-layer diagnostics beside P0 | [LeftRules](AnthillModKbSpec/Resolution/Machine/LeftRules.lean), [LeftStrategy](AnthillModKbSpec/Resolution/Machine/LeftStrategy.lean), [P1/Derived](AnthillModKbSpec/Resolution/P1/Derived.lean), [ProofLayer](AnthillModKbSpec/Resolution/ProofLayer.lean), [design and guarantees](docs/machine-left.md), [traces](Tests/Resolution/LeftRules.lean) |
+| Evidence-first NAF by refutation in the Clark completion: NAF on rigid parameters, open predicates marked by a reserved symbol, the refutation search with only-if uses and equation joins, positive witnesses first, checked evidence indexed by the snapshot | [Completion](AnthillModKbSpec/Foundation/Completion.lean), [Machine/Refutation](AnthillModKbSpec/Resolution/Machine/Refutation.lean), [P1/Refutation](AnthillModKbSpec/Resolution/P1/Refutation.lean), [P1/Negation](AnthillModKbSpec/Resolution/P1/Negation.lean), [design and guarantees](docs/machine-negation.md), [traces](Tests/Resolution/Negation.lean) |
 | Lawful Nat and Bool order dictionaries | [OrderDictionaries](AnthillModKbSpec/Models/OrderDictionaries.lean) |
 | Conditional operation equations and replacement | [Equation rule note](docs/conditional-equations.md), [examples](Tests/Foundation/EquationRules.lean) |
 | Soundness with an equation oracle | [EquationOracle](AnthillModKbSpec/Foundation/EquationOracle.lean), [theorem and examples](docs/equation-oracle.md) |
@@ -79,8 +80,10 @@ new model elements. Domain guards restrict forall to generated values. The
 concrete Nat model distinguishes values and makes `even(1)` false; it supplies
 a consistency witness for the example KBs.
 
-The result covers certified NAF, not arbitrary unsuccessful search. Explicit
-negation and open/closed predicate policies remain future work.
+The result covers certified NAF, not arbitrary unsuccessful search: S07's
+ground certificates, and S10's refutations in the Clark completion, which also
+cover operands with rigid parameters. A predicate is kept open by a clause
+`p(x̄) :- UNKNOWN` with a reserved symbol. Explicit negation remains future work.
 
 Dictionary operation calls have [syntax and a semantic contract](docs/operation-dictionaries.md):
 explicit callable references, uniform application, and predicate/operation roles

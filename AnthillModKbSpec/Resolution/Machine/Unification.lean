@@ -357,6 +357,7 @@ def unifyPairs (hoApplySymbol : Symbol) (scope : Scope Variable Literal Symbol) 
           | .bound next => unifyPairs hoApplySymbol scope next (substPairs name value rest) (done ++ [(name, value)])
           | .rejected => .mismatch
           | .violated => .violated
+          | .refused => .unsupported
       | .mismatch => .mismatch
       | .unsupported => .unsupported
 termination_by (store.openCount, pairsSize pairs)
@@ -405,6 +406,7 @@ theorem unifyPairs_cons (store : Store Variable Literal Symbol) (left right : Te
           | .bound next => unifyPairs hoApplySymbol scope next (substPairs name value rest) (done ++ [(name, value)])
           | .rejected => .mismatch
           | .violated => .violated
+          | .refused => .unsupported
       | .mismatch => .mismatch
       | .unsupported => .unsupported := by
   rw [unifyPairs]
@@ -751,29 +753,31 @@ theorem Ordinary.instantiate {term : Term Variable Literal Symbol} (ordinary : O
       intro σ values; simp only [Term.instantiate]
       exact .defaultNeg (ih fun n m => values n (by simpa only [Term.freeVars] using m))
 
-/-- On ordinary terms the profile admits every comparison: matching never
-reports `unsupported`, so a failure there is a mismatch or a contract breach. -/
+/-- On ordinary terms the profile admits every comparison: outside the closing
+phase, matching never reports `unsupported`, so a failure there is a mismatch
+or a contract breach. While closing, a binding the match needs is refused and
+reported as `unsupported`: a gap, never a mismatch. -/
 theorem unifyPairs_supported {store : Store Variable Literal Symbol}
     {pairs : List (Term Variable Literal Symbol × Term Variable Literal Symbol)}
     {done : List (Variable × Term Variable Literal Symbol)} :
-    (∀ pair ∈ pairs, Ordinary hoApplySymbol pair.1 ∧ Ordinary hoApplySymbol pair.2) →
+    store.closing = false → (∀ pair ∈ pairs, Ordinary hoApplySymbol pair.1 ∧ Ordinary hoApplySymbol pair.2) →
       unifyPairs hoApplySymbol scope store pairs done ≠ .unsupported := by
   induction store, pairs, done using unifyPairs.induct hoApplySymbol scope with
-  | case1 store done => intro _; simp [unifyPairs_nil]
+  | case1 store done => intro _ _; simp [unifyPairs_nil]
   | case2 store done left right rest step ih =>
-      intro ordinary; simp only [unifyPairs_cons, step]
-      exact ih (fun p m => ordinary p (List.mem_cons_of_mem _ m))
+      intro opening ordinary; simp only [unifyPairs_cons, step]
+      exact ih opening (fun p m => ordinary p (List.mem_cons_of_mem _ m))
   | case3 store done left right rest parts step ih =>
-      intro ordinary; simp only [unifyPairs_cons, step]
+      intro opening ordinary; simp only [unifyPairs_cons, step]
       have here := ordinary _ List.mem_cons_self
-      apply ih
+      apply ih opening
       intro p m
       simp only [List.mem_append] at m
       rcases m with m | m
       · exact matchParts_ordinary (matchStep_split step) here.1 here.2 p m
       · exact ordinary p (List.mem_cons_of_mem _ m)
   | case4 store done left right rest name value step next bound ih =>
-      intro ordinary; simp only [unifyPairs_cons, step, bound]
+      intro opening ordinary; simp only [unifyPairs_cons, step, bound]
       have here := ordinary _ List.mem_cons_self
       have valueOrdinary : Ordinary hoApplySymbol value := by
         rcases (matchStep_bind step).1 with ⟨_, rfl⟩ | ⟨_, rfl⟩
@@ -787,18 +791,22 @@ theorem unifyPairs_supported {store : Store Variable Literal Symbol}
         by_cases same : other = name
         · simpa [Substitution.single, Substitution.bind, same] using valueOrdinary
         · simpa [Substitution.single, Substitution.bind, same] using (Ordinary.var : Ordinary hoApplySymbol (.var other))
-      apply ih
+      apply ih ((Store.bind_keeps_closing bound).trans opening)
       intro p m
       obtain ⟨original, originalMember, rfl⟩ := List.mem_map.mp m
       have both := ordinary original (List.mem_cons_of_mem _ originalMember)
       exact ⟨single _ both.1, single _ both.2⟩
   | case5 store done left right rest name value step bound =>
-      intro _; simp [unifyPairs_cons, step, bound]
+      intro _ _; simp [unifyPairs_cons, step, bound]
   | case6 store done left right rest name value step bound =>
-      intro _; simp [unifyPairs_cons, step, bound]
-  | case7 store done left right rest step => intro _; simp [unifyPairs_cons, step]
-  | case8 store done left right rest step =>
-      intro ordinary
+      intro _ _; simp [unifyPairs_cons, step, bound]
+  | case7 store done left right rest name value step bound =>
+      intro opening _
+      rw [Store.bind_refused bound] at opening
+      cases opening
+  | case8 store done left right rest step => intro _ _; simp [unifyPairs_cons, step]
+  | case9 store done left right rest step =>
+      intro _ ordinary
       have here := ordinary _ List.mem_cons_self
       exact absurd step (matchStep_ordinary here.1 here.2)
 
@@ -816,7 +824,9 @@ theorem Store.bind_violated {store : Store Variable Literal Symbol} {scope : Sco
     · cases violated
     · dsimp only at violated
       split at violated
-      · split at violated <;> cases violated
+      · split at violated
+        · split at violated <;> cases violated
+        · cases violated
       · rename_i notUsable
         exact notUsable (List.all_eq_true.mpr usable)
   · rename_i notOpen
@@ -915,8 +925,10 @@ theorem unifyPairs_wellScoped {store : Store Variable Literal Symbol}
       rcases sides with ⟨_, rfl⟩ | ⟨_, rfl⟩
       · exact here other (List.mem_append_right _ inside)
       · exact here other (List.mem_append_left _ inside)
-  | case7 store done left right rest step => intro _; simp [unifyPairs_cons, step]
+  | case7 store done left right rest name value step bound =>
+      intro _; simp [unifyPairs_cons, step, bound]
   | case8 store done left right rest step => intro _; simp [unifyPairs_cons, step]
+  | case9 store done left right rest step => intro _; simp [unifyPairs_cons, step]
 
 /-! ### Matching against the store -/
 
@@ -954,14 +966,14 @@ theorem Store.unify_sound {store final : Store Variable Literal Symbol} (valid :
   rw [← idempotent left, ← idempotent right]
   exact same
 
-/-- Ordinary readings are always compared. -/
+/-- Ordinary readings are always compared outside the closing phase. -/
 theorem Store.unify_supported (store : Store Variable Literal Symbol) {left right : Term Variable Literal Symbol}
-    (leftOrdinary : Ordinary hoApplySymbol (store.resolve left))
+    (opening : store.closing = false) (leftOrdinary : Ordinary hoApplySymbol (store.resolve left))
     (rightOrdinary : Ordinary hoApplySymbol (store.resolve right)) :
     store.unify scope hoApplySymbol left right ≠ .unsupported := by
   unfold Store.unify
   split
-  · exact unifyPairs_supported (fun pair member => by
+  · exact unifyPairs_supported opening (fun pair member => by
       simp only [List.mem_singleton] at member; subst member; exact ⟨leftOrdinary, rightOrdinary⟩)
   · intro equal; cases equal
 

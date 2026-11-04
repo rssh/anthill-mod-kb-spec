@@ -419,7 +419,7 @@ theorem succeeds_toDerives (proof : Succeeds program context goal) :
   · intro context; exact .truth
   · intro a b context left right ihLeft ihRight; exact .conjIntro ihLeft ihRight
   · intro goal context closed refuted ih
-    exact .defaultNegIntro closed ⟨rfl, rfl, context, rfl, refuted⟩
+    exact .defaultNegIntro ⟨rfl, rfl, context, rfl, refuted⟩
   · intro binder body context valid proof ih
     exact .forallIntro (context.eigen_freshContext binder body) (context.eigen_freshGoal binder body)
       (context.opening binder body) ih

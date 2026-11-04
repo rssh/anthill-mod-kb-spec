@@ -2,8 +2,10 @@
 
 [Machine](../AnthillModKbSpec/Resolution/Machine.lean) implements S18 on the S04
 [machine](machine-state.md): a strategy may delay the focused obligation until a
-name it waits on is bound, the commit that binds the name wakes it, and a goal
-still delayed when the branch would succeed flounders as a gap. Traces are in
+name it waits on is bound, and the commit that binds the name wakes it. When the
+branch would succeed with goals still delayed, it first closes: those goals run
+once more, knowing no binding will come (S10). A goal still delayed after
+closing flounders as a gap. Traces are in
 [Tests/Resolution/Delay.lean](../Tests/Resolution/Delay.lean).
 
 ## Why the machine needs delay
@@ -26,7 +28,7 @@ The generated goals are ordinary goals that read the carried type of a value:
 | Bound, under-determined | Suspends |
 | Unbound, `T` defines its domain | Enumerates: a choice point over the domain |
 | Unbound otherwise | Delays; asked again when a later goal binds it |
-| Still unbound at the end | Flounders loudly; never a silent non-check, never NAF |
+| Still unbound at the end | Asked once more while closing; still delayed, it flounders loudly: never a silent non-check, never NAF |
 
 The generator goes after the body (`fill` at the end): ahead of the body, it
 enumerates a recursive type forever before the body can prune it. A primitive
@@ -112,7 +114,8 @@ success.
   case of a type check. Each needs a decidable check at each binding, a rule
   for when it is discharged, and its own evidence for proof export, specified
   with the solver that introduces it. S18 adds the slot and no solver: commits
-  keep constraints unchanged, and no transition adds one.
+  keep constraints unchanged, and no transition adds one. The closing phase
+  (below) is where such a solver would discharge what is left at the end.
 
 Success requires no pending wakeup and no unresolved constraint
 (`Store.residual` is empty); restrictions are not counted.
@@ -126,7 +129,8 @@ Success requires no pending wakeup and no unresolved constraint
 | `solve ob` | A candidate's commit returns woken suspensions | They run oldest first, before the candidate's own continuation, each under its own scope with a `woken` continuation (`Continuation.schedule`, `State.enter_committed`, `State.enter_oldest_first`) |
 | `proved t` | Top continuation `woken id ob next` | Record `(id, ob, t)` in `deferred`; focus `next` (`step_woken`) |
 | `proved t` | No continuation, `Store.residual` empty | Success: the references in `t` are filled with the deferred proofs (`ProofTree.fillAll`) |
-| `proved t` | No continuation, pending wakeups or unresolved constraints | One `floundered` gap per residual item; focus `failed` (`step_flounder`) |
+| `proved t` | No continuation, pending wakeups or unresolved constraints, not closing | Close (`Store.close`): the pending suspensions run once more, oldest first, each under its own scope with a `woken` continuation, before `t`; no name is bound from then on (`step_close`) |
+| `proved t` | No continuation, pending wakeups or unresolved constraints, closing | One `floundered` gap per residual item; focus `failed` (`step_flounder`) |
 | `failed` | A choice point with alternatives | Restore its store (with its suspensions), continuations, and deferred proofs; `nextHole` and gaps are kept (`step_backtrack`) |
 
 A woken goal may delay again: it gets a new id, and its record holds a
@@ -141,6 +145,24 @@ obligation keeps its own scope: assumptions and rigid names that were in scope
 where it delayed are available to its proof, and nothing from that scope
 reaches the caller, since the woken entry resumes the focus it saved
 (`step_woken`, `Linked.woken`).
+
+**Closing.** A goal that was waiting when the branch is proved will not be woken
+by a binding: none is left to come. Closing runs it once more, with
+`Store.closing` set so the strategy can see this. A strategy may then answer it
+without the binding, as S10's NAF does by refuting the operand for every value
+of the names it waited on. While closing, `Store.bind` refuses every binding, so
+`Store.Refines` keeps the bindings of a closing store fixed
+(`Store.Refines.closed`, `Store.Refines.resolve_closing`): what a closing goal
+reads, it reads to the end of the branch. A refused binding is its own
+outcome (`Bound.refused`, `Commit.refused`), reached only after the occurs and
+dependency checks pass, so a real miss stays a miss. `State.enter` records a
+refused commit as a `floundered` gap, and the matcher reports a binding it
+needs as `unsupported`, a gap, never as a mismatch: the search below it is not
+complete, so a NAF barrier above it is not opened and the run is never
+`exhausted` by it. A goal that delays again while closing stays suspended and
+flounders, and a branch closes at most once.
+Backtracking to a choice point saved before closing restores a store that is
+not closing.
 
 Floundering abandons the branch without evidence. Its gaps survive backtracking,
 so the run ends in another success or in `unknown`, never in `exhausted`
@@ -185,7 +207,8 @@ when it retains no closed-world evidence (`CompletedProof.Valid.monotonic_iff`).
 | Every transition keeps every branch valid (`Branch.Valid`, for the state and each choice point): continuations linked, a `woken` entry's `next` valid for the stack below it, the store scoped and waiting, every suspension, constraint, and deferred proof naming only declared names (S19), every deferred proof proving its obligation | `State.init_valid`, `step_valid` |
 | Every suspension id is held exactly once (a pending wakeup, a woken continuation, or a deferred proof) and below `nextHole`; every reference stands for a held id with its obligation; references point forward | `Accounted`, `Branch.Valid.commit`, `Branch.Valid.record` |
 | A success proves the root with a coherent, declared tree and scoped answers; the success step filled every reference, so the tree holds none; no wakeup is pending and no constraint unresolved (restrictions do not count); the deferred proofs, kept as provenance, have distinct ids, each proves its recorded obligation, and the references left in them resolve to later records | `run_success` (`CompletedProof.Valid`), `ProofTree.fillAll_complete` |
-| Floundering adds gaps, so exhaustion still implies no gap, and a floundered run is never exhausted | `step_flounder`, `run_exhausted`, `run_not_exhausted` |
+| A branch proved with goals still delayed closes: they run once more, and no name is bound from then on; closing keeps the branch valid and sound | `step_close`, `Branch.Valid.close`, `Store.Scoped.close`, `Store.bind_closing`, `Store.Refines.closed`, `Store.Refines.resolve_closing`, `step_valid`, `step_sound` |
+| Floundering, after closing, adds gaps, so exhaustion still implies no gap, and a floundered run is never exhausted | `step_flounder`, `run_exhausted`, `run_not_exhausted` |
 | Woken goals run before the waking candidate's continuation, oldest first: the woken list is newest first, and scheduling pushes one woken entry per suspension in reverse, so from the top of the stack their ids increase and the focus is the oldest woken obligation | `Store.commit_woken`, `Continuation.schedule_stack`, `Continuation.schedule_focus`, `State.enter_oldest_first` |
 | A suspension outlives its frame; a woken goal's proof is recorded under its id and the saved focus resumes | `step_proved_store`, `step_woken` |
 | Rollback restores the store with its suspensions and the deferred proofs; ids are not reused | `step_backtrack` |
@@ -206,14 +229,17 @@ when it retains no closed-world evidence (`CompletedProof.Valid.monotonic_iff`).
   encodes, and the records need no encoding. A supplied tree (manual, external,
   P2) that still holds a reference is an unresolved hole and is rejected.
 - **S10**: NAF on a flexible operand delays until the operand is bound ("retain a
-  dependency and retry after instantiation"). Waiting cannot help a rigid
-  operand.
+  dependency and retry after instantiation"). Still waiting when the branch
+  closes, it is refuted for every value of the names it waited on. Waiting
+  cannot help a rigid operand.
 
 ## Boundaries
 
 - Strategies decide when to delay (S06 for guards, S10 for NAF); the machine
-  checks the names and owns waking, recording, and floundering.
-- No constraint solver: S18 adds the slot only.
+  checks the names and owns waking, recording, closing, and floundering.
+- No constraint solver: S18 adds the slot only. Closing binds nothing, so a
+  solver that would label a name at the end (enumerate its values) is not
+  supported by it.
 - The test driver is not S06's strategy. S06 rebuilds `Derives` from a
   completed tree read through the final answers ([S06](machine-positive.md));
   S16 composes it through elaboration.
@@ -241,7 +267,12 @@ the same way. Each is a `#guard` in
 | A callee `c(X)` (a test-driver clause; S06 supplies clause selection) whose body delays `r(X)`, then the caller's `p(X)` | `c`'s frame completes with `r(X)` suspended; the caller's `p(X)` binds `X := a` and wakes `r(a)` after the callee returned |
 | `(r(a) → r(X)) ∧ p(X)` under `p(a)` | `r(X)` delays under the local assumption `r(a)`; after the implication is discharged, `p(X)` wakes it and `r(a)` holds by that assumption |
 | `(r(a) → r(X)) ∧ p(X) ∧ r(a)` under `p(a)` | Exhausted: the woken goal used `r(a)`, but the caller's last goal cannot |
-| `r(X)` alone | Flounders: unknown with a `floundered` gap |
+| `r(X)` alone | Closes, delays again, and flounders: unknown with a `floundered` gap |
+| `r(X)` alone, with a driver that answers `r(X)` without a binding while closing | Success with `X` unbound; the closing proof is recorded under id 0 |
+| The same with a driver that binds `X := a` while closing | Unknown with a `floundered` gap: the binding is refused |
+| `r(X)` needing, while closing, the same-run `naf q(a)` where `q(a)` holds by binding a fresh name | Unknown: the refusal keeps the NAF barrier closed (`naf q(a)` alone is exhausted) |
+| A driver binding `X := p(X)` while closing | Exhausted: the occurs check fails before the refusal, a real miss |
+| `r(X) ∧ r(X)` | The branch closes once: two `floundered` gaps |
 | `r(X) ∨ (r(X) ∧ p(X))` under `p(a), r(a)` | The first branch flounders; the second succeeds; resuming is unknown |
 | A store holding an unresolved constraint, goal `true` | Flounders: unknown with a `floundered` gap |
 | `r(X) ∧ p(X)` with no `p` | Exhausted: the suspension is discarded with its branch |

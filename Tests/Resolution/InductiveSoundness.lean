@@ -21,8 +21,7 @@ example (environment : Environment String Value) : model.Satisfies environment (
 
 example (environment : Environment String Value) : model.Satisfies environment (.defaultNeg (.falsity : T)) :=
   InductiveSoundness.declarative_sound interpretation
-    ((CertifiedRefutation.Refutes.falsity (model := model) (kb := kb) (context := [])).toDerives
-      (by simp [Term.freeVars])) environment
+    (CertifiedRefutation.Refutes.falsity (model := model) (kb := kb) (context := [])).toDerives environment
     (by intro assumption member; cases member)
 
 example : ¬ Derives .hoApply kb [] .falsity (CertifiedRefutation.failureEvidence model kb) :=

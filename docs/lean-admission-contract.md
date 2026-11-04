@@ -335,9 +335,12 @@ a universal over an infinite domain without enumeration; failure of that strateg
 is not a counterexample. Raw falsity is not immediately failed in P2 merely because
 P0 has such a transition: the P0 restrictions must still hold to use that shortcut.
 
-Closed NAF can reuse existing certificate rules. New open/scoped NAF introduction
-requires its own soundness proof before that route is admitted. The table does
-not assert that such a rule already exists or identify NAF with logical negation.
+Closed NAF can reuse existing certificate rules. NAF on operands with rigid
+parameters uses S10's refutation evidence in the Clark completion, proved
+adequate in models of the completion and the free equality theory with
+complement NAF (`refutation_adequate`; see [machine-negation](machine-negation.md)).
+The positive-witness query is `Strategy.withWitness`. The table does not
+identify NAF with logical negation.
 
 ### Outcomes and profile inclusion
 
@@ -620,7 +623,8 @@ cannot establish Ready. Proof checking and proof discovery are distinct tasks.
 | `P1` proof checking (S08) | Supplied trees as `Term`, a decided substitution relation (`substitutes_iff`), one procedure per rule (`nodeCheck`), the checker (`check_iff`), reconstruction (`Valid.derives`, `checked_toDerives`), `NafCheck` and `RuleCheck` interfaces, references re-checked over an import table, `checkProof` with NeedsEvidence for missing capabilities, `DecisionContract` and `proofRoute`, export of machine trees (`exportTree_refs`), P0 exports checked against the input's effective program (`Plan.exportProof_checked`, `Plan.exportProof_derives`), imports and their operational admission (`ProofImport.checked_sound`, `admitImports`, `admit`) ([details](proof-checking.md)) | The general S06 export theorem (S15/S16); a weakening lemma for reused references; public proof syntax |
 | `CompletedGround` | `ground_certificates_sound`, `ground_failure_adequate`, `ground_completed_sound` | Completion is a hypothesis, not generic model existence or search termination |
 | `VariableSearch`, `ScopedSearch` | Instances, answers, freshness, `LocalInstance.toDerives`, `answers_toDerives` | Exhaustive-instance covers are evidence, not a general enumeration algorithm; raw scoped failure is inadequate |
-| `CertifiedRefutation` | `Refutes.sound`, `failureAdequate`, `Refutes.toDerives` | NAF introduction still requires closed operands; semantic certificates are not automatically proofs in unchanged `Derives` |
+| `CertifiedRefutation` | `Refutes.sound`, `failureAdequate`, `Refutes.toDerives` | Semantic certificates are not automatically proofs in unchanged `Derives` |
+| Evidence-first NAF (S10) | `Derives.defaultNegIntro` without a closed operand, `refutation_adequate`, `refutationChecker_sound`, `complete?_reserved`, `refuter_sound`, `nafByRefutation_sound`, `Strategy.withRefutation_checked`, `witnessSearch_defeats` ([details](machine-negation.md)) | No termination of the refutation search; injectivity, the occurs check, and induction are not searched; the export theorem for whole runs (S15/S16); the completion is a model hypothesis |
 | `InductiveDomains`, `UniversalIntroduction` | `Universal.toTerm`, `forallAll_satisfies_iff`, `Derives.forallAll_intro`; generalized by S03 | An admitted quantifier strategy |
 | `MembershipClauses` | Constructor-membership clauses generated from domain definitions, valid under `Realizes` and deriving every generated member and its guard | Elaborated KBs must include them (through `Elaboration.signatureKb`); values outside generated data stay underivable |
 | `CounterexampleSearch`, `CertifiedScopedSearch` | Finite covers/induction evidence and guarded semantic success | Domain certificates do not generally reconstruct KB-only `Derives` |

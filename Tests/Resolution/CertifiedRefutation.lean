@@ -62,11 +62,11 @@ private theorem nestedRefuted : CertifiedRefutation.Refutes model program.toKb [
 
 example : Derives "ho_apply" program.toKb [] (.defaultNeg (.imp p q))
     (CertifiedRefutation.failureEvidence model program.toKb) :=
-  implicationRefuted.toDerives (by simp [p, q, Term.freeVars])
+  implicationRefuted.toDerives
 
 example : Derives "ho_apply" program.toKb [] (.defaultNeg (.imp p (.imp p q)))
     (CertifiedRefutation.failureEvidence model program.toKb) :=
-  nestedRefuted.toDerives (by simp [p, q, Term.freeVars])
+  nestedRefuted.toDerives
 
 example : CertifiedRefutation.Refutes model program.toKb [] (.conj (.imp p q) .truth) :=
   .conjLeft implicationRefuted

@@ -52,9 +52,9 @@ example {Value : Type} (model : Model Nat String Value "ho_apply") :
     ¬ model.FailureAdequate emptyProgram.toKb (failureEvidence emptyProgram) := by
   intro adequate
   let environment : Environment String Value := fun _ => model.inhabitant
-  have pNegative := adequate [] p (by simp [p, Term.freeVars])
+  have pNegative := adequate [] p
     ⟨rfl, rfl, emptyContext, rfl, pFails⟩ environment (by intro assumption member; cases member)
-  have implicationNegative := adequate [] (.imp p q) (by simp [p, q, Term.freeVars])
+  have implicationNegative := adequate [] (.imp p q)
     ⟨rfl, rfl, emptyContext, rfl, implicationFails⟩ environment (by intro assumption member; cases member)
   have pFalse : ¬ model.holds (model.eval environment p) :=
     model.defaultNegation_coherent _ (by simpa only [Model.Satisfies, Model.eval] using pNegative)

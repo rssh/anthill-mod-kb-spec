@@ -321,9 +321,11 @@ KB; Gamma |- forall x. D_i(x) -> defaultNeg(p(x))
 KB; Gamma, D_i(a) |- defaultNeg(p(a))     -- fresh rigid a
 ```
 
-The current `Derives.defaultNegIntro` cannot close this obligation: its operand
-must have no free variables, and `p(a)` has the free rigid parameter `a`.
-Making an eigenparameter rigid does not make it a closed constructor value.
+`Derives.defaultNegIntro` closes this obligation only with evidence that is
+uniform over `a` (`Model.FailureAdequate`). Making an eigenparameter rigid does
+not make it a closed constructor value. S10's evidence is a refutation of
+`p(a)` in the Clark completion, by case analysis on the head equations
+([machine-negation](machine-negation.md)).
 
 Why ordinary matching failure is insufficient:
 
@@ -519,8 +521,9 @@ other proofs of falsity. It is not immediate operational failure. A denial claus
 
 For `defaultNeg G`, first try assumptions and applicable rules, as for other
 goals. An existing proof does not require a new failure search or a groundness
-check. When establishing a closed operand through failure, launch the certified
-refutation provider with the exact KB and context. A certificate closes the goal;
+check. When establishing an operand through failure, its free names rigid,
+launch the certified refutation provider with the exact KB and context (S10:
+`Strategy.withRefutation`). A certificate closes the goal;
 a proof of `G` defeats this NAF attempt under complement NAF; unfinished search
 provides no negative evidence.
 

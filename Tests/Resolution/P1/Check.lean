@@ -310,7 +310,7 @@ def forged : Option (Verdict Sym) :=
   (.node (.extension .custom [k .a] (some ⟨.completeFailure, ()⟩)) ⟨⟨[], []⟩, k .p⟩ [] [])).any
     fun proof => identical (encode vocab proof) (encode vocab (node (.extension .custom [k .a, k .b]) (k .p)))
 -- A replacement template is read through the store, like every parameter.
-def bound : Store Nat Nat Sym := ⟨[], [(7, k .a)], [], []⟩
+def bound : Store Nat Nat Sym := { names := [], bindings := [(7, k .a)], wakeups := [], constraints := [] }
 #guard (exportTree (Certificate := Unit) (fun _ => .truth) bound (fun _ _ => none)
   (.node (.equalSubst 1 (atom .p [.var 7, .var 1])) ⟨⟨[], []⟩, k .p⟩ [] [])).any
     fun proof => identical (encode vocab proof) (encode vocab (node (.equalSubst 1 (atom .p [k .a, .var 1])) (k .p)))

@@ -53,7 +53,7 @@ example (environment : Environment String Bool) :
 -- A small, semantically justified failure provider: falsity always fails.
 private def falseFailure : NafFailure String Nat String := fun _ _ _ goal => goal = .falsity
 private theorem falseFailureAdequate : model.FailureAdequate (∅ : K) falseFailure := by
-  intro context goal closed evidence environment valid
+  intro context goal evidence environment valid
   change goal = .falsity at evidence
   subst goal
   simp [Model.Satisfies, Model.eval, model, Model.trueAtoms]
@@ -63,7 +63,7 @@ example : ¬ Derives "ho_apply" (∅ : K) [] .falsity falseFailure :=
 
 example (environment : Environment String Bool) : model.Satisfies environment (.defaultNeg (.falsity : T)) :=
   model.sound emptyModels falseFailureAdequate
-    (.defaultNegIntro (context := []) (goal := .falsity) (by simp [Term.freeVars]) rfl) environment
+    (.defaultNegIntro (context := []) (goal := .falsity) rfl) environment
     (by intro assumption member; cases member)
 
 example : ¬ Derives "ho_apply" (∅ : K) [] (.defaultNeg .truth) falseFailure :=
@@ -86,7 +86,7 @@ example : model.Models emptyProgram.toKb := by
 
 example : ¬ model.FailureAdequate emptyProgram.toKb (GroundSearch.failureEvidence emptyProgram emptyContext) := by
   intro adequate
-  have impossible := adequate [] p (by simp [p, Term.freeVars]) ⟨rfl, rfl, rfl, missingP⟩
+  have impossible := adequate [] p ⟨rfl, rfl, rfl, missingP⟩
     (fun _ => false) (by intro assumption member; cases member)
   simp [Model.Satisfies, Model.eval, model, Model.trueAtoms, p] at impossible
 

@@ -71,8 +71,7 @@ example (environment : Environment String Value) :
   apply model.sound_with_equation_oracle oracle kb_valid
     (CertifiedRefutation.failureAdequate model complement extended)
     (proof := .conjIntro predicate_proof
-      ((CertifiedRefutation.Refutes.falsity (model := model) (kb := extended) (context := [])).toDerives
-        (by simp [Term.freeVars]))) environment
+      (CertifiedRefutation.Refutes.falsity (model := model) (kb := extended) (context := [])).toDerives) environment
   intro assumption member; cases member
 
 -- A conditional oracle can accept any equality under that equality as a premise.

@@ -28,8 +28,9 @@ and every assumption, read through the store's bindings, are closed
 (`Store.groundNegation_read`). An unbound flexible name could be bound by the
 operand's search, deciding the NAF for that binding only. A rigid parameter
 stands for every value: in `∀X. naf p(X)` with the fact `p(a)`, `p(X)` fails
-for the eigenvariable `X`, which does not show `naf p(a)`. Both stay gaps until
-the scoped strategy (S10). A name bound before the NAF is read through its
+for the eigenvariable `X`, which does not show `naf p(a)`. Both stay gaps in
+P0. S10 delays a flexible operand and refutes a rigid one in the Clark
+completion ([machine-negation](machine-negation.md)). A name bound before the NAF is read through its
 value. The machine then runs the operand in the same run, under the
 obligation's own scope, behind a barrier:
 
@@ -75,7 +76,8 @@ name and decide the NAF for that binding only. So `positive`'s exact
 candidates (an assumed `naf A`, ex falso) still come first, a NAF whose names
 are bound by then is decided (`∃X. r(X) ∧ naf q(X)` reads `naf q(a)` once
 `r(a)` binds `X`), and a NAF that is not ground as read stays a gap. Open and
-scoped NAF, and evidence-first NAF beyond identity, are S10's.
+scoped NAF, and evidence-first NAF beyond identity, are S10's
+([machine-negation](machine-negation.md)).
 
 ## The P0 command set
 
@@ -347,6 +349,7 @@ formulas do not, since lowering takes only the naming
   program is ranked, not only the clauses a query reaches.
 - **Generic reconstruction** (`run_reconstructs`) covers a `negate` answer only
   when the strategy makes its NAF node sound on its own; the P0 node is
-  justified by `run_correct`. Open, scoped, and evidence-first NAF are S10's.
+  justified by `run_correct`. Open, scoped, and evidence-first NAF are S10's
+  ([machine-negation](machine-negation.md)).
 - **The static profile for `positive`** beyond P0 (non-ground inputs, the S06
   note's conditions) is S15's; for P0 it is `Ground.strategy_eq`.

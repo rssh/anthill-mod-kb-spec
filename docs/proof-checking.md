@@ -292,7 +292,8 @@ evidence into `E(KB)` under one provider is S16's.
   `Term.conjunction` builds it; `a → h` with a bare atom `a` is read as a fact,
   which P0 then does not admit.
 - **P0 NAF evidence holds only under the plan's context.** NAF under a grown or
-  scoped context is S10's.
+  scoped context is S10's: refutation evidence is checked under the NAF node's
+  own context (`refutationCheck`, [machine-negation](machine-negation.md)).
 - **The encoding is internal.** There is no public proof syntax, parser, or
   serialized format; the vocabulary's symbols are a parameter.
 - **The checker decides validity of the supplied tree, not derivability.**

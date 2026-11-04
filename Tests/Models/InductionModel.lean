@@ -82,8 +82,7 @@ private theorem allEvenRefuted : CertifiedRefutation.Refutes model kb [] (allEve
   exact fun proof => (by decide : ¬ 1 % 2 = 0) ((even_at_nat 1).mp proof)
 
 example : Derives .hoApply kb [] (.defaultNeg (allEven.toTerm membershipSymbol)) naf :=
-  allEvenRefuted.toDerives (by
-    simp [allEven, FiniteFamily.forallAll, Universal.toTerm, family, InductiveDomains.guard, membershipSymbol, even, Term.freeVars])
+  allEvenRefuted.toDerives
 
 example : ¬ Derives .hoApply kb [] .falsity naf := consistent
 example : ¬ Derives .hoApply inductionKb [] .falsity := model.positive_consistent inductionKb_models

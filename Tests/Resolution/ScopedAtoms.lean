@@ -114,7 +114,7 @@ private theorem qRefuted : CertifiedRefutation.Refutes model program.toKb [] (q 
 
 example : Derives "ho_apply" program.toKb [] (.defaultNeg (q (.lit 0)))
     (CertifiedRefutation.failureEvidence model program.toKb) :=
-  qRefuted.toDerives (by simp [q, Term.freeVars])
+  qRefuted.toDerives
 
 -- Adapt an old atom failure only after independently certifying its bodies.
 private theorem pFailure : Fails program emptyContext (p (.lit 0)) :=
@@ -178,7 +178,7 @@ private theorem localRefuted : CertifiedRefutation.Refutes model emptyProgram.to
 
 example : Derives "ho_apply" emptyProgram.toKb localRuleContext.assumptions (.defaultNeg (q (.lit 0)))
     (CertifiedRefutation.failureEvidence model emptyProgram.toKb) :=
-  localRefuted.toDerives (by simp [q, Term.freeVars])
+  localRefuted.toDerives
 
 example : ¬ (∀ body, Instance emptyProgram localRuleContext (q (.lit 0)) body → body ∈ []) := by
   intro incomplete

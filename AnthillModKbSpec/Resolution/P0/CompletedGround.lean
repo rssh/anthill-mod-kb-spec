@@ -86,7 +86,7 @@ it is not assumed. Evidence remains tied to the exact KB and context. -/
 theorem Model.ground_failure_adequate (completed : model.GroundCompleted program context)
     (negation : model.ComplementNAF) :
     model.FailureAdequate program.toKb (GroundSearch.failureEvidence program context) := by
-  intro actualContext goal closed evidence environment validContext
+  intro actualContext goal evidence environment validContext
   rcases evidence with ⟨sameSymbol, sameKb, sameContext, refuted⟩
   simp only [Model.Satisfies, Model.eval]
   exact (negation _).mpr ((model.ground_certificates_sound completed negation).2 goal refuted environment)

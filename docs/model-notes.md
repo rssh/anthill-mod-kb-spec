@@ -27,9 +27,9 @@ universal closure of their free variables; local assumptions retain fixed parame
 
 `Derivation.Derives` is the declarative judgment, indexed by the KB, local
 assumptions, goal, and NAF evidence provider. It has the usual logical rules,
-capture-avoiding clause instances, concrete-symbol application rules, and
-closed-operand NAF introduction. `Substitution` and `Opening` formalize scope
-and freshness. A derivation is a proof tree, independent of search strategy.
+capture-avoiding clause instances, concrete-symbol application rules, and NAF
+introduction from evidence that is uniform over the operand's free names.
+`Substitution` and `Opening` formalize scope and freshness. A derivation is a proof tree, independent of search strategy.
 
 `HornClause.equation left right body` is a definite clause with an equality head.
 `Derives.equation` instantiates both sides and the condition body together.

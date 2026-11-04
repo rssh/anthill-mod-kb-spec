@@ -598,6 +598,13 @@ def diagnosed (clauses : List Clause) (context : List T) (goal : T) : List (Site
 #guard diagnosed [rule (.imp (k .p) .falsity) [k .r]] [] (k .q) = [(.head 0, .commands [.headDenial, .headUse])]
 #guard diagnosed [.goal [k .r]] [] (k .q) = [(.head 0, .commands [.goalClause, .falsityElim])]
 #guard diagnosed [] [] (.imp (k .p) (k .p)) = [(.goal, .introduction)]
+-- A name inside a NAF operand has S10's refutation route: at a rigid query
+-- parameter, and at a clause variable of a body goal.
+#guard diagnosed [] [] (.defaultNeg (atom .p [x 5])) = [(.goal, .refutation)]
+-- A formula variable as the operand is not refuted.
+#guard diagnosed [] [] (.defaultNeg (x 5)) = [(.goal, .none)]
+#guard diagnosed [rule (atom .q [X]) [atom .r [X], .defaultNeg (atom .p [X])]] [] (k .s) =
+  [(.head 0, .none), (.body 0 0, .none), (.body 0 1, .refutation)]
 -- A P0 input has nothing to diagnose.
 #guard diagnosed [fact (k .q)] [] (k .q) = []
 

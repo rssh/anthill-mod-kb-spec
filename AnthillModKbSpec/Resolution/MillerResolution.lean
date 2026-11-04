@@ -39,7 +39,7 @@ inductive Proves (model : Model Literal Symbol Value hoApplySymbol)
       Proves model kb parameters context (.hoApply hoApplySymbol (.app predicate []) args)
   | hoApplyElim (proof : Proves model kb parameters context (.hoApply hoApplySymbol (.app predicate []) args)) :
       Proves model kb parameters context (.app predicate args)
-  | defaultNeg (closed : goal.freeVars = []) (refuted : CertifiedRefutation.Refutes model kb context goal) :
+  | defaultNeg (refuted : CertifiedRefutation.Refutes model kb context goal) :
       Proves model kb parameters context (.defaultNeg goal)
   | declarative (proof : Derives hoApplySymbol kb context goal (CertifiedRefutation.failureEvidence model kb)) :
       Proves model kb parameters context goal
@@ -61,7 +61,7 @@ theorem Proves.toDerives (proof : Proves model kb parameters context goal) :
   | certifiedClause member expanded proof ih => exact expanded.toDerives member ih
   | hoApplyIntro proof ih => exact .hoApplyIntro ih
   | hoApplyElim proof ih => exact .hoApplyElim ih
-  | defaultNeg closed refuted => exact refuted.toDerives closed
+  | defaultNeg refuted => exact refuted.toDerives
   | declarative proof => exact proof
 
 theorem Proves.sound (validKb : model.Models kb) (negation : model.ComplementNAF)

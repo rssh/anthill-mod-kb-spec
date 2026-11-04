@@ -37,7 +37,7 @@ theorem Derives.mono {kb kb' : LogicalKb Variable Literal Symbol}
   | clause member headInstance bodyInstance _ ih =>
       exact .clause (clauses _ member) headInstance bodyInstance (ih failures)
   | goalClause member bodyInstance _ ih => exact .goalClause (clauses _ member) bodyInstance (ih failures)
-  | defaultNegIntro ground refuted => exact .defaultNegIntro ground (failures _ _ refuted)
+  | defaultNegIntro refuted => exact .defaultNegIntro (failures _ _ refuted)
   | hoApplyIntro _ ih => exact .hoApplyIntro (ih failures)
   | hoApplyElim _ ih => exact .hoApplyElim (ih failures)
   | equalRefl => exact .equalRefl

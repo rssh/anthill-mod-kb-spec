@@ -22,7 +22,7 @@ inductive RuleId where
   | impIntro | impElim | falsityElim | forallIntro | forallElim | existsIntro | existsElim
   | clause | goalClause | defaultNegIntro | hoApplyIntro | hoApplyElim
   | equalRefl | equalSymm | equalTrans | equalSubst | extension
-  | conjUse | disjCases | existsOpen | forallUse | impUse | headUse | headProject | headDenial
+  | conjUse | disjCases | existsOpen | forallUse | impUse | headUse | headProject | headDenial | onlyIfUse | equalJoin
   deriving DecidableEq, Repr
 
 /-- Closed-world evidence retained in a proof node: its kind and the certificate
@@ -66,12 +66,20 @@ inductive Derived (Variable Literal Symbol : Type) where
   /-- A clause with head `A → false`, as the denial `false :- body, A`: its body,
   then the instance of `A`, for a falsity goal. -/
   | headDenial (clause : HornClause Variable Literal Symbol) (fresh : List (Variable × Variable))
+  /-- An assumed atom `p(s̄)` with the only-if clause `cases :- p(x̄)` of `p`'s
+  completion (S10): the goal under the cases of `p(s̄)`. The arguments are the
+  atom's as read. -/
+  | onlyIfUse (clause : HornClause Variable Literal Symbol) (args : List (Term Variable Literal Symbol))
+  /-- Two assumed equations with a shared side, oriented as `s = a` and
+  `s = b` (S10): the goal under `a = b`, by symmetry and transitivity. -/
+  | equalJoin (first second : Formula Variable Literal Symbol) (flipFirst flipSecond : Bool)
   deriving Repr
 
 def Derived.id : Derived Variable Literal Symbol → RuleId
   | .conjUse _ => .conjUse | .disjCases _ => .disjCases | .existsOpen _ _ => .existsOpen
   | .forallUse _ _ => .forallUse | .impUse _ _ => .impUse | .headUse _ _ => .headUse
-  | .headProject _ _ _ => .headProject | .headDenial _ _ => .headDenial
+  | .headProject _ _ _ => .headProject | .headDenial _ _ => .headDenial | .onlyIfUse _ _ => .onlyIfUse
+  | .equalJoin _ _ _ _ => .equalJoin
 
 /-- A rule application with the parameters its conclusion and premises do not
 determine: eigenvariables, witnesses, the clause and its finite instantiation,

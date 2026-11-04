@@ -283,7 +283,7 @@ theorem succeeds_toDerives (proof : Succeeds program context goal) :
   · exact .truth
   · intro a b left right ihLeft ihRight; exact .conjIntro ihLeft ihRight
   · intro goal refuted ih
-    exact .defaultNegIntro (fails_isGoal refuted).closed ⟨rfl, rfl, rfl, refuted⟩
+    exact .defaultNegIntro ⟨rfl, rfl, rfl, refuted⟩
   · intros; trivial
   · trivial
   · intros; trivial

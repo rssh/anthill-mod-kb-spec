@@ -88,7 +88,8 @@ inductive GapReason where
   /-- A candidate or a delay broke the machine's name or binding contract. -/
   | contract
   /-- A delayed goal or an unresolved constraint was still pending when the
-  branch would have succeeded. -/
+  branch would have succeeded, or a goal running while the branch closed
+  needed a binding. -/
   | floundered
   deriving DecidableEq, Repr
 
@@ -681,7 +682,9 @@ def Continuation.schedule : List (Suspension Variable Literal Symbol) →
       schedule rest (.solve suspension.obligation, .woken suspension.id suspension.obligation focus :: frames)
 
 /-- Try one candidate for an obligation, keeping `rest` as alternatives. The
-suspensions its commit wakes run first, then the candidate's own continuation. -/
+suspensions its commit wakes run first, then the candidate's own continuation.
+A rejected commit is a miss; a binding refused while the branch closes
+(`Commit.refused`) records the obligation as floundered, never as a miss. -/
 def State.enter (state : State Variable Literal Symbol Certificate Snapshot) (obligation : Obligation Variable Literal Symbol)
     (expansion : Expansion Variable Literal Symbol Certificate) (rest : List (Expansion Variable Literal Symbol Certificate)) :
     State Variable Literal Symbol Certificate Snapshot :=
@@ -689,6 +692,7 @@ def State.enter (state : State Variable Literal Symbol Certificate Snapshot) (ob
   match state.store.commit obligation expansion.flexibles expansion.rigids expansion.premises expansion.bindings with
   | .rejected => { saved with focus := .failed }
   | .violated => { saved with focus := .failed, gaps := ⟨.contract, obligation⟩ :: state.gaps }
+  | .refused => { saved with focus := .failed, gaps := ⟨.floundered, obligation⟩ :: state.gaps }
   | .committed store woken =>
       let next := Continuation.schedule woken (expansion.start obligation state.frames)
       { saved with store := store, focus := next.1, frames := next.2 }
@@ -700,7 +704,9 @@ the innermost continuation: a frame records it, a woken entry records it as a
 deferred proof, and a NAF entry fails its obligation and cuts back past its
 barrier, recording a gap if the operand's search delayed a goal. With no
 continuation left the branch succeeds, filling every reference with its
-deferred proof, or flounders when goals are still delayed. A failed path
+deferred proof. With goals still delayed it closes: they run once more, oldest
+first, and no name is bound from then on (`Store.close`); still delayed or
+unresolved after closing, the branch flounders. A failed path
 resumes the newest choice point from its saved store, continuations, and
 deferred proofs; a barrier reached after a gap or a delay since it was set is
 abandoned as a gap instead (`ChoicePoint.open`). -/
@@ -745,10 +751,14 @@ def step (strategy : Strategy Variable Literal Symbol Certificate) (state : Stat
                     state.deferred, state.store⟩
                 { state with focus := .failed })
           | pending :: more =>
-              .running
-                { state with
-                  focus := .failed
-                  gaps := (pending :: more).map (fun obligation => ⟨.floundered, obligation⟩) ++ state.gaps }
+              if state.store.closing then
+                .running
+                  { state with
+                    focus := .failed
+                    gaps := (pending :: more).map (fun obligation => ⟨.floundered, obligation⟩) ++ state.gaps }
+              else
+                let next := Continuation.schedule state.store.wakeups (.proved tree, [])
+                .running { state with store := state.store.close, focus := next.1, frames := next.2 }
       | .frame frame :: frames =>
           match frame.receive tree with
           | .complete node => .running { state with frames := frames, focus := .proved node }
@@ -1091,6 +1101,34 @@ theorem Branch.Valid.commit {obligation : Obligation Variable Literal Symbol}
     rw [scheduled] at member
     simpa [Focus.refs] using member
 
+/-- Closing a proved branch runs its pending suspensions once more, each under
+its own scope, before the proved focus. -/
+theorem Branch.Valid.close {tree : ProofTree Variable Literal Symbol Certificate}
+    (valid : Branch.Valid root store (.proved tree) [] deferred bound) :
+    Branch.Valid root store.close (Continuation.schedule store.wakeups (.proved tree, [])).1
+      (Continuation.schedule store.wakeups (.proved tree, [])).2 deferred bound := by
+  have refines := Store.Refines.close store
+  have suspended : ∀ suspension ∈ store.wakeups, suspension.obligation.Declared store.close :=
+    fun suspension member => (valid.held.1 suspension member).refines refines
+  have accounted := valid.accounted
+  obtain ⟨scheduledValid, scheduledLinked, scheduledDeclared, scheduledContinuations, scheduledOrdered⟩ :=
+    Continuation.schedule_valid store.wakeups (.proved tree, [])
+      ⟨valid.valid, valid.linked, valid.declared.refines refines, fun _ member => (by cases member), accounted.ordered⟩
+      suspended
+  refine ⟨valid.storeScoped.close, fun _ member => (by cases member),
+    ⟨fun _ member => (by cases member), fun constraint member => (valid.held.2 constraint member).refines refines⟩,
+    scheduledLinked, scheduledValid, scheduledDeclared, scheduledContinuations,
+    fun record member => (valid.records record member).refines refines,
+    accounted.of_perm ?_ (fun ref member => ?_) scheduledOrdered accounted.acyclic⟩
+  · unfold branchHoles
+    rw [Continuation.schedule_holes]
+    simpa [Store.close] using (List.reverse_perm (store.wakeups.map Suspension.hole)).append_right
+      (deferred.map DeferredProof.hole)
+  · have scheduled := Continuation.schedule_refs store.wakeups (.proved tree) []
+    simp only [branchRefs] at member ⊢
+    rw [scheduled] at member
+    simpa [Focus.refs] using member
+
 theorem State.init_valid (snapshot : Snapshot) (flexibles : List Variable)
     (context : ProofContext Variable Literal Symbol) (goal : Formula Variable Literal Symbol) :
     (State.init (Certificate := Certificate) snapshot flexibles context goal).Valid := by
@@ -1149,6 +1187,7 @@ theorem State.enter_valid {state : State Variable Literal Symbol Certificate Sna
   have saved := State.save_valid (rest := rest) branch choices
   unfold State.enter
   split
+  · exact ⟨branch.fail, saved⟩
   · exact ⟨branch.fail, saved⟩
   · exact ⟨branch.fail, saved⟩
   · rename_i store woken committed
@@ -1222,6 +1261,7 @@ theorem State.enter_gaps (state : State Variable Literal Symbol Certificate Snap
   split
   · exact ⟨[], rfl⟩
   · exact ⟨[_], rfl⟩
+  · exact ⟨[_], rfl⟩
   · exact ⟨[], rfl⟩
 
 /-- A committed candidate's woken suspensions run first, oldest first, each
@@ -1282,6 +1322,7 @@ theorem State.enter_store (state : State Variable Literal Symbol Certificate Sna
   split
   · exact ⟨[], rfl, by simp⟩
   · exact ⟨[], rfl, by simp⟩
+  · exact ⟨[], rfl, by simp⟩
   · rename_i store woken committed
     exact Store.commit_extends committed
 
@@ -1320,9 +1361,14 @@ theorem step_valid (strategy : Strategy Variable Literal Symbol Certificate)
   · rename_i tree focusEq
     rw [focusEq] at branch
     split at stepped
-    · split at stepped
+    · rename_i framesEq
+      split at stepped
       · cases stepped
-      · cases stepped; exact ⟨⟨branch.fail, valid.choices⟩, rfl⟩
+      · split at stepped
+        · cases stepped; exact ⟨⟨branch.fail, valid.choices⟩, rfl⟩
+        · cases stepped
+          rw [framesEq] at branch
+          exact ⟨⟨branch.close, valid.choices⟩, rfl⟩
     · rename_i frame frames framesEq
       rw [framesEq] at branch
       split at stepped
@@ -1426,7 +1472,7 @@ theorem step_success (strategy : Strategy Variable Literal Symbol Certificate)
           ProofTree.fillAll_complete distinct branch.records inner branch.valid.2 branch.declared resolved
         exact ⟨⟨rfl, sameObligation.trans branch.valid.1, filledCoherent, branch.storeScoped, filledDeclared, empty,
           ⟨noWakeups, noConstraints⟩, branch.records, distinct, inner⟩, resumed, rfl⟩
-      · cases stepped
+      · split at stepped <;> cases stepped
     · split at stepped <;> cases stepped
     · cases stepped
     · cases stepped
@@ -1460,21 +1506,24 @@ theorem run_success (strategy : Strategy Variable Literal Symbol Certificate) :
 
 /-- The next AND sibling starts from the store the previous sibling left, and a
 suspension outlives the frame that created it: returning a subproof, recording
-a woken goal's proof, or floundering never changes the store. -/
+a woken goal's proof, or floundering never changes the store, and closing only
+closes it. -/
 theorem step_proved_store (strategy : Strategy Variable Literal Symbol Certificate)
     {state next : State Variable Literal Symbol Certificate Snapshot} {tree : ProofTree Variable Literal Symbol Certificate}
     (focused : state.focus = .proved tree) (stepped : step strategy state = .running next) :
-    next.store = state.store := by
+    next.store = state.store ∨ next.store = state.store.close := by
   unfold step at stepped
   rw [focused] at stepped
   simp only at stepped
   split at stepped
   · split at stepped
     · cases stepped
-    · cases stepped; rfl
-  · split at stepped <;> (cases stepped; rfl)
-  · cases stepped; rfl
-  · cases stepped; rfl
+    · split at stepped
+      · cases stepped; exact .inl rfl
+      · cases stepped; exact .inr rfl
+  · split at stepped <;> (cases stepped; exact .inl rfl)
+  · cases stepped; exact .inl rfl
+  · cases stepped; exact .inl rfl
 
 /-- A subproof returning to the innermost frame is passed to it by `receive`; while
 premises remain, the next premise becomes the focus. -/
@@ -1535,16 +1584,33 @@ theorem step_woken (strategy : Strategy Variable Literal Symbol Certificate)
   simp [step, focused, framesEq]
 
 /-- A branch that finishes with goals still delayed or constraints unresolved
-flounders: one gap per residual item, never success, and the path fails. -/
+closes: the pending suspensions run once more, oldest first, before the proved
+focus, and no name is bound from then on. -/
+theorem step_close (strategy : Strategy Variable Literal Symbol Certificate)
+    {state : State Variable Literal Symbol Certificate Snapshot} {tree : ProofTree Variable Literal Symbol Certificate}
+    (focused : state.focus = .proved tree) (framesEq : state.frames = []) (residual : state.store.residual ≠ [])
+    (opening : state.store.closing = false) :
+    step strategy state = .running
+      { state with
+        store := state.store.close
+        focus := (Continuation.schedule state.store.wakeups (.proved tree, [])).1
+        frames := (Continuation.schedule state.store.wakeups (.proved tree, [])).2 } := by
+  obtain ⟨pending, more, residualEq⟩ := List.exists_cons_of_ne_nil residual
+  simp [step, focused, framesEq, residualEq, opening]
+
+/-- A closing branch that finishes with goals still delayed or constraints
+unresolved flounders: one gap per residual item, never success, and the path
+fails. -/
 theorem step_flounder (strategy : Strategy Variable Literal Symbol Certificate)
     {state : State Variable Literal Symbol Certificate Snapshot} {tree : ProofTree Variable Literal Symbol Certificate}
-    (focused : state.focus = .proved tree) (framesEq : state.frames = []) (residual : state.store.residual ≠ []) :
+    (focused : state.focus = .proved tree) (framesEq : state.frames = []) (residual : state.store.residual ≠ [])
+    (closing : state.store.closing = true) :
     step strategy state = .running
       { state with
         focus := .failed
         gaps := state.store.residual.map (fun obligation => ⟨.floundered, obligation⟩) ++ state.gaps } := by
   obtain ⟨pending, more, residualEq⟩ := List.exists_cons_of_ne_nil residual
-  simp [step, focused, framesEq, residualEq]
+  simp [step, focused, framesEq, residualEq, closing]
 
 /-- A failed path resumes the newest choice point from its saved store,
 continuations, and deferred proofs: bindings, suspensions, and deferred proofs
@@ -1666,7 +1732,9 @@ theorem step_gaps (strategy : Strategy Variable Literal Symbol Certificate)
   · split at stepped
     · split at stepped
       · cases stepped
-      · cases stepped; exact ⟨_, rfl⟩
+      · split at stepped
+        · cases stepped; exact ⟨_, rfl⟩
+        · cases stepped; exact ⟨[], rfl⟩
     · split at stepped <;> (cases stepped; exact ⟨[], rfl⟩)
     · cases stepped; exact ⟨[], rfl⟩
     · cases stepped
@@ -1701,7 +1769,9 @@ theorem run_exhausted (strategy : Strategy Variable Literal Symbol Certificate) 
         · repeat' split at stepped
           all_goals cases stepped
         · split at stepped
-          · split at stepped <;> cases stepped
+          · split at stepped
+            · cases stepped
+            · split at stepped <;> cases stepped
           · split at stepped <;> cases stepped
           · cases stepped
           · cases stepped

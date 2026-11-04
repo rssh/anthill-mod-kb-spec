@@ -76,9 +76,14 @@ structure Store (Variable Literal Symbol : Type) where
   bindings : List (Variable × Term Variable Literal Symbol)
   wakeups : List (Suspension Variable Literal Symbol)
   constraints : List (Constraint Variable Literal Symbol)
+  /-- The closing phase of a branch (S10): its goals were proved with goals
+  still delayed, which run once more knowing that no binding will come. No
+  name is bound while closing, so what a closing goal reads it reads to the
+  end of the branch. -/
+  closing : Bool := false
 
 /-- The store with no names, bindings, suspensions, or constraints. -/
-def Store.empty : Store Variable Literal Symbol := ⟨[], [], [], []⟩
+def Store.empty : Store Variable Literal Symbol := ⟨[], [], [], [], false⟩
 
 def Scope.enter (scope : Scope Variable Literal Symbol) (discharge : Discharge Variable Literal Symbol) :
     Scope Variable Literal Symbol :=
@@ -108,11 +113,15 @@ name escape the scope of the name it is bound to. `violated` means the strategy
 broke the machine contract (a name that is not fresh, a premise naming an
 undeclared name or a rigid name outside its scope, an unresolved value, a rigid
 name outside the scope, an assigned rigid, a rebound answer); it also abandons
-the candidate but is recorded as a gap, never as failure. -/
+the candidate but is recorded as a gap, never as failure. `refused` is a
+binding that passes every check but is asked for while the branch closes
+(`Store.closing`), when no name is bound: the candidate is abandoned and the
+obligation recorded as floundered, never as a miss. -/
 inductive Commit (Variable Literal Symbol : Type) where
   | committed (store : Store Variable Literal Symbol) (woken : List (Suspension Variable Literal Symbol))
   | rejected
   | violated
+  | refused
 
 /-- Result of binding answers inside a commit; `rejected` and `violated` as for
 `Commit`. Binding wakes nothing by itself: the commit wakes after all its
@@ -121,6 +130,7 @@ inductive Bound (Variable Literal Symbol : Type) where
   | bound (store : Store Variable Literal Symbol)
   | rejected
   | violated
+  | refused
 
 variable [DecidableEq Variable]
 
@@ -276,7 +286,8 @@ def Store.bind (store : Store Variable Literal Symbol) (scope : Scope Variable L
         let free := value.freeVars
         if free.all (store.usable scope) then
           if name ∉ free ∧ free.all (store.allowed dependencies) then
-            .bound { (store.narrow free dependencies) with bindings := (name, value) :: store.bindings }
+            if store.closing then .refused
+            else .bound { (store.narrow free dependencies) with bindings := (name, value) :: store.bindings }
           else .rejected
         else .violated
   | _, _ => .violated
@@ -289,6 +300,7 @@ def Store.bindAll (store : Store Variable Literal Symbol) (scope : Scope Variabl
       | .bound next => next.bindAll scope rest
       | .rejected => .rejected
       | .violated => .violated
+      | .refused => .refused
 
 /-- The store a candidate's bindings are committed against: its flexible names
 declared, depending on the obligation's rigid names, then its premises' rigid
@@ -387,6 +399,7 @@ def Store.commit (store : Store Variable Literal Symbol) (obligation : Obligatio
     | .bound next => .committed next.wake next.woken
     | .rejected => .rejected
     | .violated => .violated
+    | .refused => .refused
   else .violated
 
 /-- Resolution by the binding chain, oldest binding applied first. -/
@@ -589,9 +602,52 @@ theorem Store.bind_committed {store next : Store Variable Literal Symbol} {scope
       · rename_i usable
         split at committed
         · rename_i checks
-          cases committed
-          exact .inr ⟨rfl, checks.1, fun other member =>
-            ⟨List.all_eq_true.mp usable other member, List.all_eq_true.mp checks.2 other member⟩⟩
+          split at committed
+          · cases committed
+          · cases committed
+            exact .inr ⟨rfl, checks.1, fun other member =>
+              ⟨List.all_eq_true.mp usable other member, List.all_eq_true.mp checks.2 other member⟩⟩
+        · cases committed
+      · cases committed
+  · cases committed
+
+/-- A binding is refused only while closing. -/
+theorem Store.bind_refused {store : Store Variable Literal Symbol} {scope : Scope Variable Literal Symbol}
+    {name : Variable} {value : Term Variable Literal Symbol}
+    (refused : store.bind scope name value = .refused) : store.closing = true := by
+  unfold Store.bind at refused
+  split at refused
+  · split at refused
+    · cases refused
+    · dsimp only at refused
+      split at refused
+      · split at refused
+        · split at refused
+          · assumption
+          · cases refused
+        · cases refused
+      · cases refused
+  · cases refused
+
+/-- Binding keeps the closing flag. -/
+theorem Store.bind_keeps_closing {store next : Store Variable Literal Symbol} {scope : Scope Variable Literal Symbol}
+    {name : Variable} {value : Term Variable Literal Symbol}
+    (committed : store.bind scope name value = .bound next) : next.closing = store.closing := by
+  obtain ⟨_, _, _, outcome⟩ := Store.bind_committed committed
+  rcases outcome with ⟨_, rfl⟩ | ⟨rfl, _, _⟩ <;> rfl
+
+/-- No name is bound while closing: a binding committed then is trivial. -/
+theorem Store.bind_closing {store next : Store Variable Literal Symbol} {scope : Scope Variable Literal Symbol}
+    {name : Variable} {value : Term Variable Literal Symbol}
+    (committed : store.bind scope name value = .bound next) (closing : store.closing = true) : next = store := by
+  unfold Store.bind at committed
+  split at committed
+  · split at committed
+    · cases committed; rfl
+    · dsimp only at committed
+      split at committed
+      · split at committed
+        · cases committed
         · cases committed
       · cases committed
   · cases committed
@@ -656,6 +712,7 @@ theorem Store.bindAll_extends {store next : Store Variable Literal Symbol}
           · exact List.mem_cons_self
       · cases committed
       · cases committed
+      · cases committed
 
 /-- A committed candidate passed every check of the commit, its bindings were
 committed against the prepared store, and the commit woke the suspensions
@@ -675,6 +732,7 @@ theorem Store.commit_checks {store next : Store Variable Literal Symbol}
     · rename_i bound boundEq
       cases committed
       exact ⟨checks, bound, boundEq, rfl, rfl⟩
+    · cases committed
     · cases committed
     · cases committed
   · cases committed
@@ -882,6 +940,7 @@ theorem Store.bindAll_scoped {store next : Store Variable Literal Symbol} (valid
         exact ih (Store.bind_scoped valid bound) committed
       · cases committed
       · cases committed
+      · cases committed
 
 /-- The store a candidate is matched and committed against is scoped when the
 candidate passes the commit's name checks. -/
@@ -940,6 +999,7 @@ theorem Store.bindAll_flexible {store next : Store Variable Literal Symbol}
         exact ⟨narrowed, narrowedEq, fun rigid member => middleContained rigid (contained rigid member)⟩
       · cases committed
       · cases committed
+      · cases committed
 
 /-- A flexible name after a binding was flexible before it, with at least its
 dependencies: binding only narrows. -/
@@ -972,6 +1032,7 @@ theorem Store.bindAll_flexible_of {store next : Store Variable Literal Symbol}
         obtain ⟨middleOwn, middleEq, middleContained⟩ := ih committed
         obtain ⟨own, ownEq, contained⟩ := Store.bind_flexible_of bound middleEq
         exact ⟨own, ownEq, fun rigid member => contained rigid (middleContained rigid member)⟩
+      · cases committed
       · cases committed
       · cases committed
 
@@ -1070,6 +1131,17 @@ theorem Store.Scoped.suspend {store : Store Variable Literal Symbol} (valid : st
   · obtain ⟨other, member, rfl⟩ := List.mem_map.mp inside
     exact newer other member
 
+/-- Enter the closing phase: the pending suspensions are taken out to run once
+more, and no name is bound from now on. -/
+def Store.close (store : Store Variable Literal Symbol) : Store Variable Literal Symbol :=
+  { store with wakeups := [], closing := true }
+
+/-- Closing keeps the store scoped: its names and bindings stay, and no
+suspension is pending. -/
+theorem Store.Scoped.close {store : Store Variable Literal Symbol} (valid : store.Scoped) : store.close.Scoped :=
+  ⟨valid.dependencies, valid.answers, valid.triangular, fun _ member => (by cases member), List.Pairwise.nil,
+    valid.constraints⟩
+
 /-- What a branch still owes when it would finish: every pending suspension's
 and every unresolved constraint's obligation. Success requires none;
 restrictions (dependency sets) are not counted. -/
@@ -1109,6 +1181,7 @@ theorem Store.bindAll_attached {store next : Store Variable Literal Symbol} {sco
         obtain ⟨wakeups, constraints⟩ := ih committed
         obtain ⟨wakeupsBefore, constraintsBefore⟩ := Store.bind_attached bound
         exact ⟨wakeups.trans wakeupsBefore, constraints.trans constraintsBefore⟩
+      · cases committed
       · cases committed
       · cases committed
 

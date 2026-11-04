@@ -240,5 +240,6 @@ guarantees (`step_valid`, `Store.commit_no_escape_resolved`; see
   which compares binders only when identical. Comparing alpha-variants is
   still a gap.
 - **Capabilities owned by other tickets.** Scoped and evidence-first NAF are
-  S10's: an assumed `naf A` is used only by identity. `ho_apply` conversion is
+  S10's ([machine-negation](machine-negation.md)): here an assumed `naf A` is
+  used only by identity. `ho_apply` conversion is
   S11's, and equality and dictionary laws are S14's.

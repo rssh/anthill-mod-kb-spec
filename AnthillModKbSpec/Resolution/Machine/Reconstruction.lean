@@ -361,6 +361,7 @@ theorem State.enter_sound {state : State Variable Literal Symbol Certificate Sna
   split
   · exact ⟨branch.fail, saved⟩
   · exact ⟨branch.fail, saved⟩
+  · exact ⟨branch.fail, saved⟩
   · rename_i store woken committed
     have refines := Store.commit_refines committed
     have moved := branch.refines refines
@@ -435,7 +436,13 @@ theorem step_sound (strategy : Strategy Variable Literal Symbol Certificate)
     split at stepped
     · split at stepped
       · cases stepped
-      · cases stepped; exact ⟨branch.fail, sound.choices⟩
+      · split at stepped
+        · cases stepped; exact ⟨branch.fail, sound.choices⟩
+        · cases stepped
+          have moved := branch.refines (Store.Refines.close state.store)
+          obtain ⟨scheduled, scheduledFrames⟩ := Continuation.schedule_sound state.store.wakeups (frames := [])
+            moved.focus fun _ member => (by cases member)
+          exact ⟨⟨scheduled, scheduledFrames, moved.records⟩, sound.choices⟩
     · rename_i frame frames framesEq
       rw [framesEq] at branch
       obtain ⟨parentSound, doneSound⟩ := branch.continuations (.frame frame) List.mem_cons_self

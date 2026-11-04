@@ -1,5 +1,6 @@
 import AnthillModKbSpec.Resolution.P1.Tree
 import AnthillModKbSpec.Resolution.Machine.LeftRules
+import AnthillModKbSpec.Resolution.Machine.Refutation
 
 /-! # S09 commands as checked logical nodes
 
@@ -108,11 +109,36 @@ def headProject (clause : HornClause Variable Literal Symbol) (instantiation : L
     Option (Proof Variable Literal Symbol) :=
   project path head (clauseNode clause instantiation head bodyProof)
 
+/-- An assumed atom with the only-if clause of its predicate (S10): the clause
+node for the atom's cases, its body the atom itself, then the goal under the
+cases. -/
+def onlyIfUse (clause : HornClause Variable Literal Symbol) (instantiation : List (Variable × Term Variable Literal Symbol))
+    (atom cases goal : Formula Variable Literal Symbol) (continuation : Proof Variable Literal Symbol) :
+    Proof Variable Literal Symbol :=
+  headUse clause instantiation cases goal
+    (.node .conjIntro (.conj atom .truth) [hypothesis atom, .node .truth .truth []]) continuation
+
 /-- A head `A → false`, as the denial `false :- body, A`. -/
 def headDenial (clause : HornClause Variable Literal Symbol) (instantiation : List (Variable × Term Variable Literal Symbol))
     (premise : Formula Variable Literal Symbol) (bodyProof argument : Proof Variable Literal Symbol) :
     Proof Variable Literal Symbol :=
   .node .impElim .falsity [clauseNode clause instantiation (.imp premise .falsity) bodyProof, argument]
+
+/-- An assumed equation as oriented: the assumption, or its symmetric. -/
+def orientedEquation (flip : Bool) (equation : Formula Variable Literal Symbol) (shared side : Term Variable Literal Symbol) :
+    Proof Variable Literal Symbol :=
+  if flip then .node .equalSymm (.equal shared side) [hypothesis equation] else hypothesis equation
+
+/-- Two assumed equations oriented as `s = a` and `s = b`: the goal under
+`a = b`, by symmetry and transitivity. -/
+def equalJoin (first second : Formula Variable Literal Symbol) (flipFirst flipSecond : Bool)
+    (shared a b goal : Formula Variable Literal Symbol) (continuation : Proof Variable Literal Symbol) :
+    Proof Variable Literal Symbol :=
+  cut (.equal a b) goal
+    (.node .equalTrans (.equal a b)
+      [.node .equalSymm (.equal a shared) [orientedEquation flipFirst first shared a],
+        orientedEquation flipSecond second shared b])
+    continuation
 
 end Unfold
 
@@ -241,8 +267,8 @@ theorem clauseNode_proves {head : Term Variable Literal Symbol} {instantiated go
     {bodyGoals : List (Term Variable Literal Symbol)} {instantiation : List (Variable × Term Variable Literal Symbol)}
     {bodyProof : Proof Variable Literal Symbol}
     (member : HornClause.definite head bodyGoals ∈ checker.snapshot.clauses)
-    (headInstance : Substitutes (ofPairs instantiation) head goal)
-    (bodyInstance : Substitutes (ofPairs instantiation) (.conjunction bodyGoals) instantiated)
+    (headInstance : Substitutes (Substitution.ofPairs instantiation) head goal)
+    (bodyInstance : Substitutes (Substitution.ofPairs instantiation) (.conjunction bodyGoals) instantiated)
     (bodyProves : Proves checker refs context instantiated bodyProof) :
     Proves checker refs context goal (clauseNode (.definite head bodyGoals) instantiation goal bodyProof) :=
   node₁_proves (.clause member headInstance bodyInstance) bodyProves
@@ -251,8 +277,8 @@ theorem headUse_proves {head instantiatedHead instantiated goal : Formula Variab
     {bodyGoals : List (Term Variable Literal Symbol)} {instantiation : List (Variable × Term Variable Literal Symbol)}
     {bodyProof continuation : Proof Variable Literal Symbol}
     (member : HornClause.definite head bodyGoals ∈ checker.snapshot.clauses)
-    (headInstance : Substitutes (ofPairs instantiation) head instantiatedHead)
-    (bodyInstance : Substitutes (ofPairs instantiation) (.conjunction bodyGoals) instantiated)
+    (headInstance : Substitutes (Substitution.ofPairs instantiation) head instantiatedHead)
+    (bodyInstance : Substitutes (Substitution.ofPairs instantiation) (.conjunction bodyGoals) instantiated)
     (bodyProves : Proves checker refs context instantiated bodyProof)
     (continues : Proves checker refs (instantiatedHead :: context) goal continuation) :
     Proves checker refs context goal
@@ -276,25 +302,65 @@ theorem headProject_proves {head instantiatedHead instantiated component : Formu
     {bodyGoals : List (Term Variable Literal Symbol)} {instantiation : List (Variable × Term Variable Literal Symbol)}
     {path : List Bool} {bodyProof : Proof Variable Literal Symbol}
     (member : HornClause.definite head bodyGoals ∈ checker.snapshot.clauses)
-    (headInstance : Substitutes (ofPairs instantiation) head instantiatedHead)
-    (bodyInstance : Substitutes (ofPairs instantiation) (.conjunction bodyGoals) instantiated)
+    (headInstance : Substitutes (Substitution.ofPairs instantiation) head instantiatedHead)
+    (bodyInstance : Substitutes (Substitution.ofPairs instantiation) (.conjunction bodyGoals) instantiated)
     (bodyProves : Proves checker refs context instantiated bodyProof)
     (found : instantiatedHead.component? path = some component) :
     ∃ projected, headProject (.definite head bodyGoals) instantiation instantiatedHead path bodyProof = some projected ∧
       Proves checker refs context component projected :=
   project_proves found (clauseNode_proves member headInstance bodyInstance bodyProves)
 
+/-- The only-if use: the clause is in the snapshot, its instantiation gives the
+cases and the assumed atom as the body's one goal. -/
+theorem onlyIfUse_proves {cases instantiatedCases atom goal : Formula Variable Literal Symbol}
+    {bodyGoal : Term Variable Literal Symbol} {instantiation : List (Variable × Term Variable Literal Symbol)}
+    {continuation : Proof Variable Literal Symbol}
+    (member : HornClause.definite cases [bodyGoal] ∈ checker.snapshot.clauses)
+    (headInstance : Substitutes (Substitution.ofPairs instantiation) cases instantiatedCases)
+    (bodyInstance : Substitutes (Substitution.ofPairs instantiation) (.conjunction [bodyGoal]) (.conj atom .truth))
+    (assumed : atom ∈ context) (continues : Proves checker refs (instantiatedCases :: context) goal continuation) :
+    Proves checker refs context goal
+      (onlyIfUse (.definite cases [bodyGoal]) instantiation atom instantiatedCases goal continuation) :=
+  headUse_proves member headInstance bodyInstance
+    (node₂_proves .conjIntro (hypothesis_proves assumed) ⟨.node (contexts := []) .truth (by simp), rfl⟩) continues
+
 /-- A head `A → false` as a denial: falsity from the body and the instance of `A`. -/
 theorem headDenial_proves {head instantiated premise : Formula Variable Literal Symbol}
     {bodyGoals : List (Term Variable Literal Symbol)} {instantiation : List (Variable × Term Variable Literal Symbol)}
     {bodyProof argument : Proof Variable Literal Symbol}
     (member : HornClause.definite head bodyGoals ∈ checker.snapshot.clauses)
-    (headInstance : Substitutes (ofPairs instantiation) head (.imp premise .falsity))
-    (bodyInstance : Substitutes (ofPairs instantiation) (.conjunction bodyGoals) instantiated)
+    (headInstance : Substitutes (Substitution.ofPairs instantiation) head (.imp premise .falsity))
+    (bodyInstance : Substitutes (Substitution.ofPairs instantiation) (.conjunction bodyGoals) instantiated)
     (bodyProves : Proves checker refs context instantiated bodyProof)
     (argues : Proves checker refs context premise argument) :
     Proves checker refs context .falsity (headDenial (.definite head bodyGoals) instantiation premise bodyProof argument) :=
   node₂_proves .impElim (clauseNode_proves member headInstance bodyInstance bodyProves) argues
+
+theorem orientedEquation_proves {flip : Bool} {equation : Formula Variable Literal Symbol}
+    {shared side : Term Variable Literal Symbol} (oriented : Machine.orient flip equation = some (shared, side))
+    (member : equation ∈ context) :
+    Proves checker refs context (.equal shared side) (orientedEquation flip equation shared side) := by
+  cases equation with
+  | equal left right =>
+      cases flip
+      · simp only [Machine.orient, Bool.false_eq_true, ↓reduceIte, Option.some.injEq, Prod.mk.injEq] at oriented
+        obtain ⟨rfl, rfl⟩ := oriented
+        exact hypothesis_proves member
+      · simp only [Machine.orient, ↓reduceIte, Option.some.injEq, Prod.mk.injEq] at oriented
+        obtain ⟨rfl, rfl⟩ := oriented
+        exact node₁_proves .equalSymm (hypothesis_proves member)
+  | _ => simp [Machine.orient] at oriented
+
+/-- The join: both equations are assumed and, oriented, share a side. -/
+theorem equalJoin_proves {first second goal : Formula Variable Literal Symbol} {flipFirst flipSecond : Bool}
+    {shared a b : Term Variable Literal Symbol} {continuation : Proof Variable Literal Symbol}
+    (firstOriented : Machine.orient flipFirst first = some (shared, a))
+    (secondOriented : Machine.orient flipSecond second = some (shared, b))
+    (firstMember : first ∈ context) (secondMember : second ∈ context)
+    (continues : Proves checker refs (.equal a b :: context) goal continuation) :
+    Proves checker refs context goal (equalJoin first second flipFirst flipSecond shared a b goal continuation) :=
+  cut_proves (node₂_proves .equalTrans (node₁_proves .equalSymm (orientedEquation_proves firstOriented firstMember))
+    (orientedEquation_proves secondOriented secondMember)) continues
 
 end Unfold
 
@@ -396,9 +462,19 @@ def exportDerived (store : Store Variable Literal Symbol) (goal : Formula Variab
   | .headProject clause@(.definite head _) fresh path, [bodyProof] =>
       Unfold.headProject clause (readInstantiation store fresh)
         (store.resolve (head.instantiate (Substitution.rename fresh))) path bodyProof
+  | .onlyIfUse clause@(.definite cases [.app symbol heads]) args, [continuation] =>
+      (heads.mapM Term.variableName?).map fun names =>
+        Unfold.onlyIfUse clause ((names.zip args).map fun pair => (pair.1, store.resolve pair.2))
+          (store.resolve (.app symbol args)) (store.resolve (onlyIfCases cases names args)) goal continuation
   | .headDenial clause@(.definite (.imp premise .falsity) _) fresh, [bodyProof, argument] =>
       some (Unfold.headDenial clause (readInstantiation store fresh)
         (store.resolve (premise.instantiate (Substitution.rename fresh))) bodyProof argument)
+  | .equalJoin first second flipFirst flipSecond, [continuation] =>
+      match orient flipFirst (store.resolve first), orient flipSecond (store.resolve second) with
+      | some (shared, a), some (_, b) =>
+          some (Unfold.equalJoin (store.resolve first) (store.resolve second) flipFirst flipSecond shared a b goal
+            continuation)
+      | _, _ => none
   | _, _ => none
 
 end Export

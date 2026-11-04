@@ -235,15 +235,18 @@ def Model.ContextHolds (environment : Environment Variable Value)
   ∀ assumption ∈ context, model.Satisfies environment assumption
 
 /-- The semantic obligation on a failure provider. It is additional to merely
-being a Horn-clause model. No completeness of search is assumed by soundness. -/
+being a Horn-clause model. No completeness of search is assumed by soundness.
+Evidence must make the negation true in every environment satisfying the
+context: for an operand with free parameters, for every value of them the
+context allows, not for one reading of them. -/
 def Model.FailureAdequate (kb : LogicalKb Variable Literal Symbol)
     (naf : NafFailure Variable Literal Symbol) : Prop :=
-  ∀ context goal, goal.freeVars = [] → naf hoApplySymbol kb context goal →
+  ∀ context goal, naf hoApplySymbol kb context goal →
     ∀ environment, model.ContextHolds environment context → model.Satisfies environment (.defaultNeg goal)
 
 theorem Model.disabled_adequate (kb : LogicalKb Variable Literal Symbol) :
     model.FailureAdequate kb NafFailure.disabled := by
-  intro context goal closed evidence
+  intro context goal evidence
   exact False.elim evidence
 
 theorem Model.eval_single {binder : Variable} {witness before after : Term Variable Literal Symbol}
@@ -379,9 +382,9 @@ theorem Model.sound {kb : LogicalKb Variable Literal Symbol}
       simp only [HornClause.toFormula, Model.eval] at rule
       rw [model.eval_substitutes bodyInstance] at bodyTrue
       exact (model.holds_implication _ _).mp rule bodyTrue
-  | defaultNegIntro closed evidence =>
+  | defaultNegIntro evidence =>
       intro environment valid
-      exact adequate _ _ closed evidence environment valid
+      exact adequate _ _ evidence environment valid
   | hoApplyIntro proof ih =>
       intro environment valid
       simp only [Model.Satisfies, Term.hoApply, Model.eval, List.map_cons, List.map_nil] at *

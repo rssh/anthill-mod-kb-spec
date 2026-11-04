@@ -16,3 +16,4 @@ import AnthillModKbSpec.Foundation.OperationDictionaries
 import AnthillModKbSpec.Foundation.UniversalIntroduction
 import AnthillModKbSpec.Foundation.Negation
 import AnthillModKbSpec.Foundation.Established
+import AnthillModKbSpec.Foundation.Completion

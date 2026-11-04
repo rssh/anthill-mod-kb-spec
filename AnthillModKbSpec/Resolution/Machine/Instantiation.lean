@@ -279,27 +279,34 @@ structure Store.Refines (store later : Store Variable Literal Symbol) : Prop whe
   flexible : ∀ name dependencies, store.info? name = some (.flexible dependencies) →
     ∃ narrowed, later.info? name = some (.flexible narrowed) ∧ ∀ rigid ∈ narrowed, rigid ∈ dependencies
   bindings : ∃ added, later.bindings = added ++ store.bindings
+  /-- A closing store is final: it stays closing, and binds nothing more. -/
+  closed : store.closing = true → later.closing = true ∧ later.bindings = store.bindings
 
 /-- A store with the same names and bindings refines it, whatever suspensions
 and constraints either holds. -/
 theorem Store.Refines.of_same {store later : Store Variable Literal Symbol} (names : later.names = store.names)
-    (bindings : later.bindings = store.bindings) : store.Refines later := by
+    (bindings : later.bindings = store.bindings) (closing : store.closing = true → later.closing = true) :
+    store.Refines later := by
   have info : ∀ name, later.info? name = store.info? name := fun name => by simp only [Store.info?, names]
   exact ⟨fun name rigid => (info name).trans rigid,
     fun name dependencies flexible => ⟨dependencies, (info name).trans flexible, fun _ member => member⟩,
-    ⟨[], by rw [bindings]; rfl⟩⟩
+    ⟨[], by rw [bindings]; rfl⟩, fun closed => ⟨closing closed, bindings⟩⟩
 
-theorem Store.Refines.refl (store : Store Variable Literal Symbol) : store.Refines store := .of_same rfl rfl
+theorem Store.Refines.refl (store : Store Variable Literal Symbol) : store.Refines store := .of_same rfl rfl id
 
 theorem Store.Refines.trans {first second third : Store Variable Literal Symbol}
     (earlier : first.Refines second) (later : second.Refines third) : first.Refines third := by
-  refine ⟨fun name rigid => later.rigid name (earlier.rigid name rigid), fun name dependencies flexible => ?_, ?_⟩
+  refine ⟨fun name rigid => later.rigid name (earlier.rigid name rigid), fun name dependencies flexible => ?_, ?_, ?_⟩
   · obtain ⟨middle, middleEq, middleContained⟩ := earlier.flexible name dependencies flexible
     obtain ⟨narrowed, narrowedEq, contained⟩ := later.flexible name middle middleEq
     exact ⟨narrowed, narrowedEq, fun rigid member => middleContained rigid (contained rigid member)⟩
   · obtain ⟨added, addedEq⟩ := earlier.bindings
     obtain ⟨more, moreEq⟩ := later.bindings
     exact ⟨more ++ added, by rw [moreEq, addedEq, List.append_assoc]⟩
+  · intro closing
+    obtain ⟨middleClosing, middleBindings⟩ := earlier.closed closing
+    obtain ⟨lastClosing, lastBindings⟩ := later.closed middleClosing
+    exact ⟨lastClosing, lastBindings.trans middleBindings⟩
 
 /-- Equal readings stay equal in every refinement: a matched pair stays matched
 for the rest of the path, and so does a goal closed against an assumption. -/
@@ -312,7 +319,8 @@ theorem Store.Refines.resolve_eq [FreshNames Variable] {store later : Store Vari
 theorem Store.bind_refines {store next : Store Variable Literal Symbol} {scope : Scope Variable Literal Symbol}
     {name : Variable} {value : Term Variable Literal Symbol}
     (committed : store.bind scope name value = .bound next) : store.Refines next := by
-  refine ⟨fun other rigid => ?_, fun other dependencies flexible => Store.bind_flexible committed flexible, ?_⟩
+  refine ⟨fun other rigid => ?_, fun other dependencies flexible => Store.bind_flexible committed flexible, ?_,
+    fun closing => by rw [Store.bind_closing committed closing]; exact ⟨closing, rfl⟩⟩
   · obtain ⟨dependencies, _, _, outcome⟩ := Store.bind_committed committed
     rcases outcome with ⟨_, rfl⟩ | ⟨rfl, _, _⟩
     · exact rigid
@@ -336,20 +344,31 @@ theorem Store.bindAll_refines {store next : Store Variable Literal Symbol} {scop
         exact (Store.bind_refines bound).trans (ih committed)
       · cases committed
       · cases committed
+      · cases committed
 
 /-- Waking removes suspensions only: the store's names and bindings stay. -/
-theorem Store.Refines.wake (store : Store Variable Literal Symbol) : store.Refines store.wake := .of_same rfl rfl
+theorem Store.Refines.wake (store : Store Variable Literal Symbol) : store.Refines store.wake := .of_same rfl rfl id
 
 /-- Suspending a goal changes no name or binding. -/
 theorem Store.Refines.suspend (store : Store Variable Literal Symbol) (suspension : Suspension Variable Literal Symbol) :
-    store.Refines (store.suspend suspension) := .of_same rfl rfl
+    store.Refines (store.suspend suspension) := .of_same rfl rfl id
+
+/-- Closing changes no name or binding. -/
+theorem Store.Refines.close (store : Store Variable Literal Symbol) : store.Refines store.close :=
+  .of_same rfl rfl fun _ => rfl
+
+/-- A closing store reads every term as each of its refinements does. -/
+theorem Store.Refines.resolve_closing [FreshNames Variable] {store later : Store Variable Literal Symbol}
+    (refines : store.Refines later) (closing : store.closing = true) (term : Term Variable Literal Symbol) :
+    later.resolve term = store.resolve term := by
+  simp only [Store.resolve, (refines.closed closing).2]
 
 theorem Store.declare_refines (store : Store Variable Literal Symbol) (info : NameInfo Variable)
     {names : List Variable} (fresh : ∀ name ∈ names, store.info? name = none) :
     store.Refines (store.declare info names) := by
   have old : ∀ name, store.info? name ≠ none → (store.declare info names).info? name = store.info? name :=
     fun _ present => Store.info?_declare_of_ne_none fresh present
-  refine ⟨fun name rigid => ?_, fun name dependencies flexible => ?_, ⟨[], rfl⟩⟩
+  refine ⟨fun name rigid => ?_, fun name dependencies flexible => ?_, ⟨[], rfl⟩, fun closing => ⟨closing, rfl⟩⟩
   · rw [old name (by rw [rigid]; exact Option.some_ne_none _), rigid]
   · exact ⟨dependencies, by rw [old name (by rw [flexible]; exact Option.some_ne_none _), flexible],
       fun _ member => member⟩

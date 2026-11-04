@@ -140,14 +140,15 @@ def failureEvidence (model : Model Literal Symbol Value hoApplySymbol)
 theorem failureAdequate (model : Model Literal Symbol Value hoApplySymbol)
     (negation : model.ComplementNAF) (kb : LogicalKb Variable Literal Symbol) :
     model.FailureAdequate kb (failureEvidence model kb) := by
-  intro context goal closed evidence environment valid
+  intro context goal evidence environment valid
   exact evidence.2.2.naf negation environment valid
 
-/-- A closed operand with a certified refutation gives an actual declarative
-NAF proof using the adequate provider. The existing free-variable gate remains. -/
-theorem Refutes.toDerives (closed : goal.freeVars = []) (refuted : Refutes model kb context goal) :
+/-- An operand with a certified refutation gives an actual declarative NAF
+proof using the adequate provider, also an operand with free parameters: a
+refutation holds in every environment satisfying the context. -/
+theorem Refutes.toDerives (refuted : Refutes model kb context goal) :
     Derives hoApplySymbol kb context (.defaultNeg goal) (failureEvidence model kb) :=
-  .defaultNegIntro closed ⟨rfl, rfl, refuted⟩
+  .defaultNegIntro ⟨rfl, rfl, refuted⟩
 
 theorem sound (model : Model Literal Symbol Value hoApplySymbol)
     (validKb : model.Models kb) (negation : model.ComplementNAF)

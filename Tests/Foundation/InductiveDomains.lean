@@ -181,10 +181,8 @@ private abbrev K := LogicalKb String Nat String
 private def provider := InductiveDomains.failureEvidence sigma model membershipSymbol (∅ : K)
 example : model.FailureAdequate (∅ : K) provider := failureAdequate model realizes complement _
 
-example : Derives "ho_apply" (∅ : K) [] (.defaultNeg (falseUniversal.toTerm membershipSymbol)) provider := by
-  apply Derives.defaultNegIntro
-  · simp [Universal.toTerm, InductiveDomains.guard, falseUniversal, membershipSymbol, Term.freeVars]
-  · exact ⟨rfl, rfl, falseUniversal, rfl, fun environment _ => falseCounterexample environment⟩
+example : Derives "ho_apply" (∅ : K) [] (.defaultNeg (falseUniversal.toTerm membershipSymbol)) provider :=
+  .defaultNegIntro ⟨rfl, rfl, falseUniversal, rfl, fun environment _ => falseCounterexample environment⟩
 
 -- An empty domain cannot supply a counterexample, regardless of its property.
 example (property : V → Prop) : ¬ Refutes sigma [.empty] property := by
@@ -205,8 +203,7 @@ private theorem certifiedUniversalRefutation :
 
 example : Derives "ho_apply" (∅ : K) [] (.defaultNeg (falseUniversal.toTerm membershipSymbol))
     (CertifiedRefutation.failureEvidence model (∅ : K)) :=
-  certifiedUniversalRefutation.toDerives (by
-    simp [Universal.toTerm, InductiveDomains.guard, falseUniversal, membershipSymbol, Term.freeVars])
+  certifiedUniversalRefutation.toDerives
 
 -- Guarded quantifiers can occur inside a recursively refuted implication.
 example : CertifiedRefutation.Refutes model (∅ : K) []
