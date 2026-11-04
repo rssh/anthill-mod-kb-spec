@@ -20,6 +20,7 @@ procedure (`nodeCheck`), and the tree reconstructs `Derives` by `Valid.derives`.
 | a clause `H :- body` | the clause node for `H'`, then a cut on `H'` |
 | a conjunctive head, split | the clause node for `H'`, then `conjLeft`/`conjRight` down to the conjunct |
 | a head `A → false` | `impElim false [clause node for A' → false, A']` |
+| a node converted by `ho_apply` (S11) | the node for its conclusion, then `hoApplyElim` or `hoApplyIntro`, under implications after a cut (`convert`) |
 
 The implication command derives `B'` by `impElim`, discharges `B'` from the
 continuation by `impIntro`, and applies `impElim` to obtain the goal, all in
@@ -139,6 +140,22 @@ def equalJoin (first second : Formula Variable Literal Symbol) (flipFirst flipSe
       [.node .equalSymm (.equal a shared) [orientedEquation flipFirst first shared a],
         orientedEquation flipSecond second shared b])
     continuation
+
+/-- A proof of `conclusion` converted to a proof of `goal` when one is the
+other's indirect view (S11): `hoApplyElim` or `hoApplyIntro` at the call, by
+which side has the extra argument, and under an implication `A → C` a cut on
+it, with `A → G` by implication introduction and, under `A`, `C` by
+implication elimination, converted in turn. -/
+def convert : Formula Variable Literal Symbol → Formula Variable Literal Symbol → Proof Variable Literal Symbol →
+    Proof Variable Literal Symbol
+  | .imp premise conclusion, .imp _ goal, proof =>
+      cut (.imp premise conclusion) (.imp premise goal) proof
+        (.node .impIntro (.imp premise goal)
+          [convert conclusion goal (.node .impElim conclusion [hypothesis (.imp premise conclusion), hypothesis premise])])
+  | .app _ conclusionArgs, goal@(.app _ goalArgs), proof =>
+      if conclusionArgs.length = goalArgs.length + 1 then .node .hoApplyElim goal [proof]
+      else .node .hoApplyIntro goal [proof]
+  | _, _, proof => proof
 
 end Unfold
 
@@ -355,6 +372,49 @@ theorem equalJoin_proves {first second goal : Formula Variable Literal Symbol} {
     Proves checker refs context goal (equalJoin first second flipFirst flipSecond shared a b goal continuation) :=
   cut_proves (node₂_proves .equalTrans (node₁_proves .equalSymm (orientedEquation_proves firstOriented firstMember))
     (orientedEquation_proves secondOriented secondMember)) continues
+
+/-- Conversion by elimination: a valid tree of the indirect view converts to a
+valid tree of the goal. -/
+theorem convert_elim_proves {view goal : Formula Variable Literal Symbol}
+    (indirect : Indirect checker.snapshot.hoApplySymbol view goal) :
+    ∀ {context : ProofContext Variable Literal Symbol} {proof : Proof Variable Literal Symbol},
+      Proves checker refs context view proof → Proves checker refs context goal (convert view goal proof) := by
+  induction indirect with
+  | call =>
+      intro context proof proves
+      simp only [Term.hoApply, convert, List.length_cons, ↓reduceIte]
+      exact node₁_proves .hoApplyElim proves
+  | imp _ ih =>
+      intro context proof proves
+      exact cut_proves proves (node₁_proves .impIntro (ih (node₂_proves .impElim
+        (hypothesis_proves (List.mem_cons_of_mem _ List.mem_cons_self)) (hypothesis_proves List.mem_cons_self))))
+
+/-- Conversion by introduction: a valid tree of the goal converts to a valid
+tree of its indirect view. -/
+theorem convert_intro_proves {view goal : Formula Variable Literal Symbol}
+    (indirect : Indirect checker.snapshot.hoApplySymbol view goal) :
+    ∀ {context : ProofContext Variable Literal Symbol} {proof : Proof Variable Literal Symbol},
+      Proves checker refs context goal proof → Proves checker refs context view (convert goal view proof) := by
+  induction indirect with
+  | call =>
+      intro context proof proves
+      have different : ∀ n : Nat, ¬ n = n + 1 + 1 := by omega
+      simp only [Term.hoApply, convert, List.length_cons, different, ↓reduceIte]
+      exact node₁_proves .hoApplyIntro proves
+  | imp _ ih =>
+      intro context proof proves
+      exact cut_proves proves (node₁_proves .impIntro (ih (node₂_proves .impElim
+        (hypothesis_proves (List.mem_cons_of_mem _ List.mem_cons_self)) (hypothesis_proves List.mem_cons_self))))
+
+/-- A node's conclusion converted to the goal (S11) is checked by the shared
+rules: `hoApplyElim`, `hoApplyIntro`, implication introduction and elimination. -/
+theorem convert_proves {conclusion goal : Formula Variable Literal Symbol} {proof : Proof Variable Literal Symbol}
+    (converts : Converts checker.snapshot.hoApplySymbol conclusion goal)
+    (proves : Proves checker refs context conclusion proof) :
+    Proves checker refs context goal (convert conclusion goal proof) := by
+  rcases converts with indirect | indirect
+  · exact convert_elim_proves indirect proves
+  · exact convert_intro_proves indirect proves
 
 end Unfold
 

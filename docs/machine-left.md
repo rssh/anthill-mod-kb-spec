@@ -94,6 +94,12 @@ strategy checks it and builds the candidate:
   binders, or a denial for a goal that does not read as falsity;
 - a conjunct the matcher cannot compare with the goal is a gap.
 
+S11 adds the choice `headMatch`: a clause selected by its whole head, matched
+against the goal or against a view and converted, its body the one premise
+([conversion](machine-conversion.md#whole-formula-selection)). `headProject`
+compares its conjunct the same way. A head or conjunct that only a
+lambda-valued answer could make the goal is a gap.
+
 Fresh names avoid the store and the binder names read, as in S06.
 
 The strategy differs from `positive` in three places:
@@ -101,8 +107,9 @@ The strategy differs from `positive` in three places:
 - Compound assumptions are the left strategy's own. Where `positive` records a
   gap for an assumption from which the goal might follow by left rules
   (`mayConclude`), this strategy records none (`localAttempt` with
-  `leftRules`) and offers what its selection chooses. A gap of the matcher,
-  such as a head that differs only by `ho_apply`, stays a gap.
+  `leftRules`) and offers what its selection chooses. A head that differs
+  only by `ho_apply` is converted, as for `positive` (S11); a gap of the
+  matcher stays a gap.
 - A compound goal with no exact candidate is matched against assumptions with
   the same connective (`matchAttempts sameConnective`, the identity of
   `positive` with another filter), so an assumed `naf A` closes a matching
@@ -198,7 +205,7 @@ guarantees (`step_valid`, `Store.commit_no_escape_resolved`; see
 | The same without the fact `q`; `(q → p) → r` with the looping `q :- q` | Exhausted; exhausted without focusing `q` |
 | `∀1. (q(1) → (p(1) ∨ s(1)))`, `q(a)`, `∀2. (s(2) → p(2))`, goal `p(a)` | Success; the fresh witness reads as `a` |
 | R12: `q`, `q → (s ∨ p)`, goal `p`; with `s → p` | Exhausted, `s` and `p` never asserted together; success with both cases |
-| `q → ho_apply(p, a)`, `q`, goal `p(a)` | Unknown: the matcher's `ho_apply` gap stays a gap |
+| `q → ho_apply(p, a)`, `q`, goal `p(a)` | The local rule's conclusion matched against the goal's indirect view and converted (S11); accepted; resuming is exhausted |
 | `p ∧ q`, goal `r` | Exhausted |
 | `q ∨ p` under `p ∨ q` | `disjCases`, each case adding exactly its disjunct; exported as `disjElim`, accepted |
 | `p(X)` under `p(a) ∨ p(b)`; under `p(a) ∨ q(a)`, `∀1. (q(1) → p(1))` | Exhausted (incompatible answers); answer `a`, resuming exhausted |
@@ -241,5 +248,6 @@ guarantees (`step_valid`, `Store.commit_no_escape_resolved`; see
   still a gap.
 - **Capabilities owned by other tickets.** Scoped and evidence-first NAF are
   S10's ([machine-negation](machine-negation.md)): here an assumed `naf A` is
-  used only by identity. `ho_apply` conversion is
-  S11's, and equality and dictionary laws are S14's.
+  used only by identity. `ho_apply` conversion and the whole-formula choice
+  `headMatch` are S11's ([conversion](machine-conversion.md)), and equality
+  and dictionary laws are S14's.

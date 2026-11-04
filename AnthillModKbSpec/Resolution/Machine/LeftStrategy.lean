@@ -23,6 +23,11 @@ matching goal by identity, with no failure search. A failed command
 attempt, like an exhausted run, establishes no negation and no
 non-derivability: `exhausted` is relative to this strategy and its selection.
 
+S11 adds `headMatch`, a clause selected by its whole head, compared with the
+goal through a view when needed and converted: the path of an induction
+principle with a compound head. A projected conjunct (`headProject`) is
+compared the same way.
+
 The selection is a parameter: this module defines no automatic one and claims
 no termination. An admitted P2 strategy (S15) is a checked plan, with its
 termination argument, interpreted into a `Selection`. -/
@@ -43,6 +48,14 @@ inductive Choice (Variable Literal Symbol : Type) where
   | headUse (clause : HornClause Variable Literal Symbol)
   | headProject (clause : HornClause Variable Literal Symbol) (path : List Bool)
   | headDenial (clause : HornClause Variable Literal Symbol)
+  /-- A clause whose whole head concludes the goal (S11): the head, compound or
+  not, is compared with the goal through their implications (`compare`), and
+  matched against the goal or against a view, the clause node then converted.
+  Its renamed body is the one premise, and the node finishes the goal itself.
+  An induction principle `(D(x) → ho_apply(P, x)) :- body` is selected this way
+  for `D(a) → p(a)`. Chosen explicitly, a direct head may also bind a goal's
+  flexible predicate name. -/
+  | headMatch (clause : HornClause Variable Literal Symbol)
   /-- Falsity elimination: prove the goal by proving `false`. -/
   | contradiction
   deriving Repr
@@ -83,7 +96,8 @@ def Store.chooseWitnesses (store : Store Variable Literal Symbol) (avoid : List 
 here: an assumption that is not the obligation's, or reads with another shape;
 a clause that is not the program's, or has another head; witnesses past the
 assumption's leading binders. A conjunct that the matcher cannot compare with
-the goal is a gap. -/
+the goal is a gap, and so is a whole head that only a lambda-valued answer
+could make the goal. -/
 def Choice.attempt (hoApplySymbol : Symbol) (program : Program Variable Literal Symbol)
     (obligation : Obligation Variable Literal Symbol) (store : Store Variable Literal Symbol) (avoid : List Variable) :
     Choice Variable Literal Symbol → Attempt Variable Literal Symbol Certificate
@@ -137,9 +151,10 @@ def Choice.attempt (hoApplySymbol : Symbol) (program : Program Variable Literal 
             match head.component? path with
             | some component =>
                 let fresh := store.clauseNames avoid head body
-                Machine.attempt ((store.prepare obligation (fresh.map Prod.snd) []).unify obligation.scope hoApplySymbol
-                    (component.instantiate (Substitution.rename fresh)) obligation.goal)
-                  fun bindings => Expansion.headProject head body fresh path bindings
+                conclusionAttempt hoApplySymbol obligation store (fresh.map Prod.snd)
+                  (compare hoApplySymbol (clauseBinds head body) (store.resolve obligation.goal) component)
+                  (component.instantiate (Substitution.rename fresh))
+                  (fun bindings => Expansion.headProject head body fresh path bindings) true
             | none => some none
         | .goal _ => some none
       else some none
@@ -149,6 +164,14 @@ def Choice.attempt (hoApplySymbol : Symbol) (program : Program Variable Literal 
         | .definite (.imp premise .falsity) body, .falsity =>
             some (some (Expansion.headDenial premise body (store.clauseNames avoid (.imp premise .falsity) body)))
         | _, _ => some none
+      else some none
+  | .headMatch clause =>
+      if program.has clause then
+        match clause with
+        | .definite head body =>
+            clauseUse hoApplySymbol obligation store avoid head body
+              (compare hoApplySymbol (clauseBinds head body) (store.resolve obligation.goal) head) true
+        | .goal _ => some none
       else some none
   | .contradiction =>
       match store.resolve obligation.goal with
@@ -250,12 +273,13 @@ theorem Choice.attempt_sound (valid : store.Scoped) (declared : obligation.Decla
     intro _ produced; cases produced
     exact fixed_sound fun _ _ => Expansion.headUse_soundUnder (Program.has_kb found)
   · rename_i found _ _ located
-    exact Machine.attempt_sound valid (fun _ => ⟨rfl, by simp [Expansion.rigids, Expansion.headProject], rfl⟩)
-      fun _ _ matched => Expansion.headProject_soundUnder (Program.has_kb found) located matched
+    exact conclusionAttempt_sound valid (fun _ => ⟨rfl, by simp [Expansion.rigids, Expansion.headProject], rfl⟩)
+      fun _ _ _ matched => Expansion.headProject_soundUnder (Program.has_kb found) located matched
   · rename_i reads found
     intro _ produced; cases produced
     exact fixed_sound fun _ refines => Expansion.headDenial_soundUnder (Program.has_kb found)
       (by rw [valid.read_refines reads refines]; exact Store.resolve_falsity _)
+  · exact clauseUse_sound valid (Program.has_kb ‹_›)
   · intro _ produced; cases produced
     exact fixed_sound fun _ _ => Expansion.falsityElim_soundUnder
 

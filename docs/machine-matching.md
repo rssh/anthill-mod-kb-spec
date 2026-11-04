@@ -150,7 +150,7 @@ size of the pending pairs. No fuel is involved.
 | An assignable name and anything | Bound, subject to the occurs and dependency checks |
 | Two different binders of the same quantifier | `unsupported`: alpha-equivalence matching is not admitted |
 | An operation call and anything else | `unsupported`: equality of calls needs evaluation (S14) |
-| `ho_apply` against an ordinary application | `unsupported`: conversion is S11's |
+| `ho_apply` against an ordinary application | `unsupported`: the strategy compares such a candidate with the goal's indirect view instead (S11, [conversion](machine-conversion.md)) |
 | A rigid name and anything else; different constructors (a binder included); different symbols or arities; different literals | `mismatch` |
 | The same structural constructor | Split into the corresponding parts |
 
@@ -226,7 +226,9 @@ freshened clauses, each matched against the prepared store.
 ## Boundaries
 
 - The matcher is syntactic. It does not match up to alpha-equivalence, evaluate
-  operation calls, or convert `ho_apply`: those report `unsupported`.
+  operation calls, or convert `ho_apply`: those report `unsupported`. S11
+  converts outside the matcher, by matching a candidate against the goal's
+  indirect view ([conversion](machine-conversion.md)).
   Higher-order patterns remain with the Miller certificates.
 - No completeness: `mismatch` and `exhausted` carry no negative evidence.
 - The test driver is not S06's strategy ([S06](machine-positive.md) supplies it and

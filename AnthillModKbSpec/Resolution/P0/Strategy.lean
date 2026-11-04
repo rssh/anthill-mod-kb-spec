@@ -344,10 +344,47 @@ theorem instantiate_rename_nil (term : Term Variable Literal Symbol) :
     term.instantiate (Substitution.rename []) = term :=
   Term.instantiate_fixed fun _ _ => rfl
 
+omit [DecidableEq Variable] [DecidableEq Literal] [DecidableEq Symbol] [FreshNames Variable] in
+theorem sameHead_self [DecidableEq Symbol] (symbol : Symbol) (args : List (Term Variable Literal Symbol)) :
+    sameHead (.app symbol args) (.app symbol args) = true := by
+  simp [sameHead]
+
 omit [DecidableEq Variable] [DecidableEq Literal] [FreshNames Variable] in
-theorem mayMatch_self (symbol : Symbol) (args : List (Term Variable Literal Symbol)) :
-    mayMatch hoApplySymbol (.app symbol args) (.app symbol args) = true := by
-  simp [mayMatch, sameHead]
+theorem appliesName_plain {term : Term Variable Literal Symbol} {binds : Variable → Bool}
+    (plain : Plain hoApplySymbol term) : appliesName hoApplySymbol binds term = false := by
+  cases plain with
+  | lit => rfl
+  | app ordinary _ =>
+      unfold appliesName
+      split
+      · next heq =>
+          simp only [Term.app.injEq] at heq
+          obtain ⟨rfl, _⟩ := heq
+          simp [ordinary]
+      · rfl
+
+omit [DecidableEq Variable] [DecidableEq Literal] [FreshNames Variable] in
+/-- Plain terms apply nothing by `ho_apply`, so a plain conclusion without the
+goal's head is apart from it: no conversion and no lambda gap. -/
+theorem compareAtom_plain {goal conclusion : Term Variable Literal Symbol} {binds : Variable → Bool}
+    (goalPlain : Plain hoApplySymbol goal) (conclusionPlain : Plain hoApplySymbol conclusion)
+    (different : sameHead goal conclusion = false) : compareAtom hoApplySymbol binds goal conclusion = .apart := by
+  have mixed : hoMixed hoApplySymbol goal conclusion = false := by
+    cases goalPlain with
+    | lit => rfl
+    | app goalOrdinary _ =>
+        cases conclusionPlain with
+        | lit => rfl
+        | app conclusionOrdinary _ => simp [hoMixed, goalOrdinary, conclusionOrdinary]
+  simp [compareAtom, different, mixed, appliesName_plain conclusionPlain]
+
+omit [DecidableEq Variable] [DecidableEq Literal] [FreshNames Variable] in
+/-- No plain conclusion compares with falsity. -/
+theorem compareAtom_falsity {conclusion : Term Variable Literal Symbol} {binds : Variable → Bool}
+    (plain : Plain hoApplySymbol conclusion) : compareAtom hoApplySymbol binds .falsity conclusion = .apart := by
+  have different : sameHead (.falsity : Term Variable Literal Symbol) conclusion = false := by cases plain <;> rfl
+  have mixed : hoMixed hoApplySymbol (.falsity : Term Variable Literal Symbol) conclusion = false := rfl
+  simp [compareAtom, different, mixed, appliesName_plain plain]
 
 omit [DecidableEq Variable] [DecidableEq Literal] [DecidableEq Symbol] [FreshNames Variable] in
 private theorem respond_candidates {attempts : List (Attempt Variable Literal Symbol (NegativeCertificate Variable Literal Symbol))}
@@ -379,19 +416,21 @@ theorem identityAttempts_ground {symbol : Symbol} {args : List (Term Variable Li
         ((Store.empty : Store Variable Literal Symbol).readContext ⟨ground.scope, .app symbol args⟩) =
       ground.context.assumptions.map fun assumption =>
         if identical (.app symbol args) assumption then some (some (Expansion.assumption [])) else some none := by
-  rw [Store.empty_readContext, identityAttempts, matchAttempts, List.map_map]
+  rw [Store.empty_readContext, identityAttempts, List.map_map]
   apply List.map_congr_left
   intro assumption member
   simp only [Function.comp_def]
-  by_cases candidate : mayMatch hoApplySymbol (.app symbol args) assumption = true
+  by_cases candidate : sameHead (.app symbol args) assumption = true
   · simp only [candidate, ↓reduceIte, Store.empty_prepare]
     rw [Store.unify_plain goalPlain (contextPlain assumption member)]
     by_cases same : identical (.app symbol args) assumption = true <;> simp [same, attempt]
   · have different : identical (.app symbol args) assumption = false := by
       by_cases same : identical (.app symbol args) assumption = true
-      · rw [← identical_eq _ _ same, mayMatch_self] at candidate; exact absurd rfl candidate
+      · rw [← identical_eq _ _ same, sameHead_self] at candidate; exact absurd rfl candidate
       · simpa using same
-    simp [candidate, different]
+    simp only [candidate, Bool.false_eq_true, ↓reduceIte, different]
+    rw [compareAtom_plain goalPlain (contextPlain assumption member) (by simpa using candidate)]
+    rfl
 
 omit [FreshNames Variable] in
 /-- No ground atomic assumption reads as falsity, so ex falso never applies. -/
@@ -431,18 +470,23 @@ theorem clauseAttempt_ground {symbol : Symbol} {args : List (Term Variable Liter
     intro avoided
     rw [noTemplates]
     rfl
-  unfold clauseAttempt Store.clauseNames
+  unfold clauseAttempt
   rw [definite]
   dsimp only
-  by_cases candidate : mayMatch hoApplySymbol (.app symbol args) head = true
-  · simp only [candidate, ↓reduceIte, fresh, List.map_nil, Store.empty_prepare, instantiate_rename_nil]
+  by_cases candidate : sameHead (.app symbol args) head = true
+  · have direct : compareAtom hoApplySymbol (clauseBinds head body) (.app symbol args) head = .direct := by
+      simp [compareAtom, candidate]
+    rw [direct]
+    simp only [clauseUse, conclusionAttempt, Store.clauseNames, fresh, List.map_nil, Store.empty_prepare,
+      instantiate_rename_nil]
     rw [Store.unify_plain headPlain goalPlain]
     by_cases same : identical head (.app symbol args) = true <;> simp [same, attempt]
   · have different : identical head (.app symbol args) = false := by
       by_cases same : identical head (.app symbol args) = true
-      · rw [identical_eq _ _ same, mayMatch_self] at candidate; exact absurd rfl candidate
+      · rw [identical_eq _ _ same, sameHead_self] at candidate; exact absurd rfl candidate
       · simpa using same
-    simp [candidate, different]
+    rw [compareAtom_plain goalPlain headPlain (by simpa using candidate)]
+    simp [clauseUse, different]
 
 /-- The answer for a ground atom, in the run's empty store. -/
 theorem atomResponse_ground {symbol : Symbol} {args : List (Term Variable Literal Symbol)}
@@ -457,7 +501,11 @@ theorem atomResponse_ground {symbol : Symbol} {args : List (Term Variable Litera
   have contextPlain : ∀ atom ∈ ground.context.assumptions, Plain hoApplySymbol atom := fun atom member => by
     obtain ⟨_, _, _, plain⟩ := contextAtoms atom member
     exact plain
+  have direct : (Term.app symbol args : Term Variable Literal Symbol).call? hoApplySymbol = none := by
+    cases goalPlain with | app ordinary _ => exact Term.call?_ordinary ordinary args
   unfold atomResponse
+  rw [direct]
+  dsimp only
   rw [identityAttempts_ground goalPlain contextPlain, Store.empty_readContext]
   dsimp only
   have locals : ∀ avoid : List Variable,
@@ -591,7 +639,7 @@ theorem Ground.positive_eq {goal : Term Variable Literal Symbol} (valid : IsGoal
       rfl
   | falsity =>
       simp only [Store.empty_resolve, positive, respondTo,
-        waiting?_empty, Ground.response, atomResponse, List.append_nil]
+        waiting?_empty, Ground.response, atomResponse, Term.call?, List.append_nil]
       have atoms := ground.contextAtoms
       have clausesPlain := ground.clausesPlain
       have allNone : ∀ attempt ∈ identityAttempts (Certificate := NegativeCertificate Variable Literal Symbol)
@@ -607,12 +655,15 @@ theorem Ground.positive_eq {goal : Term Variable Literal Symbol} (valid : IsGoal
             (readAvoid .falsity ((Store.empty : Store Variable Literal Symbol).readContext ⟨ground.scope, .falsity⟩))),
           attempt = some none := by
         intro attempt member
-        simp only [Store.empty_readContext, Ground.scope_assumptions, List.mem_append, identityAttempts, matchAttempts,
+        simp only [Store.empty_readContext, Ground.scope_assumptions, List.mem_append, identityAttempts,
           List.map_map, List.mem_map, exFalso, List.map_nil, List.not_mem_nil, or_false] at member
         rcases member with (⟨atom, inside, rfl⟩ | ⟨atom, inside, rfl⟩) | ⟨entry, inside, rfl⟩
+        · obtain ⟨f, xs, rfl, plain⟩ := atoms atom inside
+          simp only [Function.comp_apply, sameHead, Bool.false_eq_true, ↓reduceIte]
+          rw [compareAtom_falsity plain]
+          rfl
         · obtain ⟨f, xs, rfl, _⟩ := atoms atom inside
-          simp [mayMatch, sameHead, hoMixed]
-        · obtain ⟨f, xs, rfl, _⟩ := atoms atom inside
+          simp only [Function.comp_apply]
           exact localAttempt_ground f xs
         · obtain ⟨head, body, definite, headPlain, _⟩ := clausesPlain entry inside
           cases headPlain with
@@ -621,7 +672,10 @@ theorem Ground.positive_eq {goal : Term Variable Literal Symbol} (valid : IsGoal
               rw [definite] at wellFormed
               cases wellFormed with
               | definite headAtom _ => cases headAtom
-          | app => simp [clauseAttempt, definite, mayMatch, sameHead, hoMixed]
+          | app ordinary arguments =>
+              simp only [clauseAttempt, definite]
+              rw [compareAtom_falsity (.app ordinary arguments)]
+              rfl
       rw [respond_candidates fun attempt member => by rw [allNone attempt member]; rfl]
       congr 1
       exact List.filterMap_eq_nil_iff.mpr fun attempt member => by rw [allNone attempt member]; rfl

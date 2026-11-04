@@ -435,13 +435,18 @@ def withCall : Program Nat Nat Sym := plain [fact (atom .p [k .a]), fact (atom .
 #guard (solve withCall (query [] [] (atom .p [k .a]))).kind = .success
 #guard (resume withCall (solve withCall (query [] [] (atom .p [k .a])))).kind = .unknown
 
--- ho_apply against a direct application needs conversion (S11): a gap, both for
--- a ho_apply goal facing a direct fact and for a flexible head facing a direct goal.
-#guard (solve (plain [fact (atom .p [k .a]), fact (atom .q [k .p])]) (query [0] []
-  (.conj (atom .q [.var 0]) (.hoApply .ha (.var 0) [k .a])))).kind = .unknown
+-- ho_apply against a direct application is converted (S11): a ho_apply goal,
+-- once its predicate is bound, is normalized to the direct goal (ho_goal), and
+-- a flexible head is matched against a direct goal's indirect view. Neither is
+-- a gap, so resuming is exhausted.
+def boundPredicate : Program Nat Nat Sym := plain [fact (atom .p [k .a]), fact (atom .q [k .p])]
+def boundRun := solve boundPredicate (query [0] [] (.conj (atom .q [.var 0]) (.hoApply .ha (.var 0) [k .a])))
+#guard rulesOf boundRun = some [.conjIntro, .clause, .truth, .hoApplyIntro, .clause, .truth]
+#guard (resume boundPredicate boundRun).kind = .exhausted
 def flexibleHead : Program Nat Nat Sym := plain [fact (atom .p [k .a]), fact (.hoApply .ha (.var 50) [k .a])]
 #guard (solve flexibleHead (query [] [] (atom .p [k .a]))).kind = .success
-#guard (resume flexibleHead (solve flexibleHead (query [] [] (atom .p [k .a])))).kind = .unknown
+#guard rulesOf (resume flexibleHead (solve flexibleHead (query [] [] (atom .p [k .a])))) = some [.converted, .truth]
+#guard (resume flexibleHead (resume flexibleHead (solve flexibleHead (query [] [] (atom .p [k .a]))))).kind = .exhausted
 
 -- An alpha-variant match is an unsupported capability: a gap, not failure. A
 -- plain clash is a miss.

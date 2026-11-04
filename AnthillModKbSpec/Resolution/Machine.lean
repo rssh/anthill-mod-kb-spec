@@ -4,7 +4,7 @@
 -- reconstruction along a run, ordinary clause selection, and positive execution (S06);
 -- ground negation as failure evaluated in the same run (S07); left rules on selected
 -- assumptions and compound clause heads, and the left strategy (S09); refutation search in
--- the completed program (S10).
+-- the completed program (S10); `ho_apply` conversion and whole-formula head matching (S11).
 import AnthillModKbSpec.Resolution.Machine.Store
 import AnthillModKbSpec.Resolution.Machine.Instantiation
 import AnthillModKbSpec.Resolution.Machine.Unification
@@ -13,6 +13,7 @@ import AnthillModKbSpec.Resolution.Machine.State
 import AnthillModKbSpec.Resolution.Machine.Commands
 import AnthillModKbSpec.Resolution.Machine.Reconstruction
 import AnthillModKbSpec.Resolution.Machine.Program
+import AnthillModKbSpec.Resolution.Machine.Conversion
 import AnthillModKbSpec.Resolution.Machine.Positive
 import AnthillModKbSpec.Resolution.Machine.Negation
 import AnthillModKbSpec.Resolution.Machine.LeftRules

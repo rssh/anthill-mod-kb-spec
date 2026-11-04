@@ -269,9 +269,10 @@ theorem universalNegative?_spec : ∀ {formula : Formula Variable Literal Symbol
         rfl
 
 /-- A candidate that closes the goal itself: by an assumption, ex falso, or a
-clause concluding it, directly or through its compound head. -/
+clause concluding it, directly or through its compound head, also through an
+`ho_apply` conversion (S11). -/
 def Expansion.closes {Certificate : Type} (expansion : Expansion Variable Literal Symbol Certificate) : Bool :=
-  [RuleId.assumption, .falsityElim, .clause, .headUse, .headProject].contains expansion.rule.id
+  [RuleId.assumption, .falsityElim, .clause, .headUse, .headProject].contains expansion.rule.base.id
 
 /-- Positive witnesses first: for a universal negative, the witness query is
 asked before the binders are opened; a witness `witnessed` under the context,

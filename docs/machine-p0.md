@@ -99,7 +99,8 @@ ground terms without `ho_apply` is decided by identity (`Store.unify_plain`),
 and a ground candidate commits without changing the empty store
 (`Store.commit_ground`). P0 data therefore exclude the reserved `ho_apply`
 symbol everywhere, not only at the head: the shared matcher reports a
-comparison against it as needing conversion (S11). This refines the contract's
+comparison against it as `unsupported`. S11 converts calls in goal positions
+only, since `holds_hoApply` relates truth, not values. This refines the contract's
 `GroundSearch.IsData` by `Ordinary` (`P0.Plain`).
 
 ## Admission

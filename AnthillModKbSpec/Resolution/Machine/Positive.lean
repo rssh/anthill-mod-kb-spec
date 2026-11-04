@@ -1,4 +1,4 @@
-import AnthillModKbSpec.Resolution.Machine.Reconstruction
+import AnthillModKbSpec.Resolution.Machine.Conversion
 import AnthillModKbSpec.Resolution.Machine.Program
 import AnthillModKbSpec.Foundation.Monotonicity
 
@@ -16,7 +16,10 @@ for falsity. A range guard on an unbound flexible name delays instead of
 enumerating ahead of the clause body. Matching is the S05 matcher against the
 store each candidate's commit prepares: `unsupported` and `violated` matches are
 gaps, recorded beside the other candidates (`Response.incomplete`), and
-`mismatch` drops the candidate. `positive_sound` proves the strategy sound, so a
+`mismatch` drops the candidate. A goal reading as a concrete indirect call is
+normalized to its direct form, and a candidate concluding a call by `ho_apply`
+is compared with a direct goal through the goal's indirect view (S11,
+`Machine/Conversion`). `positive_sound` proves the strategy sound, so a
 successful run reconstructs `Derives` for its answer instance
 (`positive_reconstructs`). -/
 
@@ -25,24 +28,9 @@ variable {Domain Variable Literal Symbol Certificate Snapshot : Type}
 
 /-! ## The strategy -/
 
-/-- The index of atomic and falsity goals: the same symbol and arity, or both
-falsity. -/
-def sameHead : Term Variable Literal Symbol → Term Variable Literal Symbol → Bool
-  | .app left leftArgs, .app right rightArgs => decide (left = right) && leftArgs.length == rightArgs.length
-  | .falsity, .falsity => true
-  | _, _ => false
-
-/-- An application by `ho_apply` against a direct one of the matching arity, or
-the reverse: comparing them needs `ho_apply` conversion (S11). -/
-def hoMixed (hoApplySymbol : Symbol) : Term Variable Literal Symbol → Term Variable Literal Symbol → Bool
-  | .app left leftArgs, .app right rightArgs =>
-      (decide (left = hoApplySymbol) && decide (right ≠ hoApplySymbol) && leftArgs.length == rightArgs.length + 1) ||
-        (decide (right = hoApplySymbol) && decide (left ≠ hoApplySymbol) && rightArgs.length == leftArgs.length + 1)
-  | _, _ => false
-
-/-- A candidate concluding `conclusion` is matched against `goal` when it has the
-goal's head, or a head that differs only by `ho_apply`: the matcher reports the
-latter as `unsupported`, a gap. -/
+/-- A candidate concluding `conclusion` may conclude `goal` when it has the
+goal's head, or a head that differs only by `ho_apply`, compared through an
+indirect view (S11). -/
 def mayMatch (hoApplySymbol : Symbol) (goal conclusion : Term Variable Literal Symbol) : Bool :=
   sameHead goal conclusion || hoMixed hoApplySymbol goal conclusion
 
@@ -104,12 +92,22 @@ def matchAttempts (accept : Term Variable Literal Symbol → Term Variable Liter
         fun bindings => Expansion.assumption bindings
     else some none
 
-/-- Identity: the goal matched against an assumption it can be. -/
+/-- Identity: the goal matched against each assumption with its head, or
+compared through an indirect view (S11): an assumption applying a predicate by
+`ho_apply` for a direct goal, converted by elimination, and a direct one for a
+goal applying a flexible name, converted by introduction. The assumption's
+flexible names may be bound; a rigid predicate name is never assigned. -/
 def identityAttempts (hoApplySymbol : Symbol) (obligation : Obligation Variable Literal Symbol)
     (store : Store Variable Literal Symbol) (goal : Term Variable Literal Symbol)
     (context : List (Term Variable Literal Symbol × Term Variable Literal Symbol)) :
     List (Attempt Variable Literal Symbol Certificate) :=
-  matchAttempts (mayMatch hoApplySymbol) hoApplySymbol obligation store goal context
+  context.map fun (assumption, read) =>
+    if sameHead goal read then
+      attempt ((store.prepare obligation [] []).unify obligation.scope hoApplySymbol obligation.goal assumption)
+        fun bindings => Expansion.assumption bindings
+    else
+      conclusionAttempt hoApplySymbol obligation store [] (compareAtom hoApplySymbol store.assignable goal read)
+        assumption (fun bindings => Expansion.assumption bindings) true
 
 /-- Ex falso: a goal other than falsity, under an assumption reading as falsity. -/
 def exFalso (goal : Term Variable Literal Symbol) (context : List (Term Variable Literal Symbol × Term Variable Literal Symbol)) :
@@ -144,56 +142,63 @@ def Store.witnessesFor (store : Store Variable Literal Symbol) (avoid : List Var
   (store.freshen (leadingBinders rule) (avoid ++ rule.binderNames)).map Prod.snd
 
 /-- A local rule `∀x̄. (B → H)` with fresh witnesses: `H'` matched against the
-goal; the premises are the instance `B' → H'` and `B'`. -/
+goal, or compared through an indirect view as `comparison` says (S11); the
+premises are the instance `B' → H'` and `B'`. -/
 def ruleUse (hoApplySymbol : Symbol) (obligation : Obligation Variable Literal Symbol)
-    (store : Store Variable Literal Symbol) (fresh : List Variable) (rule : Term Variable Literal Symbol) :
-    Attempt Variable Literal Symbol Certificate :=
+    (store : Store Variable Literal Symbol) (fresh : List Variable) (rule : Term Variable Literal Symbol)
+    (comparison : Comparison := .direct) : Attempt Variable Literal Symbol Certificate :=
   match rule.instantiateLeading (fresh.map Term.var) with
   | some (.imp condition conclusion) =>
-      attempt ((store.prepare obligation fresh []).unify obligation.scope hoApplySymbol conclusion obligation.goal)
-        fun bindings => { Expansion.impElim condition conclusion with flexibles := fresh, bindings := bindings }
+      conclusionAttempt hoApplySymbol obligation store fresh comparison conclusion
+        (fun bindings => { Expansion.impElim condition conclusion with flexibles := fresh, bindings := bindings }) true
   | _ => some none
 
 /-- A universal fact `∀x₁…xₙ. H` (n ≥ 1) with fresh witnesses: the instance of
-`H` matched against the goal, eliminating the last binder; the premise is the
-fact with the other binders instantiated. -/
+`H` matched against the goal, or compared through an indirect view as
+`comparison` says (S11), eliminating the last binder; the premise is the fact
+with the other binders instantiated. -/
 def factUse (hoApplySymbol : Symbol) (obligation : Obligation Variable Literal Symbol)
-    (store : Store Variable Literal Symbol) (fresh : List Variable) (rule : Term Variable Literal Symbol) :
-    Attempt Variable Literal Symbol Certificate :=
+    (store : Store Variable Literal Symbol) (fresh : List Variable) (rule : Term Variable Literal Symbol)
+    (comparison : Comparison := .direct) : Attempt Variable Literal Symbol Certificate :=
   match rule.instantiateLeading (fresh.dropLast.map Term.var), fresh.getLast? with
   | some (.forallVar binder body), some witness =>
-      attempt ((store.prepare obligation fresh []).unify obligation.scope hoApplySymbol
-          (body.instantiate (Substitution.single binder (.var witness))) obligation.goal)
-        fun bindings => { Expansion.forallElim binder body (.var witness) with flexibles := fresh, bindings := bindings }
+      conclusionAttempt hoApplySymbol obligation store fresh comparison
+        (body.instantiate (Substitution.single binder (.var witness)))
+        (fun bindings => { Expansion.forallElim binder body (.var witness) with flexibles := fresh, bindings := bindings })
+        true
   | _, _ => some none
 
 /-- A local rule `∀x₁…xₙ. M`, given as written and as read, for an atomic or
 falsity goal. It is classified and filtered by its reading, and instantiated as
 written, so that the exact steps (`exactStep`) find its instances as built. Its
 free names are captured parameters and are kept; its leading binders get fresh
-witnesses (`Store.witnessesFor`), and only once the read matrix's head may match
-the goal. An implication matrix is used by `ruleUse`, an atomic one with n ≥ 1
-by `factUse`. An assumption reading as an atom is identity's. Any other shape
-from which the goal might follow (`mayConclude`) is a gap: left rules and
-compound conclusions are S09's, and so is a rule that only its reading reveals,
-written as a flexible name. With `leftRules`, a strategy that offers those
-commands itself (S09) takes such an assumption as a miss here; a gap of the
-matcher stays a gap. -/
+witnesses (`Store.witnessesFor`), and only once the read matrix's head compares
+with the goal (`compareAtom`): directly, through an indirect view (S11), or as
+a lambda gap; a predicate name the rule may bind is a leading binder or an
+assignable captured name. An implication matrix is used by `ruleUse`, an
+atomic one with n ≥ 1 by `factUse`. An assumption reading as an atom is
+identity's. Any other shape from which the goal might follow (`mayConclude`)
+is a gap: left rules and compound conclusions are S09's, and so is a rule that
+only its reading reveals, written as a flexible name. With `leftRules`, a
+strategy that offers those commands itself (S09) takes such an assumption as a
+miss here; a gap of the matcher stays a gap. -/
 def localAttempt (hoApplySymbol : Symbol) (obligation : Obligation Variable Literal Symbol)
     (store : Store Variable Literal Symbol) (goal : Term Variable Literal Symbol) (avoid : List Variable)
     (rule read : Term Variable Literal Symbol) (leftRules : Bool := false) : Attempt Variable Literal Symbol Certificate :=
   let leftGap : Attempt Variable Literal Symbol Certificate := if leftRules then some none else none
+  let binds := fun name => decide (name ∈ leadingBinders read) || store.assignable name
   match Matrix.of (stripLeading (leadingBinders rule).length rule),
       Matrix.of (stripLeading (leadingBinders rule).length read) with
   | .implication _, .implication head =>
-      if mayMatch hoApplySymbol goal head then
-        ruleUse hoApplySymbol obligation store (store.witnessesFor avoid rule) rule
-      else if mayConclude hoApplySymbol goal (leadingBinders read) head then leftGap
-      else some none
+      match compareAtom hoApplySymbol binds goal head with
+      | .apart => if mayConclude hoApplySymbol goal (leadingBinders read) head then leftGap else some none
+      | comparison => ruleUse hoApplySymbol obligation store (store.witnessesFor avoid rule) rule comparison
   | .atomic, .atomic =>
-      if !(leadingBinders rule).isEmpty && mayMatch hoApplySymbol goal (stripLeading (leadingBinders rule).length read)
-      then factUse hoApplySymbol obligation store (store.witnessesFor avoid rule) rule
-      else some none
+      if (leadingBinders rule).isEmpty then some none
+      else
+        match compareAtom hoApplySymbol binds goal (stripLeading (leadingBinders rule).length read) with
+        | .apart => some none
+        | comparison => factUse hoApplySymbol obligation store (store.witnessesFor avoid rule) rule comparison
   | _, _ =>
       if isFact read then some none
       else if mayConclude hoApplySymbol goal (leadingBinders read) (stripLeading (leadingBinders read).length read) then
@@ -205,21 +210,43 @@ def Store.clauseNames (store : Store Variable Literal Symbol) (avoid : List Vari
     (head : Term Variable Literal Symbol) (body : List (Term Variable Literal Symbol)) : List (Variable × Variable) :=
   store.freshen (HornClause.definite head body).templates (avoid ++ (head :: body).flatMap Term.binderNames)
 
+/-- The names a clause use may bind: its template names. -/
+def clauseBinds (head : Term Variable Literal Symbol) (body : List (Term Variable Literal Symbol)) : Variable → Bool :=
+  fun name => decide (name ∈ (HornClause.definite head body).templates)
+
+/-- A clause `head :- body` whose head compares with the goal as `comparison`:
+unless apart, every template name renamed to a fresh flexible name, the renamed
+head matched against the goal or a view (`conclusionAttempt`), and the renamed
+body the one premise. Names are chosen only for a clause that may apply.
+`intro` admits matching a goal that applies a flexible name against the head's
+view: an explicitly chosen clause, not one the strategy enumerates. -/
+def clauseUse (hoApplySymbol : Symbol) (obligation : Obligation Variable Literal Symbol)
+    (store : Store Variable Literal Symbol) (avoid : List Variable) (head : Term Variable Literal Symbol)
+    (body : List (Term Variable Literal Symbol)) (comparison : Comparison) (intro : Bool) :
+    Attempt Variable Literal Symbol Certificate :=
+  match comparison with
+  | .apart => some none
+  | comparison =>
+      let fresh := store.clauseNames avoid head body
+      conclusionAttempt hoApplySymbol obligation store (fresh.map Prod.snd) comparison
+        (head.instantiate (Substitution.rename fresh)) (fun bindings => Expansion.clause head body fresh bindings) intro
+
 /-- A program clause selected by head symbol and arity: every template name
 renamed to a fresh flexible name, the renamed head matched against the goal, and
-the renamed body the one premise. A denial clause `⊥ :- body` serves a goal that
-reads as falsity, with nothing to match. The head is never assumed. -/
+the renamed body the one premise. A head applying a predicate by `ho_apply`,
+such as an induction clause's, is matched against a direct goal's indirect view
+and the clause node converted by elimination (S11): its template names, the
+predicate's included, are bound by that match. A direct head is never matched
+against a goal applying a flexible name, which would choose a predicate among
+the clauses: a gap. A denial clause `⊥ :- body` serves a goal that reads as
+falsity, with nothing to match. The head is never assumed. -/
 def clauseAttempt (hoApplySymbol : Symbol) (obligation : Obligation Variable Literal Symbol)
     (store : Store Variable Literal Symbol) (goal : Term Variable Literal Symbol) (avoid : List Variable)
     (entry : ProgramClause Variable Literal Symbol) : Attempt Variable Literal Symbol Certificate :=
   match entry.clause with
   | .definite head body =>
-      if mayMatch hoApplySymbol goal head then
-        let fresh := store.clauseNames avoid head body
-        attempt ((store.prepare obligation (fresh.map Prod.snd) []).unify obligation.scope hoApplySymbol
-            (head.instantiate (Substitution.rename fresh)) obligation.goal)
-          fun bindings => Expansion.clause head body fresh bindings
-      else some none
+      clauseUse hoApplySymbol obligation store avoid head body
+        (compareAtom hoApplySymbol (clauseBinds head body) goal head) false
   | .goal body =>
       match goal with
       | .falsity =>
@@ -230,18 +257,25 @@ def clauseAttempt (hoApplySymbol : Symbol) (obligation : Obligation Variable Lit
 /-- An atomic or falsity goal: identity, ex falso, local rules, then program
 clauses, in that order, then `extra` candidates. A gap among them makes the
 response incomplete. A strategy with its own left rules (S09) passes
-`leftRules` (`localAttempt`) and its commands as `extra`. -/
+`leftRules` (`localAttempt`) and its commands as `extra`. A goal reading as a
+concrete indirect call `ho_apply(p, args)` has the one candidate `ho_goal`,
+before `extra`: its direct form `p(args)`, answered as any direct goal, so
+direct and indirect calls share their candidates and no goal is rewritten back
+(S11). -/
 def atomResponse (hoApplySymbol : Symbol) (program : Program Variable Literal Symbol)
     (obligation : Obligation Variable Literal Symbol) (store : Store Variable Literal Symbol)
     (goal : Term Variable Literal Symbol) (context : List (Term Variable Literal Symbol × Term Variable Literal Symbol))
     (leftRules : Bool := false) (extra : List (Attempt Variable Literal Symbol Certificate) := []) :
     Response Variable Literal Symbol Certificate :=
-  let avoid := readAvoid goal context
-  respond (identityAttempts hoApplySymbol obligation store goal context ++
-    (exFalso goal context).map (some ∘ some) ++
-    context.map (fun (assumption, read) =>
-      localAttempt hoApplySymbol obligation store goal avoid assumption read leftRules) ++
-    program.clauses.map (clauseAttempt hoApplySymbol obligation store goal avoid) ++ extra)
+  match goal.call? hoApplySymbol with
+  | some (symbol, args) => respond (some (some (Expansion.hoGoal symbol args)) :: extra)
+  | none =>
+      let avoid := readAvoid goal context
+      respond (identityAttempts hoApplySymbol obligation store goal context ++
+        (exFalso goal context).map (some ∘ some) ++
+        context.map (fun (assumption, read) =>
+          localAttempt hoApplySymbol obligation store goal avoid assumption read leftRules) ++
+        program.clauses.map (clauseAttempt hoApplySymbol obligation store goal avoid) ++ extra)
 
 /-- The disjunction a range guard over an explicit domain list ends with:
 `m(t) ∨ false`. Its `false` alternative is never tried: a guard is a membership
@@ -437,8 +471,16 @@ theorem matchAttempts_sound (valid : store.Scoped) {accept : Term Variable Liter
 
 theorem identityAttempts_sound (valid : store.Scoped) :
     ∀ candidate ∈ identityAttempts (Certificate := Certificate) hoApplySymbol obligation store goal
-      (store.readContext obligation), AttemptSound hoApplySymbol kb naf store obligation candidate :=
-  matchAttempts_sound valid
+      (store.readContext obligation), AttemptSound hoApplySymbol kb naf store obligation candidate := by
+  intro candidate member
+  obtain ⟨⟨assumption, read⟩, inside, rfl⟩ := List.mem_map.mp member
+  have assumed := (Store.mem_readContext inside).1
+  dsimp only
+  split
+  · exact attempt_sound valid (fun _ => ⟨rfl, by simp [Expansion.rigids, Expansion.assumption], rfl⟩)
+      fun _ _ matched => Expansion.assumption_soundUnder assumed matched
+  · exact conclusionAttempt_sound valid (fun _ => ⟨rfl, by simp [Expansion.rigids, Expansion.assumption], rfl⟩)
+      fun _ _ _ matched => Expansion.assumption_soundUnder assumed matched.symm
 
 theorem exFalso_sound {context : List (Term Variable Literal Symbol × Term Variable Literal Symbol)} :
     ∀ expansion ∈ exFalso (Certificate := Certificate) goal context,
@@ -453,22 +495,24 @@ theorem exFalso_sound {context : List (Term Variable Literal Symbol × Term Vari
       exact fixed_sound fun _ _ => Expansion.falsityElim_soundUnder
     · cases member
 
-theorem ruleUse_sound (valid : store.Scoped) {fresh : List Variable} {rule : Term Variable Literal Symbol} :
+theorem ruleUse_sound (valid : store.Scoped) {fresh : List Variable} {rule : Term Variable Literal Symbol}
+    {comparison : Comparison} :
     AttemptSound hoApplySymbol kb naf store obligation
-      (ruleUse (Certificate := Certificate) hoApplySymbol obligation store fresh rule) := by
+      (ruleUse (Certificate := Certificate) hoApplySymbol obligation store fresh rule comparison) := by
   unfold ruleUse
   split
-  · exact attempt_sound valid (fun _ => ⟨rfl, by simp [Expansion.rigids, Expansion.impElim], rfl⟩)
-      fun _ _ matched => Expansion.impElim_soundUnder_matched (Certificate := Certificate) matched.symm
+  · exact conclusionAttempt_sound valid (fun _ => ⟨rfl, by simp [Expansion.rigids, Expansion.impElim], rfl⟩)
+      fun _ _ _ matched => Expansion.impElim_soundUnder_matched (Certificate := Certificate) matched.symm
   · intro _ found; cases found
 
-theorem factUse_sound (valid : store.Scoped) {fresh : List Variable} {rule : Term Variable Literal Symbol} :
+theorem factUse_sound (valid : store.Scoped) {fresh : List Variable} {rule : Term Variable Literal Symbol}
+    {comparison : Comparison} :
     AttemptSound hoApplySymbol kb naf store obligation
-      (factUse (Certificate := Certificate) hoApplySymbol obligation store fresh rule) := by
+      (factUse (Certificate := Certificate) hoApplySymbol obligation store fresh rule comparison) := by
   unfold factUse
   split
-  · exact attempt_sound valid (fun _ => ⟨rfl, by simp [Expansion.rigids, Expansion.forallElim], rfl⟩)
-      fun _ _ matched => Expansion.forallElim_soundUnder (Certificate := Certificate) matched.symm
+  · exact conclusionAttempt_sound valid (fun _ => ⟨rfl, by simp [Expansion.rigids, Expansion.forallElim], rfl⟩)
+      fun _ _ _ matched => Expansion.forallElim_soundUnder (Certificate := Certificate) matched.symm
   · intro _ found; cases found
 
 theorem localAttempt_sound (valid : store.Scoped) (rule read : Term Variable Literal Symbol) (leftRules : Bool := false) :
@@ -478,14 +522,27 @@ theorem localAttempt_sound (valid : store.Scoped) (rule read : Term Variable Lit
   dsimp only
   split
   · split
-    · exact ruleUse_sound valid
     · repeat' split
       all_goals intro _ found; cases found
+    · exact ruleUse_sound valid
   · split
-    · exact factUse_sound valid
     · intro _ found; cases found
+    · split
+      · intro _ found; cases found
+      · exact factUse_sound valid
   · repeat' split
     all_goals intro _ found; cases found
+
+theorem clauseUse_sound (valid : store.Scoped) {head : Term Variable Literal Symbol}
+    {body : List (Term Variable Literal Symbol)} {comparison : Comparison} {intro : Bool}
+    (member : HornClause.definite head body ∈ kb) :
+    AttemptSound hoApplySymbol kb naf store obligation
+      (clauseUse (Certificate := Certificate) hoApplySymbol obligation store avoid head body comparison intro) := by
+  unfold clauseUse
+  split
+  · intro _ found; cases found
+  · exact conclusionAttempt_sound valid (fun _ => ⟨rfl, by simp [Expansion.rigids, Expansion.clause], rfl⟩)
+      fun _ _ _ matched => Expansion.clause_soundUnder member matched
 
 theorem clauseAttempt_sound (valid : store.Scoped) (reads : store.resolve obligation.goal = goal)
     {program : Program Variable Literal Symbol} {entry : ProgramClause Variable Literal Symbol}
@@ -495,10 +552,7 @@ theorem clauseAttempt_sound (valid : store.Scoped) (reads : store.resolve obliga
   unfold clauseAttempt
   split
   · rename_i head body clauseEq
-    split
-    · exact attempt_sound valid (fun _ => ⟨rfl, by simp [Expansion.rigids, Expansion.clause], rfl⟩)
-        fun _ _ matched => Expansion.clause_soundUnder ⟨entry, inside, clauseEq⟩ matched
-    · intro _ found; cases found
+    exact clauseUse_sound valid ⟨entry, inside, clauseEq⟩
   · rename_i body clauseEq
     split
     · intro expansion found
@@ -517,7 +571,16 @@ theorem atomResponse_sound_within (valid : store.Scoped) (reads : store.resolve 
     ∀ expansion ∈ (atomResponse (Certificate := Certificate) hoApplySymbol program obligation store goal
       (store.readContext obligation) leftRules extra).alternatives,
       CandidateSound hoApplySymbol full.kb naf store obligation expansion := by
-  refine respond_sound fun candidate member => ?_
+  intro expansion inside
+  unfold atomResponse at inside
+  split at inside
+  · rename_i symbol args found
+    refine respond_sound (fun candidate member => ?_) expansion inside
+    rcases List.mem_cons.mp member with rfl | added
+    · intro _ produced; cases produced
+      exact hoGoal_sound valid (by rw [reads]; exact found)
+    · exact extraSound candidate added
+  refine respond_sound (fun candidate member => ?_) expansion inside
   simp only [List.mem_append] at member
   rcases member with (((identity | falso) | fromRule) | clause) | added
   · exact identityAttempts_sound valid candidate identity
@@ -697,6 +760,19 @@ theorem positive_reconstructs_elaborated {signature : SignatureSnapshot Domain S
 
 /-! ## Clause selection and guards -/
 
+/-- A goal reading as a concrete indirect call has the one candidate `ho_goal`,
+before a strategy's `extra` commands, and its premise is the direct call; a
+direct call is never normalized again, so the two forms share their candidates
+without a rewrite loop (S11). -/
+theorem atomResponse_indirect {program : Program Variable Literal Symbol} {symbol : Symbol}
+    {args : List (Term Variable Literal Symbol)} {context : List (Term Variable Literal Symbol × Term Variable Literal Symbol)}
+    {leftRules : Bool} {extra : List (Attempt Variable Literal Symbol Certificate)}
+    (found : goal.call? hoApplySymbol = some (symbol, args)) :
+    atomResponse (Certificate := Certificate) hoApplySymbol program obligation store goal context leftRules extra =
+        respond (some (some (Expansion.hoGoal symbol args)) :: extra) ∧
+      (Term.app symbol args : Term Variable Literal Symbol).call? hoApplySymbol = none := by
+  refine ⟨by simp only [atomResponse, found], Term.call?_ordinary (Term.call?_spec found).2 args⟩
+
 omit [DecidableEq Symbol] [DecidableEq Literal] [FreshNames Variable] in
 theorem waiting?_guard {program : Program Variable Literal Symbol} {name : Variable}
     (subject : guardSubject? program goal = some name) (unbound : store.assignable name = true) :
@@ -717,28 +793,63 @@ theorem positive_guard {program : Program Variable Literal Symbol} {name : Varia
   refine ⟨?_, by simp [Store.delayable, unbound]⟩
   simp only [positive, respondTo, reads, waiting?_guard subject unbound, unclosed]
 
+omit [DecidableEq Literal] [FreshNames Variable] in
+/-- The predicate guard of a registered reference, `P_n(p)`, holds in a built
+program by its generated fact (`Elaboration.rangeGuard_derives_predicate`): a
+lookup by the reference's symbol, with no case analysis over the registry. An
+induction clause's guard on its predicate is discharged this way once matching
+binds the predicate to the reference (S11). -/
+theorem Program.predicateGuard_derives {snapshot : SignatureSnapshot Domain Symbol} {names : Nat → Variable}
+    {rules : List (Rule Domain Symbol)} {sources : List (SourceClause Domain Variable Literal Symbol)}
+    {program : Program Variable Literal Symbol} (built : Program.build hoApplySymbol snapshot names rules sources = .ok program)
+    (complete : ∀ rule, snapshot.signature.data.definitions rule → rule ∈ rules) {symbol : Symbol} {arity : Nat}
+    (declared : snapshot.Registered symbol arity) {context : ProofContext Variable Literal Symbol} :
+    Derives hoApplySymbol program.kb context
+      (Elaboration.rangeGuard snapshot.naming (.predicate arity) (.app symbol [] : Term Variable Literal Symbol)) naf :=
+  Elaboration.rangeGuard_derives_predicate snapshot
+    (fun clause member => Program.build_complete built complete clause (Or.inr member)) declared
+
 /-- A clause candidate renames every template name of its clause to a distinct
-fresh flexible name, new to the store. -/
+fresh flexible name, new to the store. It is the clause use, or, for a head
+compared through the goal's indirect view, that use converted (S11). -/
 theorem clauseAttempt_fresh {entry : ProgramClause Variable Literal Symbol}
     {head : Atom Variable Literal Symbol} {body : List (Term Variable Literal Symbol)}
     (definite : entry.clause = .definite head body) {expansion : Expansion Variable Literal Symbol Certificate}
     (produced : clauseAttempt (Certificate := Certificate) hoApplySymbol obligation store goal avoid entry =
       some (some expansion)) :
-    ∃ fresh bindings, expansion = Expansion.clause head body fresh bindings ∧
+    ∃ fresh bindings, (expansion = Expansion.clause head body fresh bindings ∨
+        ∃ view, expansion = (Expansion.clause head body fresh bindings).convert view) ∧
       fresh.map Prod.fst = (HornClause.definite head body).templates ∧ (fresh.map Prod.snd).Nodup ∧
       ∀ name ∈ fresh.map Prod.snd, store.info? name = none := by
+  have named : (store.clauseNames avoid head body).map Prod.fst = (HornClause.definite head body).templates ∧
+      ((store.clauseNames avoid head body).map Prod.snd).Nodup ∧
+      ∀ name ∈ (store.clauseNames avoid head body).map Prod.snd, store.info? name = none :=
+    ⟨Store.freshen_fst _ _ _, Store.freshen_nodup _ _ _, fun name member => (Store.freshen_fresh _ _ _ name member).1⟩
   unfold clauseAttempt at produced
   rw [definite] at produced
+  dsimp only at produced
+  unfold clauseUse at produced
+  split at produced
+  · cases produced
+  unfold conclusionAttempt at produced
   dsimp only at produced
   split at produced
   · unfold attempt at produced
     split at produced
     · rename_i bindings _
       simp only [Option.some.injEq] at produced
-      exact ⟨_, bindings, produced.symm, Store.freshen_fst _ _ _, Store.freshen_nodup _ _ _,
-        fun name member => (Store.freshen_fresh _ _ _ name member).1⟩
+      exact ⟨_, bindings, .inl produced.symm, named⟩
     all_goals cases produced
-  · cases produced
+  · split at produced
+    · rename_i view _
+      unfold attempt at produced
+      split at produced
+      · rename_i bindings _
+        simp only [Option.some.injEq] at produced
+        exact ⟨_, bindings, .inr ⟨view, produced.symm⟩, named⟩
+      all_goals cases produced
+    · cases produced
+  all_goals (repeat' split at produced) <;> simp_all
 
 omit [DecidableEq Symbol] [DecidableEq Literal] in
 /-- Selecting a clause replaces the focus by its instantiated body, under the

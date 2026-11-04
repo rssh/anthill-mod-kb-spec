@@ -200,6 +200,10 @@ theorem resolveWith_falsity (bindings : List (Variable × Term Variable Literal 
 @[simp] theorem Store.resolve_disj (store : Store Variable Literal Symbol) (left right : Term Variable Literal Symbol) :
     store.resolve (.disj left right) = .disj (store.resolve left) (store.resolve right) := resolveWith_disj _ _ _
 
+@[simp] theorem Store.resolve_app (store : Store Variable Literal Symbol) (symbol : Symbol)
+    (args : List (Term Variable Literal Symbol)) :
+    store.resolve (.app symbol args) = .app symbol (args.map store.resolve) := resolveWith_app _ _ _
+
 @[simp] theorem Store.resolve_imp (store : Store Variable Literal Symbol) (left right : Term Variable Literal Symbol) :
     store.resolve (.imp left right) = .imp (store.resolve left) (store.resolve right) := resolveWith_imp _ _ _
 

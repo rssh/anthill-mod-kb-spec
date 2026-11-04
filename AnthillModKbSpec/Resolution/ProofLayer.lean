@@ -13,7 +13,8 @@ terminates.
 
 `Request.proofLayer` names, for one request, the S09 commands that use its
 formula, or the introduction rules for a scoped goal; `Request.proofLayerIn`
-also marks a name inside a NAF operand with S10's refutation route. `diagnose` annotates
+also marks a name inside a NAF operand with S10's refutation route, and an
+application by `ho_apply` outside data with S11's conversion. `diagnose` annotates
 P0's own answer, so a proof-layer capability is reported only for an input P0
 does not admit (`diagnose_not_ready`), and diagnosing changes no admission
 result. -/
@@ -38,8 +39,8 @@ inductive ProofLayer where
   rigid parameter, and the refutation is checked by the explicit-proof route.
   Nothing claims the refutation search terminates. -/
   | refutation
-  /-- No S09 or S10 command: the request needs another capability (S11–S14),
-  or none is implemented. -/
+  /-- No S09, S10, or S11 command: the request needs another capability
+  (S12–S14), or none is implemented. -/
   | none
   deriving DecidableEq, Repr
 
@@ -107,12 +108,48 @@ def Input.goalAt? (input : Input Domain Variable Literal Symbol) : Site → Opti
         | .definite _ body | .goal body => body[position]?
   | _ => none
 
-/-- The proof-layer capability for one request of an input: a ground-instance
-request inside a NAF operand has the refutation route. -/
-def Request.proofLayerIn (input : Input Domain Variable Literal Symbol) (request : Request Variable Literal Symbol) :
+/-- The goal path, as `goalRequests` builds it, enters a NAF operand. -/
+def throughNaf : List Nat → Term Variable Literal Symbol → Bool
+  | 0 :: _, .defaultNeg _ => true
+  | 0 :: rest, .conj left _ => throughNaf rest left
+  | 1 :: rest, .conj _ right => throughNaf rest right
+  | _, _ => false
+
+/-- The S11 commands for an application by `ho_apply` that P0 asks evidence
+for: as a goal, `ho_goal` (`hoApplyIntro`) and converted candidates; as an
+assumption or a clause head, converted candidates for direct goals. Inside data
+nothing converts: `holds_hoApply` relates truth, not values, so a call by
+`ho_apply` as an argument is compared only with a call by `ho_apply`. Nor does
+anything inside a NAF operand: conversion gives positive evidence, never
+failure of the operand, and the completion closes no `ho_apply` (S10). -/
+def Request.conversionLayer (input : Input Domain Variable Literal Symbol) (request : Request Variable Literal Symbol) :
     ProofLayer :=
+  match request.site with
+  | .goal | .body _ _ =>
+      if ((input.goalAt? request.site).map fun goal =>
+          inAtomData request.path goal || throughNaf request.path goal).getD true then .none
+      else .commands [.hoApplyIntro, .converted]
+  | .assumption _ | .head _ => if request.path.isEmpty then .commands [.converted] else .none
+
+/-- The conclusion of a formula, through its implications, applies a predicate
+by `ho_apply`. -/
+def concludesIndirect [DecidableEq Symbol] (hoApplySymbol : Symbol) : Term Variable Literal Symbol → Bool
+  | .imp _ conclusion => concludesIndirect hoApplySymbol conclusion
+  | .app symbol _ => decide (symbol = hoApplySymbol)
+  | _ => false
+
+/-- The proof-layer capability for one request of an input: a ground-instance
+request inside a NAF operand has the refutation route, and an application by
+`ho_apply` in a goal, an assumption, or a head the S11 conversion. A compound
+head concluding a call by `ho_apply`, such as an induction principle's, is also
+selected whole and converted (S11's `headMatch`). -/
+def Request.proofLayerIn [DecidableEq Symbol] (hoApplySymbol : Symbol) (input : Input Domain Variable Literal Symbol)
+    (request : Request Variable Literal Symbol) : ProofLayer :=
   if request.capability == .groundInstance && ((input.goalAt? request.site).map (nafAlong request.path)).getD false then
     .refutation
+  else if request.capability == .hoApplyConversion then request.conversionLayer input
+  else if request.capability == .compoundHead && concludesIndirect hoApplySymbol request.formula then
+    .commands (headCommands request.formula ++ [.converted])
   else request.proofLayer
 
 variable [DecidableEq Variable] [DecidableEq Literal] [DecidableEq Symbol]
@@ -122,7 +159,7 @@ P0 admits, or declares invalid, gets none. -/
 def diagnose (hoApplySymbol : Symbol) (input : Input Domain Variable Literal Symbol) :
     List (Request Variable Literal Symbol × ProofLayer) :=
   match check hoApplySymbol input with
-  | .needsEvidence request more => (request :: more).map fun found => (found, found.proofLayerIn input)
+  | .needsEvidence request more => (request :: more).map fun found => (found, found.proofLayerIn hoApplySymbol input)
   | _ => []
 
 /-- A diagnosis is P0's answer annotated: every diagnosed formula is one P0
@@ -130,7 +167,7 @@ asks evidence for. -/
 theorem diagnose_requests {hoApplySymbol : Symbol} {input : Input Domain Variable Literal Symbol}
     {entry : Request Variable Literal Symbol × ProofLayer} (member : entry ∈ diagnose hoApplySymbol input) :
     ∃ request more, check hoApplySymbol input = .needsEvidence request more ∧ entry.1 ∈ request :: more ∧
-      entry.2 = entry.1.proofLayerIn input := by
+      entry.2 = entry.1.proofLayerIn hoApplySymbol input := by
   unfold diagnose at member
   split at member
   · rename_i request more checked

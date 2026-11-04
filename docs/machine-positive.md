@@ -77,9 +77,10 @@ never failure. Gaps keep the other candidates: the response is
 the focus, so the run is never `exhausted`
 ([machine response](machine-state.md#strategies-and-candidates)). Candidates are
 selected by head symbol and arity (`sameHead`), or offered to falsity when they
-conclude it. A head that differs from the goal's only by `ho_apply` is matched
-too (`mayMatch`): the matcher reports it `unsupported`, since conversion is
-S11's, so it is a gap. So is an
+conclude it. A head that differs from the goal's only by `ho_apply` is
+compared through the goal's indirect view and the candidate converted (S11,
+[conversion](machine-conversion.md)); a comparison that only a lambda-valued
+answer could satisfy is a gap. So is an
 assumption from which the goal might follow by rules this slice lacks
 (`mayConclude`): a conjunction, disjunction, or existential (left rules), a rule
 with a compound or curried conclusion, or one concluding its own binder
@@ -266,7 +267,7 @@ The run-level theorems hold for every sound strategy, so later strategies
 | R04: `p :- p` before `p` / after it | Interrupted / an answer on every resume, never exhausted |
 | Falsity under an assumed `false`; by a negation `∀1. (p(1) → false)` and `p(a)`; by a denial clause `false :- p(X), q(X)` | `assumption`; `impElim` with an exact `forallElim`; `goalClause` with answer `b`, then exhausted |
 | `p(a)` with the facts `p(a)` and `p(op(b))` | Success; resuming is unknown: the call is a gap, recorded without losing `p(a)` |
-| `q(X) ∧ ho_apply(X, a)` with `p(a)`, `q(p)`; `p(a)` with a flexible-head fact `ho_apply(P, a)` | Unknown; success, then unknown: `ho_apply` conversion is a gap |
+| `q(X) ∧ ho_apply(X, a)` with `p(a)`, `q(p)`; `p(a)` with a flexible-head fact `ho_apply(P, a)` | Success by `ho_goal`, then exhausted; success, then the converted fact, then exhausted (S11) |
 | An alpha-variant argument; a plain clash; falsity with no source; NAF | Unknown (gap); exhausted (miss); exhausted (miss); unknown |
 
 ## Boundaries
@@ -282,8 +283,9 @@ The run-level theorems hold for every sound strategy, so later strategies
   answers NAF `unsupported` when no exact candidate closes it; S07 adds ground
   NAF as a fallback for exactly those answers (`Strategy.withNegation`,
   [P0 evaluation](machine-p0.md)), so every other answer is kept.
-- `ho_apply` conversion and flexible heads are S11's; equality and dictionary
-  calls are S14's.
+- `ho_apply` conversion and flexible heads are S11's
+  ([conversion](machine-conversion.md)), part of this strategy's candidates;
+  equality and dictionary calls are S14's.
 - No termination, fairness, or completeness is claimed in general. Depth-first
   selection may loop, and `exhausted` is relative to this strategy's candidates.
   For ranked ground P0 inputs, S07 proves termination and complete failure on

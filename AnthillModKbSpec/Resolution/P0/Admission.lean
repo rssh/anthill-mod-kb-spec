@@ -88,7 +88,8 @@ inductive Capability where
   | equality
   /-- A dictionary operation call: an evaluator or proved laws. -/
   | dictionaryLaw
-  /-- An application by `ho_apply`, also inside data: conversion (S11). -/
+  /-- An application by `ho_apply`, also inside data: conversion (S11) in a
+  goal, an assumption, or a head; inside data none applies. -/
   | hoApplyConversion
   /-- A denial clause: contradiction search. -/
   | contradiction

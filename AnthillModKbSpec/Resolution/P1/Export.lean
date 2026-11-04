@@ -172,17 +172,21 @@ def exportRule (evidence : Certificate → Term Variable Literal Symbol) (store 
   | .equalSubst name template, _ => some (.equalSubst name (store.resolve template))
   | .extension name parameters closedWorld, _ =>
       some (.extension name (parameters.map store.resolve ++ (closedWorld.map fun found => evidence found.certificate).toList))
-  | .derived _, _ => none
+  | .derived _, _ | .converted _ _, _ => none
 
 /-- A machine node as a supplied proof, given its goal as read and its exported
-subproofs: one node for a rule of the logic or an extension, and the logical
-nodes of an S09 command. -/
+subproofs: one node for a rule of the logic or an extension, the logical nodes
+of an S09 command, and for a converted node the node of its conclusion, as
+read, followed by the conversion's nodes (S11). -/
 def exportNode (evidence : Certificate → Term Variable Literal Symbol) (store : Store Variable Literal Symbol)
     (rule : RuleApp Variable Literal Symbol Certificate) (premises : List (Premise Variable Literal Symbol))
     (goal : Formula Variable Literal Symbol) (children : List (Proof Variable Literal Symbol)) :
     Option (Proof Variable Literal Symbol) :=
   match rule with
   | .derived command => exportDerived store goal command children
+  | .converted conclusion inner =>
+      (exportNode evidence store inner premises (store.resolve conclusion) children).map
+        (Unfold.convert (store.resolve conclusion) goal)
   | rule => (exportRule evidence store rule premises).map fun exported => .node exported goal children
 
 mutual
@@ -240,6 +244,34 @@ theorem exportTrees_refs (evidence : Certificate → Term Variable Literal Symbo
           exportTrees_refs evidence store rest others, List.append_nil]
       · cases exported
 end
+
+/-- A converted machine node exports as its conclusion's node, read through the
+store, followed by the conversion (S11). -/
+theorem exportNode_converted (evidence : Certificate → Term Variable Literal Symbol) (store : Store Variable Literal Symbol)
+    (conclusion : Formula Variable Literal Symbol) (inner : RuleApp Variable Literal Symbol Certificate)
+    (premises : List (Premise Variable Literal Symbol)) (goal : Formula Variable Literal Symbol)
+    (children : List (Proof Variable Literal Symbol)) :
+    exportNode evidence store (.converted conclusion inner) premises goal children =
+      (exportNode evidence store inner premises (store.resolve conclusion) children).map
+        (Unfold.convert (store.resolve conclusion) goal) := by
+  rw [exportNode]
+
+/-- The export of a converted node is valid when its conclusion's export is
+valid and the read conclusion converts to the goal: the checker decides the
+conversion by its own rules (`hoApplyElim`, `hoApplyIntro`, implication
+introduction and elimination), and no match is searched again. -/
+theorem exportNode_converted_proves [DecidableEq Symbol] {checker : Checker Variable Literal Symbol}
+    {refs : Symbol → ProofContext Variable Literal Symbol → Formula Variable Literal Symbol → Prop}
+    {context : ProofContext Variable Literal Symbol} {evidence : Certificate → Term Variable Literal Symbol}
+    {store : Store Variable Literal Symbol} {conclusion goal : Formula Variable Literal Symbol}
+    {inner : RuleApp Variable Literal Symbol Certificate} {premises : List (Premise Variable Literal Symbol)}
+    {children : List (Proof Variable Literal Symbol)} {proof : Proof Variable Literal Symbol}
+    (exported : exportNode evidence store inner premises (store.resolve conclusion) children = some proof)
+    (proves : Proves checker refs context (store.resolve conclusion) proof)
+    (converts : Converts checker.snapshot.hoApplySymbol (store.resolve conclusion) goal) :
+    ∃ converted, exportNode evidence store (.converted conclusion inner) premises goal children = some converted ∧
+      Proves checker refs context goal converted :=
+  ⟨_, by rw [exportNode_converted, exported]; rfl, Unfold.convert_proves converts proves⟩
 
 /-- A completed run as a supplied proof term, read through its final store. -/
 def exportProof (vocab : Vocabulary Symbol) (evidence : Certificate → Term Variable Literal Symbol)

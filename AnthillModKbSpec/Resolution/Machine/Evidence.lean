@@ -15,14 +15,16 @@ inductive ClosedWorld where
   deriving DecidableEq, Repr
 
 /-- Rule identity, independent of parameters. Each name is a `Derives` rule,
-except `extension`, a derived or certificate rule added by S08-S14, and the
-S09 commands from `conjUse` on, compositions of `Derives` rules (`Derived`). -/
+except `extension`, a derived or certificate rule added by S08-S14, the S09
+commands from `conjUse` on, compositions of `Derives` rules (`Derived`), and
+`converted`, a rule application followed by `ho_apply` conversion (S11). -/
 inductive RuleId where
   | assumption | truth | conjIntro | conjLeft | conjRight | disjLeft | disjRight | disjElim
   | impIntro | impElim | falsityElim | forallIntro | forallElim | existsIntro | existsElim
   | clause | goalClause | defaultNegIntro | hoApplyIntro | hoApplyElim
   | equalRefl | equalSymm | equalTrans | equalSubst | extension
   | conjUse | disjCases | existsOpen | forallUse | impUse | headUse | headProject | headDenial | onlyIfUse | equalJoin
+  | converted
   deriving DecidableEq, Repr
 
 /-- Closed-world evidence retained in a proof node: its kind and the certificate
@@ -121,6 +123,11 @@ inductive RuleApp (Variable Literal Symbol Certificate : Type) where
   /-- An S09 command, a composition of `Derives` rules; it retains no
   closed-world evidence. -/
   | derived (command : Derived Variable Literal Symbol)
+  /-- `inner` applied for `conclusion`, which converts to the node's goal by
+  `ho_apply` elimination or introduction under implications (S11): one of the
+  two is the other's indirect view (`Converts`). The conversion is a proof
+  step, not a goal rewrite: `inner`'s premises are the node's. -/
+  | converted (conclusion : Formula Variable Literal Symbol) (inner : RuleApp Variable Literal Symbol Certificate)
   deriving Repr
 
 def RuleApp.id : RuleApp Variable Literal Symbol Certificate → RuleId
@@ -132,11 +139,17 @@ def RuleApp.id : RuleApp Variable Literal Symbol Certificate → RuleId
   | .clause _ _ => .clause | .goalClause _ _ => .goalClause | .defaultNegIntro _ => .defaultNegIntro
   | .hoApplyIntro => .hoApplyIntro | .hoApplyElim => .hoApplyElim | .equalRefl => .equalRefl
   | .equalSymm => .equalSymm | .equalTrans => .equalTrans | .equalSubst _ _ => .equalSubst
-  | .extension _ _ _ => .extension | .derived command => command.id
+  | .extension _ _ _ => .extension | .derived command => command.id | .converted _ _ => .converted
+
+/-- The rule application under any `ho_apply` conversions (S11). -/
+def RuleApp.base : RuleApp Variable Literal Symbol Certificate → RuleApp Variable Literal Symbol Certificate
+  | .converted _ inner => inner.base
+  | rule => rule
 
 def RuleApp.closedWorld? : RuleApp Variable Literal Symbol Certificate → Option (ClosedWorldEvidence Certificate)
   | .defaultNegIntro certificate => some ⟨.completeFailure, certificate⟩
   | .extension _ _ evidence => evidence
+  | .converted _ inner => inner.closedWorld?
   | _ => none
 
 /-- Monotonic evidence stays valid when the KB or the predicate registry grows:

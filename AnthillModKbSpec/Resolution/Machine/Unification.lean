@@ -13,7 +13,9 @@ Rigid names are constants. Two binders of the same kind are compared only when
 identical, operation calls only when identical, and an `ho_apply` application
 is never compared with an ordinary one. Those comparisons are capabilities the
 profile does not admit, reported as `unsupported`: alpha-equivalence and
-evaluation are not syntactic clashes, and `ho_apply` conversion is S11's. -/
+evaluation are not syntactic clashes. `ho_apply` conversion is a proof step of
+the strategy (S11, `Machine/Conversion`): it matches a candidate against the
+goal's indirect view, so this matcher stays syntactic. -/
 
 variable {Variable Literal Symbol : Type}
 

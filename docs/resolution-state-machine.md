@@ -871,8 +871,18 @@ proof-layer application; admitting the head match alone is insufficient.
 a rigid argument. `Expansion.toDerives` already composes clause application with
 `hoApplyElim`. `MillerResolution.Proves.certifiedClause` exposes that checked step.
 `Derives.hoApplyIntro` and `Derives.hoApplyElim` justify the two evidence conversions.
-The commands, indexes, scheduler, and continuations specified here remain to be
-implemented; the existing certificate path is not a general unification engine.
+The existing certificate path is not a general unification engine.
+
+S11 implements these commands on the shared machine ([conversion](machine-conversion.md)).
+`ho_goal` normalizes a concrete indirect goal (`Expansion.hoGoal`). A
+candidate concluding a call by `ho_apply` is matched against the goal's
+indirect view with the unchanged S05 matcher, and its node converted by
+`ho_elim`, under implications too (`RuleApp.converted`, `Derives.ofIndirect`).
+That covers flexible and concrete heads, indirect assumptions, and local rules.
+The flexible-head index is the comparison `compareAtom`, and FinishClause is
+the converted clause node. Whole-formula selection is the explicit choice
+`Choice.headMatch`. Lambda-valued answers are classified (`compareAtom_lambda`)
+and reported as gaps. An admitted induction strategy is S12's.
 
 A rejected proposal rejects that candidate, not the goal. If the predicate is
 an unresolved metavariable, or matching needs an unrepresentable lambda-valued

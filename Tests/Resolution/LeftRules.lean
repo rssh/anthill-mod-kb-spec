@@ -270,10 +270,18 @@ def r12Run := solve [] (query [] (r12Context true) (k .p))
 #guard rulesOf r12Run = some [.impUse, .assumption, .disjCases, .impElim, .assumption, .assumption, .assumption]
 #guard checks [] (r12Context true) (k .p) r12Run
 
--- A matcher gap stays a gap: a local rule whose head differs from the goal
--- only by `ho_apply` needs S11's conversion, so the run is unknown, never
--- exhausted, as for `positive`.
-#guard (solve [] (query [] [.imp (k .q) (Term.hoApply .ha (k .p) [k .a]), k .q] (atom .p [k .a]))).kind = .unknown
+-- A local rule whose head differs from the goal only by `ho_apply` is matched
+-- against the goal's indirect view and converted (S11), as for `positive`: the
+-- export is checked, and resuming is exhausted.
+def indirectRule : List T := [.imp (k .q) (Term.hoApply .ha (k .p) [k .a]), k .q]
+def indirectRun := solve [] (query [] indirectRule (atom .p [k .a]))
+#guard rulesOf indirectRun = some [.converted, .assumption, .assumption]
+#guard checks [] indirectRule (atom .p [k .a]) indirectRun
+#guard (resume [] indirectRun).kind = .exhausted
+-- A gap of the matcher stays a gap: a local rule whose head differs from the
+-- goal only by an alpha-variant binder is unknown, never exhausted.
+#guard (solve [] (query [] [.imp (k .q) (atom .p [.forallVar 1 (atom .r [x 1])]), k .q]
+  (atom .p [.forallVar 2 (atom .r [x 2])]))).kind = .unknown
 
 -- A conjunction is split once per branch: under p ∧ q, r has no proof.
 #guard (solve [] (query [] [.conj (k .p) (k .q)] (k .r))).kind = .exhausted
