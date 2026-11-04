@@ -285,20 +285,25 @@ theorem introductionAttempts_sound (valid : store.Scoped) (declared : obligation
     subst inside
     intro _ produced; cases produced
 
-/-- The left strategy is sound for its program's KB, whatever the selection
-chooses and whatever the NAF provider: it builds no closed-world node. -/
-theorem left_sound (program : Program Variable Literal Symbol) (select : Selection Variable Literal Symbol) :
-    Strategy.Sound hoApplySymbol program.kb naf (left (Certificate := Certificate) hoApplySymbol program select) := by
+/-- The left strategy on a program whose clauses are among those of `full`, with
+chosen commands sound for `full`'s KB, is sound for `full`'s KB. -/
+theorem left_sound_within {program full : Program Variable Literal Symbol}
+    (within : ∀ entry ∈ program.clauses, entry ∈ full.clauses) (select : Selection Variable Literal Symbol)
+    (chosenSound : ∀ (obligation : Obligation Variable Literal Symbol) (store : Store Variable Literal Symbol),
+      store.Scoped → obligation.Declared store →
+      ∀ candidate ∈ chosenAttempts (Certificate := Certificate) hoApplySymbol program select obligation store
+        (store.resolve obligation.goal) (store.readContext obligation),
+        AttemptSound hoApplySymbol full.kb naf store obligation candidate) :
+    Strategy.Sound hoApplySymbol full.kb naf (left (Certificate := Certificate) hoApplySymbol program select) := by
   intro obligation store valid declared expansion member
-  have chosen := chosenAttempts_sound (Certificate := Certificate) (hoApplySymbol := hoApplySymbol) (naf := naf)
-    (program := program) valid declared select (goal := store.resolve obligation.goal) (context := store.readContext obligation)
+  have chosen := chosenSound obligation store valid declared
   unfold left at member
   dsimp only at member
   split at member
-  · exact positive_sound program obligation store valid declared expansion member
+  · exact positive_sound_within within obligation store valid declared expansion member
   · split at member
-    · exact atomResponse_sound valid rfl chosen expansion member
-    · exact atomResponse_sound valid rfl chosen expansion member
+    · exact atomResponse_sound_within valid rfl within chosen expansion member
+    · exact atomResponse_sound_within valid rfl within chosen expansion member
     · split at member
       · refine respond_sound (fun candidate inside => ?_) expansion member
         simp only [List.mem_append] at inside
@@ -309,6 +314,13 @@ theorem left_sound (program : Program Variable Literal Symbol) (select : Selecti
       · rename_i first rest foundEq
         rw [Response.alternatives, ← foundEq] at member
         exact exactCandidates_sound rfl expansion member
+
+/-- The left strategy is sound for its program's KB, whatever the selection
+chooses and whatever the NAF provider: it builds no closed-world node. -/
+theorem left_sound (program : Program Variable Literal Symbol) (select : Selection Variable Literal Symbol) :
+    Strategy.Sound hoApplySymbol program.kb naf (left (Certificate := Certificate) hoApplySymbol program select) :=
+  left_sound_within (fun _ member => member) select fun _ _ valid declared =>
+    chosenAttempts_sound valid declared select
 
 /-- A successful run of the left strategy reconstructs `Derives` for its answer
 instance in the program's KB: the goal and context read through the final

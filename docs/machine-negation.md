@@ -117,9 +117,10 @@ falsity goal it tries, in order:
 2. **A join**, committed: two assumed equations that, oriented, read `s = a`
    and `s = b`, give `a = b`. A join only adds a consequence, and a branch has
    finitely many joins because they add no new terms.
-3. The left strategy's **closing candidates**, with each clash clause
-   `false :- f(x̄) = g(ȳ)` offered only for an assumed equation between an `f`
-   and a `g` term (`clashAttempts`), then **one progress step**: the first
+3. The **closing candidates** of the completion without its clash clauses
+   (`Completed.scanned`: identity, ex falso, clauses concluding falsity), then
+   each clash clause `false :- f(x̄) = g(ȳ)` once per constructor pair of an
+   assumed equation (`clashAttempts`), then **one progress step**: the first
    only-if use, replacing an assumed atom `p(s̄)` by its cases from `p`'s
    only-if clause, once per atom; else the newest disjunction split.
 
@@ -315,6 +316,11 @@ annotates only inputs that P0 does not admit (`diagnose_not_ready`).
 - **No constructive negation.** A flexible operand waits, and is refuted for
   every value only when its branch closes. Answers kept as constraints
   (`Store.constraints`, such as `X ≠ one`) with a solver are not implemented.
+- **The outer strategy tries all clash clauses.** The base strategy of
+  `nafByRefutation` is the left strategy over the whole completion. At a goal
+  `false` of the outer query, it tries all clash clauses one after another,
+  even when none of them can succeed. The refutation search tries only the
+  clash clause that matches an assumed equation.
 - **Closing binds nothing**, not even a name a candidate declares while
   closing. A refused binding is recorded as floundering, never as a miss
   (`State.enter`), so a NAF barrier is not opened by it. The evidence-first

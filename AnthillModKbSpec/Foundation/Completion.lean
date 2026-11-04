@@ -56,12 +56,6 @@ inductive Constructor (Literal Symbol : Type) where
   | application (symbol : Symbol) (arity : Nat)
   deriving DecidableEq, Repr
 
-/-- The constructor at the head of a data term, if it is one. -/
-def Constructor.of? {Variable : Type} : Term Variable Literal Symbol → Option (Constructor Literal Symbol)
-  | .lit value => some (.literal value)
-  | .app symbol args => some (.application symbol args.length)
-  | _ => none
-
 def Constructor.arity : Constructor Literal Symbol → Nat
   | .literal _ => 0
   | .application _ arity => arity
@@ -79,12 +73,16 @@ structure Signature (Literal Symbol : Type) where
 
 variable [DecidableEq Variable] [FreshNames Variable]
 
-/-- A defining clause `symbol(args) :- body` as a case of the definition at the
-head names: the clause's own names (`HornClause.templates`) existentially
-quantified over the head equations and its body. -/
-def case (heads : List Variable) (symbol : Symbol) (args body : List (Term Variable Literal Symbol)) :
-    Term Variable Literal Symbol :=
-  (HornClause.definite (.app symbol args) body).templates.foldr Term.existsVar
+/-- The own names of a defining clause with head arguments `args` and body
+`body`. -/
+def caseNames (args body : List (Term Variable Literal Symbol)) : List Variable :=
+  (Term.conjunction (args ++ body)).freeVars.eraseDups
+
+/-- A defining clause as a case of the definition at the head names: the
+clause's own names existentially quantified over the head equations and its
+body. -/
+def case (heads : List Variable) (args body : List (Term Variable Literal Symbol)) : Term Variable Literal Symbol :=
+  (caseNames args body).foldr Term.existsVar
     (Term.conjunction ((heads.zip args).map (fun pair => Term.equal (.var pair.1) pair.2) ++ body))
 
 /-- The only-if half of a predicate's definition: an atom of it holds only by
@@ -92,8 +90,8 @@ one of its clauses. -/
 def onlyIf [DecidableEq Symbol] (clauses : List (HornClause Variable Literal Symbol)) (symbol : Symbol) (arity : Nat) :
     HornClause Variable Literal Symbol :=
   let defining := definitions clauses symbol arity
-  let heads := freshNames (defining.flatMap fun pair => (HornClause.definite (.app symbol pair.1) pair.2).templates) arity
-  .definite ((defining.map fun pair => case heads symbol pair.1 pair.2).foldr .disj .falsity) [.app symbol (heads.map .var)]
+  let heads := freshNames (defining.flatMap fun pair => caseNames pair.1 pair.2) arity
+  .definite ((defining.map fun pair => case heads pair.1 pair.2).foldr .disj .falsity) [.app symbol (heads.map .var)]
 
 /-- Distinct constructors denote distinct values. -/
 def clash (first second : Constructor Literal Symbol) : HornClause Variable Literal Symbol :=
@@ -147,6 +145,35 @@ def Completed.clauses [DecidableEq Literal] [DecidableEq Symbol] (completion : C
     List (HornClause Variable Literal Symbol) :=
   completion.program ++ completion.onlyIfs ++ equality completion.constructors
 
+/-- The clauses of a completed program a search scans: all but the clash
+clauses, which are offered only for an assumed equation with their pair. -/
+def Completed.scanned (completion : Completed Variable Literal Symbol) : List (HornClause Variable Literal Symbol) :=
+  completion.program ++ completion.onlyIfs ++ injections completion.constructors
+
+omit [DecidableEq Variable] in
+theorem Completed.mem_clauses_of_scanned [DecidableEq Literal] [DecidableEq Symbol]
+    {completion : Completed Variable Literal Symbol} {clause : HornClause Variable Literal Symbol}
+    (member : clause ∈ completion.scanned) : clause ∈ completion.clauses := by
+  simp only [Completed.scanned, Completed.clauses, equality, List.mem_append] at member ⊢
+  rcases member with (inProgram | inOnlyIfs) | inInjections
+  · exact .inl (.inl inProgram)
+  · exact .inl (.inr inOnlyIfs)
+  · exact .inr (.inr inInjections)
+
+omit [DecidableEq Variable] in
+theorem Completed.mem_clauses_of_onlyIf [DecidableEq Literal] [DecidableEq Symbol]
+    {completion : Completed Variable Literal Symbol} {clause : HornClause Variable Literal Symbol}
+    (member : clause ∈ completion.onlyIfs) : clause ∈ completion.clauses := by
+  simp only [Completed.clauses, List.mem_append]; exact .inl (.inr member)
+
+omit [DecidableEq Variable] in
+theorem Completed.clash_mem_clauses [DecidableEq Literal] [DecidableEq Symbol]
+    {completion : Completed Variable Literal Symbol} {first second : Constructor Literal Symbol}
+    (firstMember : first ∈ completion.constructors) (secondMember : second ∈ completion.constructors)
+    (distinct : first ≠ second) : clash first second ∈ completion.clauses := by
+  simp only [Completed.clauses, equality, List.mem_append]
+  exact .inr (.inl (clash_mem_clashes firstMember secondMember distinct))
+
 /-- The completion of a program for a signature: the only-if half of each
 predicate of the signature, and the free equality theory over its
 constructors. -/
@@ -176,6 +203,11 @@ def dataConstructorsOf : List (Term Variable Literal Symbol) → List (Construct
   | [] => []
   | term :: rest => dataConstructors term ++ dataConstructorsOf rest
 end
+
+/-- The constructor at the head of a data term, if it is one: the first of its
+constructors (`dataConstructors`). -/
+def Constructor.of? (term : Term Variable Literal Symbol) : Option (Constructor Literal Symbol) :=
+  (dataConstructors term).head?
 
 /-- The atoms of a formula, through its connectives, with the constructors of
 their arguments and of equations. -/

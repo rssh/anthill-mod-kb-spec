@@ -361,12 +361,12 @@ def runExport (vocab : Vocabulary Symbol) (strategy : Strategy Variable Literal 
   | .success proof _ => exportProof vocab (fun _ => .truth) proof
   | _ => none
 
-/-- A refutation of `operand` under `context`: a run of `refuter` on
-`operand → false` in the completed program, exported. -/
-def refute (vocab : Vocabulary Symbol) (hoApplySymbol : Symbol) (completion : Completion.Completed Variable Literal Symbol)
-    (guard : Symbol → Bool) (fuel : Nat) (context : ProofContext Variable Literal Symbol)
-    (operand : Formula Variable Literal Symbol) : Option (Term Variable Literal Symbol) :=
-  runExport vocab (refuter hoApplySymbol completion guard) fuel context (.imp operand .falsity)
+/-- A refutation of `operand` under `context`: a run of the refutation search
+`search` (`refuter`) on `operand → false`, exported. -/
+def refute (vocab : Vocabulary Symbol) (search : Strategy Variable Literal Symbol Unit) (fuel : Nat)
+    (context : ProofContext Variable Literal Symbol) (operand : Formula Variable Literal Symbol) :
+    Option (Term Variable Literal Symbol) :=
+  runExport vocab search fuel context (.imp operand .falsity)
 
 /-- The witness query of a universal negative as a positive run in the
 program within `fuel` steps; it is found when the run's export checks against
@@ -405,14 +405,16 @@ theorem witnessSearch_defeats {vocab : Vocabulary Symbol} {snapshot : Snapshot V
 
 /-- Evidence-first NAF over the left strategy on a completed program: a NAF
 goal the left strategy cannot close is refuted in the same program, and the
-refutation is checked against it. -/
+refutation is checked against it. The completed clauses and the refutation
+search are built once, not per refutation. -/
 def nafByRefutation (vocab : Vocabulary Symbol) (hoApplySymbol : Symbol)
     (completion : Completion.Completed Variable Literal Symbol) (guard : Symbol → Bool)
     (select : Selection Variable Literal Symbol) (fuel : Nat) :
     Strategy Variable Literal Symbol (Term Variable Literal Symbol) :=
-  Strategy.withRefutation (refutationCheck vocab ⟨hoApplySymbol, completion.clauses⟩).check
-    (refute vocab hoApplySymbol completion guard fuel)
-    (left hoApplySymbol (Program.ofClauses completion.clauses guard) select)
+  let clauses := completion.clauses
+  let search := refuter hoApplySymbol completion guard
+  Strategy.withRefutation (refutationCheck vocab ⟨hoApplySymbol, clauses⟩).check (refute vocab search fuel)
+    (left hoApplySymbol (Program.ofClauses clauses guard) select)
 
 /-- Evidence-first NAF is sound for the completed program with refutation
 evidence, so in every model of it with complement NAF (`refutation_adequate`). -/

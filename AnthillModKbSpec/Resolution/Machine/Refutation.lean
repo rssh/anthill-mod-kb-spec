@@ -6,9 +6,11 @@ namespace AnthillModKbSpec.Machine
 
 /-! # Refutation search in the completed program (S10)
 
-NAF evidence by refutation is a proof of `G → false` in the completed program
-(`Completion.completed`). `refuter` searches for one on the shared machine. It
-is the left strategy with the dual rules of negation:
+NAF evidence by refutation is a proof of `G → false` in a completed program
+(`Completion.Completed`). `refuter` searches for one on the shared machine,
+scanning the completion without its clash clauses (`Completed.scanned`) and
+using the dual rules of negation at falsity goals; other goals are the left
+strategy's.
 
 - **Inversion.** At a falsity goal, an assumed conjunction or existential is
   split first, once per branch, and committed to: the split is invertible and
@@ -16,10 +18,12 @@ is the left strategy with the dual rules of negation:
 - **Joins.** Two assumed equations that, oriented, read `s = a` and `s = b`
   give `a = b` (`Expansion.equalJoin`), committed to: a join only adds a
   consequence, and adds no new terms, so a branch has finitely many.
-- **Closing candidates** are `left`'s: assumed `false` closes a case, and the
-  free equality theory closes a case whose head equations clash, through its
-  generated clauses `false :- f(x̄) = g(ȳ)`, offered only for an assumed
-  equation between an `f` and a `g` term (`clashAttempts`), never scanned.
+- **Closing candidates** are `atomResponse`'s over the scanned clauses:
+  identity, ex falso, and clauses concluding falsity, such as assumed `false`.
+  The free equality theory closes a case whose head equations clash, through
+  its generated clauses `false :- f(x̄) = g(ȳ)`. The search tries only the
+  clash clause that matches an assumed equation, once per constructor pair
+  (`clashPairs`, `clashAttempts`).
 - **One progress step** after them: the first only-if use, replacing an
   assumed atom `p(s̄)` by its cases from `p`'s only-if clause `cases :- p(x̄)`
   (`Expansion.onlyIfUse`), once per atom; else the newest disjunction split.
@@ -312,24 +316,46 @@ def choiceAttempt (hoApplySymbol : Symbol) (program : Program Variable Literal S
     (choice? : Option (Choice Variable Literal Symbol)) : Option (Expansion Variable Literal Symbol Certificate) :=
   choice?.bind fun choice => (choice.attempt hoApplySymbol program obligation store (readAvoid .falsity context)).join
 
-/-- The clash candidates at a falsity goal: for each assumed equation, as read,
-between terms headed by distinct constructors of the completion, the clash
-clause of that pair, and no other. -/
+/-- The constructor pairs of the assumed equations, as read, between terms
+headed by distinct constructors of the completion, each pair once. -/
+def clashPairs (constructors : List (Completion.Constructor Literal Symbol))
+    (context : List (Term Variable Literal Symbol × Term Variable Literal Symbol)) :
+    List (Completion.Constructor Literal Symbol × Completion.Constructor Literal Symbol) :=
+  (context.filterMap fun (_, read) =>
+    match read with
+    | .equal left right =>
+        match Completion.Constructor.of? left, Completion.Constructor.of? right with
+        | some first, some second =>
+            if first ∈ constructors ∧ second ∈ constructors ∧ first ≠ second then some (first, second) else none
+        | _, _ => none
+    | _ => none).eraseDups
+
+omit [DecidableEq Variable] [FreshNames Variable] in
+theorem mem_clashPairs {constructors : List (Completion.Constructor Literal Symbol)}
+    {context : List (Term Variable Literal Symbol × Term Variable Literal Symbol)}
+    {first second : Completion.Constructor Literal Symbol} (member : (first, second) ∈ clashPairs constructors context) :
+    first ∈ constructors ∧ second ∈ constructors ∧ first ≠ second := by
+  obtain ⟨⟨_, read⟩, _, produced⟩ := List.mem_filterMap.mp (List.mem_eraseDups.mp member)
+  dsimp only at produced
+  split at produced
+  · split at produced
+    · split at produced
+      · rename_i holds
+        cases produced
+        exact holds
+      · cases produced
+    · cases produced
+  · cases produced
+
+/-- The clash candidates at a falsity goal: the clash clause of each pair of
+`clashPairs`, and no other. -/
 def clashAttempts (hoApplySymbol : Symbol) (constructors : List (Completion.Constructor Literal Symbol))
     (obligation : Obligation Variable Literal Symbol) (store : Store Variable Literal Symbol)
     (context : List (Term Variable Literal Symbol × Term Variable Literal Symbol)) :
     List (Attempt Variable Literal Symbol Certificate) :=
   let avoid := readAvoid .falsity context
-  context.filterMap fun (_, read) =>
-    match read with
-    | .equal left right =>
-        match Completion.Constructor.of? left, Completion.Constructor.of? right with
-        | some first, some second =>
-            if first ∈ constructors ∧ second ∈ constructors ∧ first ≠ second then
-              some (clauseAttempt hoApplySymbol obligation store .falsity avoid ⟨.signature, Completion.clash first second⟩)
-            else none
-        | _, _ => none
-    | _ => none
+  (clashPairs constructors context).map fun (first, second) =>
+    clauseAttempt hoApplySymbol obligation store .falsity avoid ⟨.signature, Completion.clash first second⟩
 
 /-- The one progress step at a falsity goal: the first only-if use, else the
 newest disjunction split. -/
@@ -340,10 +366,8 @@ def progress (hoApplySymbol : Symbol) (program : Program Variable Literal Symbol
     List (Attempt Variable Literal Symbol Certificate) :=
   match onlyIfAttempt? onlyIfs obligation reads context with
   | some use => [some (some use)]
-  | none =>
-      match disjunction? reads context with
-      | some choice => [choice.attempt hoApplySymbol program obligation store (readAvoid .falsity context)]
-      | none => []
+  | none => (choiceAttempt hoApplySymbol program obligation store context (disjunction? reads context)).toList.map
+      (some ∘ some)
 
 /-- The refutation search in a completed program: the left strategy with no
 selection, and at a falsity goal the dual rules of negation, in this order:
@@ -351,10 +375,12 @@ selection, and at a falsity goal the dual rules of negation, in this order:
 1. a conjunction or existential split, committed;
 2. a join of assumed equations, committed: it only adds a consequence, and the
    joins of a branch are finitely many, since they add no new terms;
-3. the closing candidates of the completion without its clash clauses, then
-   the clash clause of each assumed equation between distinct constructors
-   (`clashAttempts`), then one progress step: the first only-if use, else the
-   newest disjunction split.
+3. the closing candidates of the completion without its clash clauses
+   (`Completed.scanned`), then the clash clause of each pair of distinct
+   constructors an assumed equation has (`clashAttempts`), then one progress
+   step: the first only-if use, else the newest disjunction split.
+
+Other goals are the left strategy's on the same scanned clauses.
 
 Only-if uses and splits only add consequences of the assumptions, so the
 search takes one of them at a time and never tries them in another order; a
@@ -362,8 +388,7 @@ disjunction is split only when no only-if use is left. -/
 def refuter (hoApplySymbol : Symbol) (completion : Completion.Completed Variable Literal Symbol) (guard : Symbol → Bool) :
     Strategy Variable Literal Symbol Certificate :=
   let full := Program.ofClauses completion.clauses guard
-  let scanned := Program.ofClauses
-    (completion.program ++ completion.onlyIfs ++ Completion.injections completion.constructors) guard
+  let scanned := Program.ofClauses completion.scanned guard
   fun obligation store =>
     match store.resolve obligation.goal with
     | .falsity =>
@@ -378,7 +403,7 @@ def refuter (hoApplySymbol : Symbol) (completion : Completion.Completed Variable
                 atomResponse hoApplySymbol scanned obligation store .falsity context true
                   (clashAttempts hoApplySymbol completion.constructors obligation store context ++
                     progress hoApplySymbol full completion.onlyIfs obligation store reads context)
-    | _ => left hoApplySymbol full (fun _ _ _ _ => []) obligation store
+    | _ => left hoApplySymbol scanned (fun _ _ _ _ => []) obligation store
 
 theorem onlyIfAttempt?_sound {hoApplySymbol : Symbol} {naf : NafFailure Variable Literal Symbol}
     {kb : LogicalKb Variable Literal Symbol} {onlyIfs : List (HornClause Variable Literal Symbol)}
@@ -429,8 +454,11 @@ theorem refuter_sound {hoApplySymbol : Symbol} {naf : NafFailure Variable Litera
     Strategy.Sound hoApplySymbol (Program.ofClauses completion.clauses guard).kb naf
       (refuter (Certificate := Certificate) hoApplySymbol completion guard) := by
   intro obligation store valid declared expansion member
-  have inClauses : ∀ clause ∈ completion.clauses, (Program.ofClauses completion.clauses guard).kb clause :=
-    fun clause inside => by rw [Program.ofClauses_kb]; exact inside
+  have within : ∀ entry ∈ (Program.ofClauses completion.scanned guard).clauses,
+      entry ∈ (Program.ofClauses completion.clauses guard).clauses := fun entry inside => by
+    simp only [Program.ofClauses, List.mem_map] at inside
+    obtain ⟨clause, inside, rfl⟩ := inside
+    exact Program.mem_ofClauses (Completion.Completed.mem_clauses_of_scanned inside)
   unfold refuter at member
   dsimp only at member
   split at member
@@ -445,45 +473,33 @@ theorem refuter_sound {hoApplySymbol : Symbol} {naf : NafFailure Variable Litera
         simp only [Response.alternatives, List.mem_singleton] at member
         subst member
         exact equalJoin?_sound valid found
-      · refine atomResponse_sound_within valid readGoal (fun entry inside => ?_) (fun candidate added => ?_) expansion member
-        · simp only [Program.ofClauses, List.mem_map] at inside
-          obtain ⟨clause, inside, rfl⟩ := inside
-          refine Program.mem_ofClauses ?_
-          simp only [Completion.Completed.clauses, Completion.equality, List.mem_append] at inside ⊢
-          rcases inside with (inProgram | inOnlyIfs) | inInjections
-          · exact .inl (.inl inProgram)
-          · exact .inl (.inr inOnlyIfs)
-          · exact .inr (.inr inInjections)
-        · rcases List.mem_append.mp added with fromClash | fromProgress
-          · obtain ⟨⟨_, read⟩, _, produced⟩ := List.mem_filterMap.mp fromClash
-            dsimp only at produced
-            split at produced
-            · split at produced
-              · rename_i first second _ _
-                split at produced
-                · rename_i distinct
-                  cases produced
-                  refine clauseAttempt_sound valid readGoal (Program.mem_ofClauses ?_)
-                  simp only [Completion.Completed.clauses, Completion.equality, List.mem_append]
-                  exact .inr (.inl (Completion.clash_mem_clashes distinct.1 distinct.2.1 distinct.2.2))
-                · cases produced
-              · cases produced
-            · cases produced
-          · unfold progress at fromProgress
-            split at fromProgress
-            · rename_i use found
-              simp only [List.mem_singleton] at fromProgress
-              subst fromProgress
-              intro built same
-              cases same
-              exact onlyIfAttempt?_sound (fun clause inside => inClauses clause (by
-                simp only [Completion.Completed.clauses, List.mem_append]; exact .inl (.inr inside))) valid found
-            · split at fromProgress
-              · rename_i choice _
-                simp only [List.mem_singleton] at fromProgress
+      · refine atomResponse_sound_within valid readGoal within (fun candidate added => ?_) expansion member
+        rcases List.mem_append.mp added with fromClash | fromProgress
+        · obtain ⟨⟨first, second⟩, inside, rfl⟩ := List.mem_map.mp fromClash
+          obtain ⟨firstMember, secondMember, distinct⟩ := mem_clashPairs inside
+          exact clauseAttempt_sound valid readGoal
+            (Program.mem_ofClauses (Completion.Completed.clash_mem_clauses firstMember secondMember distinct))
+        · unfold progress at fromProgress
+          split at fromProgress
+          · rename_i use found
+            simp only [List.mem_singleton] at fromProgress
+            subst fromProgress
+            intro built same
+            cases same
+            exact onlyIfAttempt?_sound (fun clause inside => by
+              rw [Program.ofClauses_kb]; exact Completion.Completed.mem_clauses_of_onlyIf inside) valid found
+          · cases split : choiceAttempt (Certificate := Certificate) hoApplySymbol
+                (Program.ofClauses completion.clauses guard) obligation store (store.readContext obligation)
+                (disjunction? ((store.readContext obligation).map Prod.snd) (store.readContext obligation)) with
+            | none => simp [split] at fromProgress
+            | some built =>
+                simp only [split, Option.toList_some, List.map_cons, List.map_nil, List.mem_singleton,
+                  Function.comp_apply] at fromProgress
                 subst fromProgress
-                exact Choice.attempt_sound valid declared choice
-              · cases fromProgress
-  · exact left_sound _ _ obligation store valid declared expansion member
+                intro expansion same
+                cases same
+                exact choiceAttempt_sound valid declared split
+  · exact left_sound_within within _ (fun _ _ _ _ candidate inside => by simp [chosenAttempts] at inside)
+      obligation store valid declared expansion member
 
 end AnthillModKbSpec.Machine

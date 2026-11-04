@@ -628,11 +628,14 @@ theorem compositeResponse_sound (valid : store.Scoped) (declared : obligation.De
     rw [Response.alternatives, ← foundEq] at member
     exact exactCandidates_sound reads expansion member
 
-theorem respondTo_sound (valid : store.Scoped) (declared : obligation.Declared store)
-    (reads : store.resolve obligation.goal = goal) {program : Program Variable Literal Symbol} :
+/-- The responses for a program whose clauses are among those of `full` are
+sound for `full`'s KB. -/
+theorem respondTo_sound_within (valid : store.Scoped) (declared : obligation.Declared store)
+    (reads : store.resolve obligation.goal = goal) {program full : Program Variable Literal Symbol}
+    (within : ∀ entry ∈ program.clauses, entry ∈ full.clauses) :
     ∀ expansion ∈ (respondTo (Certificate := Certificate) hoApplySymbol program obligation store goal
       (store.readContext obligation)).alternatives,
-      CandidateSound hoApplySymbol program.kb naf store obligation expansion := by
+      CandidateSound hoApplySymbol full.kb naf store obligation expansion := by
   intro expansion member
   unfold respondTo at member
   split at member
@@ -643,14 +646,28 @@ theorem respondTo_sound (valid : store.Scoped) (declared : obligation.Declared s
       exact exactCandidates_sound reads expansion member
   · split at member
     all_goals first
-      | exact atomResponse_sound valid reads (fun _ inside => by cases inside) expansion member
+      | exact atomResponse_sound_within valid reads within (fun _ inside => by cases inside) expansion member
       | exact compositeResponse_sound valid declared reads expansion member
+
+theorem respondTo_sound (valid : store.Scoped) (declared : obligation.Declared store)
+    (reads : store.resolve obligation.goal = goal) {program : Program Variable Literal Symbol} :
+    ∀ expansion ∈ (respondTo (Certificate := Certificate) hoApplySymbol program obligation store goal
+      (store.readContext obligation)).alternatives,
+      CandidateSound hoApplySymbol program.kb naf store obligation expansion :=
+  respondTo_sound_within valid declared reads fun _ member => member
+
+/-- The strategy on a program whose clauses are among those of `full` is sound
+for `full`'s KB. -/
+theorem positive_sound_within {program full : Program Variable Literal Symbol}
+    (within : ∀ entry ∈ program.clauses, entry ∈ full.clauses) :
+    Strategy.Sound hoApplySymbol full.kb naf (positive (Certificate := Certificate) hoApplySymbol program) :=
+  fun _ _ valid declared => respondTo_sound_within valid declared rfl within
 
 /-- The strategy is sound for the KB its program denotes, whatever the NAF
 provider: it builds no closed-world node. -/
 theorem positive_sound (program : Program Variable Literal Symbol) :
     Strategy.Sound hoApplySymbol program.kb naf (positive (Certificate := Certificate) hoApplySymbol program) :=
-  fun _ _ valid declared => respondTo_sound valid declared rfl
+  positive_sound_within fun _ member => member
 
 /-- A successful run of the strategy reconstructs `Derives` for its answer
 instance: the goal and context read through the final answers. -/

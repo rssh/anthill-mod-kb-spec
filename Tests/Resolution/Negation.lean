@@ -346,6 +346,20 @@ def unrelated : List T := (List.range 5).map fun index => .disj (atom .q [x (20 
 def literals : List T := (List.range 5).map fun value => atom .r [.lit value]
 #guard checkedRun pOne (naf (atom .p [k .two]) :: literals) [] (naf (atom .p [k .two])) = some .accept
 
+-- The clash candidates at false: one per constructor pair an assumed equation
+-- has, so succ(a) = zero and succ(b) = zero share one; none for a variable side
+-- or a constructor the completion does not declare; a reversed equation is its
+-- own pair.
+def clashCount (constructors : List (Constructor Nat Sym)) (context : List T) : Nat :=
+  let state : State Nat Nat Sym Unit Unit := State.init () [] context .falsity
+  (clashAttempts (Certificate := Unit) Sym.ha constructors state.root state.store
+    (state.store.readContext state.root)).length
+def succZero : List (Constructor Nat Sym) := [.application .succ 1, .application .zero 0]
+#guard clashCount succZero [.equal (atom .succ [x 1]) (k .zero), .equal (atom .succ [x 2]) (k .zero)] = 1
+#guard clashCount succZero [.equal (x 1) (k .zero)] = 0
+#guard clashCount [.application .zero 0] [.equal (atom .succ [x 1]) (k .zero)] = 0
+#guard clashCount succZero [.equal (atom .succ [x 1]) (k .zero), .equal (k .zero) (atom .succ [x 2])] = 2
+
 /-! ### Exact snapshots and contexts
 
 Evidence is checked against the snapshot and the context it is given. -/
