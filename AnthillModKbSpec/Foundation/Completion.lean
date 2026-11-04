@@ -56,6 +56,12 @@ inductive Constructor (Literal Symbol : Type) where
   | application (symbol : Symbol) (arity : Nat)
   deriving DecidableEq, Repr
 
+/-- The constructor at the head of a data term, if it is one. -/
+def Constructor.of? {Variable : Type} : Term Variable Literal Symbol → Option (Constructor Literal Symbol)
+  | .lit value => some (.literal value)
+  | .app symbol args => some (.application symbol args.length)
+  | _ => none
+
 def Constructor.arity : Constructor Literal Symbol → Nat
   | .literal _ => 0
   | .application _ arity => arity
@@ -73,11 +79,12 @@ structure Signature (Literal Symbol : Type) where
 
 variable [DecidableEq Variable] [FreshNames Variable]
 
-/-- A defining clause as a case of the definition at the head names: the
-clause's own names existentially quantified over the head equations and its
-body. -/
-def case (heads : List Variable) (args body : List (Term Variable Literal Symbol)) : Term Variable Literal Symbol :=
-  (Term.conjunction (args ++ body)).freeVars.eraseDups.foldr Term.existsVar
+/-- A defining clause `symbol(args) :- body` as a case of the definition at the
+head names: the clause's own names (`HornClause.templates`) existentially
+quantified over the head equations and its body. -/
+def case (heads : List Variable) (symbol : Symbol) (args body : List (Term Variable Literal Symbol)) :
+    Term Variable Literal Symbol :=
+  (HornClause.definite (.app symbol args) body).templates.foldr Term.existsVar
     (Term.conjunction ((heads.zip args).map (fun pair => Term.equal (.var pair.1) pair.2) ++ body))
 
 /-- The only-if half of a predicate's definition: an atom of it holds only by
@@ -85,8 +92,8 @@ one of its clauses. -/
 def onlyIf [DecidableEq Symbol] (clauses : List (HornClause Variable Literal Symbol)) (symbol : Symbol) (arity : Nat) :
     HornClause Variable Literal Symbol :=
   let defining := definitions clauses symbol arity
-  let heads := freshNames (defining.flatMap fun pair => (Term.conjunction (pair.1 ++ pair.2)).freeVars) arity
-  .definite ((defining.map fun pair => case heads pair.1 pair.2).foldr .disj .falsity) [.app symbol (heads.map .var)]
+  let heads := freshNames (defining.flatMap fun pair => (HornClause.definite (.app symbol pair.1) pair.2).templates) arity
+  .definite ((defining.map fun pair => case heads symbol pair.1 pair.2).foldr .disj .falsity) [.app symbol (heads.map .var)]
 
 /-- Distinct constructors denote distinct values. -/
 def clash (first second : Constructor Literal Symbol) : HornClause Variable Literal Symbol :=
@@ -99,7 +106,7 @@ def injective (symbol : Symbol) (arity : Nat) : List (HornClause Variable Litera
   let left := names.take arity
   let right := names.drop arity
   (left.zip right).map fun pair =>
-    .definite (.equal (.var pair.1) (.var pair.2)) [.equal (.app symbol (left.map .var)) (.app symbol (right.map .var))]
+    .equation (.var pair.1) (.var pair.2) [.equal (.app symbol (left.map .var)) (.app symbol (right.map .var))]
 
 /-- The clash clauses of the free equality theory: one per ordered pair of
 distinct constructors. -/
@@ -119,16 +126,38 @@ def equality [DecidableEq Literal] [DecidableEq Symbol] (constructors : List (Co
     List (HornClause Variable Literal Symbol) :=
   clashes constructors ++ injections constructors
 
-/-- The completed program: the program, the only-if half of each predicate of
-the signature, and the free equality theory over its constructors. -/
+omit [DecidableEq Variable] in
+theorem clash_mem_clashes [DecidableEq Literal] [DecidableEq Symbol] {constructors : List (Constructor Literal Symbol)}
+    {first second : Constructor Literal Symbol} (firstMember : first ∈ constructors)
+    (secondMember : second ∈ constructors) (distinct : first ≠ second) :
+    (clash first second : HornClause Variable Literal Symbol) ∈ clashes constructors :=
+  List.mem_flatMap.mpr ⟨first, firstMember, List.mem_filterMap.mpr ⟨second, secondMember, by simp [distinct]⟩⟩
+
+/-- A completed program by its parts: the KB's clauses, the only-if clause of
+each closed predicate, and the constructors its free equality theory
+separates. -/
+structure Completed (Variable Literal Symbol : Type) where
+  program : List (HornClause Variable Literal Symbol)
+  onlyIfs : List (HornClause Variable Literal Symbol)
+  constructors : List (Constructor Literal Symbol)
+
+/-- The clauses of a completed program: the KB's, the only-if clauses, then
+the free equality theory. -/
+def Completed.clauses [DecidableEq Literal] [DecidableEq Symbol] (completion : Completed Variable Literal Symbol) :
+    List (HornClause Variable Literal Symbol) :=
+  completion.program ++ completion.onlyIfs ++ equality completion.constructors
+
+/-- The completion of a program for a signature: the only-if half of each
+predicate of the signature, and the free equality theory over its
+constructors. -/
+def completion [DecidableEq Symbol] (clauses : List (HornClause Variable Literal Symbol))
+    (signature : Signature Literal Symbol) : Completed Variable Literal Symbol :=
+  ⟨clauses, signature.predicates.map (fun key => onlyIf clauses key.1 key.2), signature.constructors⟩
+
+/-- The completed program, as clauses. -/
 def completed [DecidableEq Literal] [DecidableEq Symbol] (clauses : List (HornClause Variable Literal Symbol))
     (signature : Signature Literal Symbol) : List (HornClause Variable Literal Symbol) :=
-  clauses ++ signature.predicates.map (fun key => onlyIf clauses key.1 key.2) ++ equality signature.constructors
-
-theorem mem_completed [DecidableEq Literal] [DecidableEq Symbol] {clauses : List (HornClause Variable Literal Symbol)}
-    {signature : Signature Literal Symbol} {clause : HornClause Variable Literal Symbol} (member : clause ∈ clauses) :
-    clause ∈ completed clauses signature := by
-  simp [completed, member]
+  (completion clauses signature).clauses
 
 end Completion
 
@@ -214,6 +243,13 @@ def headOpens [DecidableEq Symbol] (hoApplySymbol : Symbol) (head : Term Variabl
 where
   opened := if appliesVariable hoApplySymbol head || formulaVariable head then none else some (symbols head)
 
+/-- The formulas of clauses, their heads and bodies, and further formulas. -/
+def formulasOf (clauses : List (HornClause Variable Literal Symbol)) (formulas : List (Term Variable Literal Symbol)) :
+    List (Term Variable Literal Symbol) :=
+  clauses.flatMap (fun
+    | .definite head body => head :: body
+    | .goal body => body) ++ formulas
+
 /-- The predicates the completion closes and the constructors the equality
 theory separates, for clauses and further formulas such as a query.
 
@@ -227,21 +263,19 @@ variable closes none. -/
 def Signature.of [DecidableEq Literal] [DecidableEq Symbol] (marker : Symbol → Bool) (hoApplySymbol : Symbol)
     (free : Symbol → Bool) (clauses : List (HornClause Variable Literal Symbol))
     (formulas : List (Term Variable Literal Symbol)) : Signature Literal Symbol :=
-  let parts := (clauses.flatMap fun
-      | .definite head body => head :: body
-      | .goal body => body) ++ formulas
-  let found := parts.map formulaParts
-  let constructors := (found.flatMap Prod.snd).eraseDups.filter fun
+  let found := (formulasOf clauses formulas).map formulaParts
+  let constructors := ((found.flatMap Prod.snd).filter fun
     | .literal _ => true
-    | .application symbol _ => free symbol
+    | .application symbol _ => free symbol).eraseDups
   let heads := clauses.filterMap fun
     | .definite head _ => some head
     | .goal _ => none
   match heads.mapM (headOpens hoApplySymbol) with
   | none => ⟨[], constructors⟩
   | some opened =>
+      let opens := opened.flatten
       ⟨(found.flatMap Prod.fst).eraseDups.filter (fun key =>
-          !marker key.1 && key.1 != hoApplySymbol && !opened.flatten.contains key.1), constructors⟩
+          !marker key.1 && key.1 != hoApplySymbol && !opens.contains key.1), constructors⟩
 
 /-- The predicate a clause concludes, if its head is an atom. -/
 def headSymbol? : HornClause Variable Literal Symbol → Option Symbol
@@ -251,9 +285,7 @@ def headSymbol? : HornClause Variable Literal Symbol → Option Symbol
 /-- A marker occurs somewhere in the clauses or the formulas. -/
 def markerUsed (marker : Symbol → Bool) (clauses : List (HornClause Variable Literal Symbol))
     (formulas : List (Term Variable Literal Symbol)) : Bool :=
-  (clauses.flatMap (fun
-      | .definite head body => symbols head ++ symbolsOf body
-      | .goal body => symbolsOf body) ++ symbolsOf formulas).any marker
+  (symbolsOf (formulasOf clauses formulas)).any marker
 
 /-- A clause that may conclude a marker: its head mentions one, or, when a
 marker is used at all, its head may conclude any predicate (`headOpens`). -/
@@ -269,10 +301,10 @@ may conclude any predicate. The first such clause is reported. -/
 def complete? [DecidableEq Literal] [DecidableEq Symbol] [DecidableEq Variable] [FreshNames Variable]
     (marker : Symbol → Bool) (hoApplySymbol : Symbol) (free : Symbol → Bool)
     (clauses : List (HornClause Variable Literal Symbol))
-    (formulas : List (Term Variable Literal Symbol)) : Except Nat (List (HornClause Variable Literal Symbol)) :=
+    (formulas : List (Term Variable Literal Symbol)) : Except Nat (Completed Variable Literal Symbol) :=
   match clauses.findIdx? (mayConcludeMarker marker hoApplySymbol (markerUsed marker clauses formulas)) with
   | some index => .error index
-  | none => .ok (completed clauses (Signature.of marker hoApplySymbol free clauses formulas))
+  | none => .ok (completion clauses (Signature.of marker hoApplySymbol free clauses formulas))
 
 /-- The completion closes no marker and not `ho_apply`. -/
 theorem Signature.of_open [DecidableEq Literal] [DecidableEq Symbol] {marker : Symbol → Bool} {hoApplySymbol : Symbol}
@@ -295,7 +327,8 @@ theorem headSymbol?_disjunction (cases : List (Term Variable Literal Symbol)) (b
 mentions none, and, when a marker is used, it may not conclude any predicate. -/
 theorem complete?_heads [DecidableEq Literal] [DecidableEq Symbol] [DecidableEq Variable] [FreshNames Variable]
     {marker : Symbol → Bool} {hoApplySymbol : Symbol} {free : Symbol → Bool}
-    {clauses result : List (HornClause Variable Literal Symbol)} {formulas : List (Term Variable Literal Symbol)}
+    {clauses : List (HornClause Variable Literal Symbol)} {result : Completed Variable Literal Symbol}
+    {formulas : List (Term Variable Literal Symbol)}
     (completes : complete? marker hoApplySymbol free clauses formulas = .ok result) :
     ∀ clause ∈ clauses, mayConcludeMarker marker hoApplySymbol (markerUsed marker clauses formulas) clause = false := by
   unfold complete? at completes
@@ -311,26 +344,24 @@ equations, or falsity. So an open marker is never derived from a clause, and,
 closing no marker, the completion never refutes it. -/
 theorem complete?_reserved [DecidableEq Literal] [DecidableEq Symbol] [DecidableEq Variable] [FreshNames Variable]
     {marker : Symbol → Bool} {hoApplySymbol : Symbol} {free : Symbol → Bool}
-    {clauses result : List (HornClause Variable Literal Symbol)} {formulas : List (Term Variable Literal Symbol)}
+    {clauses : List (HornClause Variable Literal Symbol)} {result : Completed Variable Literal Symbol}
+    {formulas : List (Term Variable Literal Symbol)}
     (completes : complete? marker hoApplySymbol free clauses formulas = .ok result) :
-    ∀ clause ∈ result, (headSymbol? clause).any marker = false := by
+    ∀ clause ∈ result.clauses, (headSymbol? clause).any marker = false := by
   have heads := complete?_heads completes
   unfold complete? at completes
   split at completes
   · cases completes
   · cases completes
     intro clause member
-    simp only [completed, List.mem_append, List.mem_map] at member
+    simp only [Completed.clauses, completion, List.mem_append, List.mem_map] at member
     rcases member with (inKb | ⟨key, _, rfl⟩) | inEquality
     · have clean := heads clause inKb
-      match clause, clean with
-      | .definite (.app symbol args) _, clean =>
-          simp only [mayConcludeMarker, symbols, List.any_cons, Bool.or_eq_false_iff] at clean
-          simp [headSymbol?, clean.1.1]
-      | .definite (.var _) _, _ | .definite (.lit _) _, _ | .definite .truth _, _ | .definite .falsity _, _
-      | .definite (.conj _ _) _, _ | .definite (.disj _ _) _, _ | .definite (.imp _ _) _, _
-      | .definite (.defaultNeg _) _, _ | .definite (.forallVar _ _) _, _ | .definite (.existsVar _ _) _, _
-      | .definite (.dictionaryCall _ _ _ _) _, _ | .definite (.equal _ _) _, _ | .goal _, _ => rfl
+      rcases clause with ⟨head, _⟩ | _
+      · cases head <;> try rfl
+        simp only [mayConcludeMarker, symbols, List.any_cons, Bool.or_eq_false_iff] at clean
+        simp [headSymbol?, clean.1.1]
+      · rfl
     · simp [onlyIf, headSymbol?_disjunction]
     · simp only [equality, clashes, injections, List.mem_append, List.mem_flatMap, List.mem_filterMap] at inEquality
       rcases inEquality with ⟨_, _, _, _, produced⟩ | ⟨constructor, _, produced⟩

@@ -507,13 +507,16 @@ theorem clauseAttempt_sound (valid : store.Scoped) (reads : store.resolve obliga
         (by rw [valid.read_refines reads refines]; exact Store.resolve_falsity _)
     · intro _ found; cases found
 
-theorem atomResponse_sound (valid : store.Scoped) (reads : store.resolve obligation.goal = goal)
-    {program : Program Variable Literal Symbol} {leftRules : Bool}
+/-- The candidates for a program whose clauses are among those of `full` are
+sound for `full`'s KB. -/
+theorem atomResponse_sound_within (valid : store.Scoped) (reads : store.resolve obligation.goal = goal)
+    {program full : Program Variable Literal Symbol} {leftRules : Bool}
     {extra : List (Attempt Variable Literal Symbol Certificate)}
-    (extraSound : ∀ candidate ∈ extra, AttemptSound hoApplySymbol program.kb naf store obligation candidate) :
+    (within : ∀ entry ∈ program.clauses, entry ∈ full.clauses)
+    (extraSound : ∀ candidate ∈ extra, AttemptSound hoApplySymbol full.kb naf store obligation candidate) :
     ∀ expansion ∈ (atomResponse (Certificate := Certificate) hoApplySymbol program obligation store goal
       (store.readContext obligation) leftRules extra).alternatives,
-      CandidateSound hoApplySymbol program.kb naf store obligation expansion := by
+      CandidateSound hoApplySymbol full.kb naf store obligation expansion := by
   refine respond_sound fun candidate member => ?_
   simp only [List.mem_append] at member
   rcases member with (((identity | falso) | fromRule) | clause) | added
@@ -525,8 +528,17 @@ theorem atomResponse_sound (valid : store.Scoped) (reads : store.resolve obligat
   · obtain ⟨⟨rule, read⟩, _, rfl⟩ := List.mem_map.mp fromRule
     exact localAttempt_sound valid rule read leftRules
   · obtain ⟨entry, entryMember, rfl⟩ := List.mem_map.mp clause
-    exact clauseAttempt_sound valid reads entryMember
+    exact clauseAttempt_sound valid reads (within entry entryMember)
   · exact extraSound candidate added
+
+theorem atomResponse_sound (valid : store.Scoped) (reads : store.resolve obligation.goal = goal)
+    {program : Program Variable Literal Symbol} {leftRules : Bool}
+    {extra : List (Attempt Variable Literal Symbol Certificate)}
+    (extraSound : ∀ candidate ∈ extra, AttemptSound hoApplySymbol program.kb naf store obligation candidate) :
+    ∀ expansion ∈ (atomResponse (Certificate := Certificate) hoApplySymbol program obligation store goal
+      (store.readContext obligation) leftRules extra).alternatives,
+      CandidateSound hoApplySymbol program.kb naf store obligation expansion :=
+  atomResponse_sound_within valid reads (fun _ member => member) extraSound
 
 omit [DecidableEq Symbol] [DecidableEq Literal] in
 /-- The introduction rules are sound: the goal reads as their connective in

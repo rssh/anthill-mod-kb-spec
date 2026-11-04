@@ -13,7 +13,7 @@ parameters. Traces are in
 | --- | --- |
 | [Foundation/Derivation](../AnthillModKbSpec/Foundation/Derivation.lean) | `Derives.defaultNegIntro` without the closed-operand premise |
 | [Foundation/Semantics](../AnthillModKbSpec/Foundation/Semantics.lean) | `Model.FailureAdequate`: evidence makes `naf G` true in every environment satisfying the context |
-| [Foundation/Completion](../AnthillModKbSpec/Foundation/Completion.lean) | The only-if clauses (`onlyIf`), the free equality theory (`clash`, `injective`, `equality`), the completed program (`completed`), the signature a program needs (`Signature.of`), the reserved-marker check (`complete?`, `complete?_reserved`), the refutation provider (`refutation`) and its adequacy (`refutation_adequate`) |
+| [Foundation/Completion](../AnthillModKbSpec/Foundation/Completion.lean) | The only-if clauses (`onlyIf`), the free equality theory (`clash`, `injective`, `equality`), the completed program by its parts (`Completed`, `completion`) and as clauses (`completed`), the signature a program needs (`Signature.of`), the reserved-marker check (`complete?`, `complete?_reserved`), the refutation provider (`refutation`) and its adequacy (`refutation_adequate`) |
 | [P1/Refutation](../AnthillModKbSpec/Resolution/P1/Refutation.lean) | The NAF check (`refutationCheck`), the checker with refutation evidence (`refutationChecker`), and its soundness (`refutationChecker_sound`) |
 | [Machine/Evidence](../AnthillModKbSpec/Resolution/Machine/Evidence.lean) | The S10 commands `Derived.onlyIfUse` and `Derived.equalJoin` |
 | [Machine/Refutation](../AnthillModKbSpec/Resolution/Machine/Refutation.lean) | The commands' candidates and contracts (`Expansion.onlyIfUse_soundUnder`, `Expansion.equalJoin_soundUnder`), the refutation search `refuter`, `refuter_sound` |
@@ -52,8 +52,10 @@ of clause:
 - `false :- f(x̄) = g(ȳ)` for each pair of distinct constructors;
 - `xᵢ = yᵢ :- f(x̄) = f(ȳ)` for injectivity.
 
-The completed program is the program together with these clauses. It is a
-list of clauses, so the S08 checker checks derivations in it unchanged. Which
+The completed program is the program together with these clauses. As clauses
+(`Completed.clauses`), the S08 checker checks derivations in it unchanged; kept
+by its parts (`Completed`: the KB's clauses, the only-if clauses, the
+constructors), it tells the refutation search each clause's role. Which
 predicates are closed and which constructors are free is `Signature.of`'s:
 
 - **Constructors are declared, never inferred.** An application symbol is a
@@ -117,7 +119,7 @@ falsity goal it tries, in order:
    finitely many joins because they add no new terms.
 3. The left strategy's **closing candidates**, with each clash clause
    `false :- f(x̄) = g(ȳ)` offered only for an assumed equation between an `f`
-   and a `g` term (`clashRelevant`), then **one progress step**: the first
+   and a `g` term (`clashAttempts`), then **one progress step**: the first
    only-if use, replacing an assumed atom `p(s̄)` by its cases from `p`'s
    only-if clause, once per atom; else the newest disjunction split.
 
@@ -168,8 +170,8 @@ logical nodes (`exportDerived`, `Unfold.*_proves`). No new rule is checked.
 `refute` runs `refuter` on `G → false`, within its fuel, with the context and
 operand as read and their free names rigid. It exports the run as a proof
 term. A run that is exhausted, unknown, or interrupted gives no evidence.
-`nafByRefutation` puts this together over the left strategy and the completed
-clauses, with `refutationCheck` as the check.
+`nafByRefutation` puts this together over the left strategy and a completed
+program, with `refutationCheck` as the check.
 
 The NAF node is read the same in every later store, because rigid names are
 never bound (`Store.read_rigid`) and a closing store binds nothing more

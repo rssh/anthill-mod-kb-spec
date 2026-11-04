@@ -103,8 +103,7 @@ def nafAlong : List Nat → Term Variable Literal Symbol → Bool
 def Input.goalAt? (input : Input Domain Variable Literal Symbol) : Site → Option (Term Variable Literal Symbol)
   | .goal => some input.goal
   | .body clause position =>
-      (input.kbClauses.find? (·.1 == clause)).bind fun pair =>
-        match pair.2 with
+      (OperationDictionaries.lookup input.kbClauses clause).bind fun
         | .definite _ body | .goal body => body[position]?
   | _ => none
 

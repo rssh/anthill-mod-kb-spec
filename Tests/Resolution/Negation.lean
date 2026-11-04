@@ -35,8 +35,11 @@ def signatureOf (clauses : List Clause) (formulas : List T := []) : Signature Na
 
 /-- The completed program of `clauses`, closing their predicates and those of
 `formulas`. -/
+def completionOf (clauses : List Clause) (formulas : List T := []) : Completed Nat Nat Sym :=
+  completion clauses (signatureOf clauses formulas)
+
 def completedOf (clauses : List Clause) (formulas : List T := []) : List Clause :=
-  completed clauses (signatureOf clauses formulas)
+  (completionOf clauses formulas).clauses
 
 def snapshotOf (clauses : List Clause) (formulas : List T := []) : Snapshot Nat Nat Sym :=
   ⟨.ha, completedOf clauses formulas⟩
@@ -123,7 +126,7 @@ def invalidAt (clauses : List Clause) : Option Nat :=
 #guard invalidAt [.definite (k .unknown) [atom .q [x 0]]] = some 0
 #guard invalidAt openQ = none
 #guard match complete? (· == .unknown) .ha free openQ [] with
-  | .ok result => result.length == (completedOf openQ).length
+  | .ok result => result.clauses.length == (completedOf openQ).length
   | .error _ => false
 
 -- A head mentioning the marker anywhere is invalid: through a compound head or
@@ -140,14 +143,10 @@ def invalidAt (clauses : List Clause) : Option Nat :=
 
 abbrev Run := Outcome Nat Nat Sym T Unit
 
-def onlyIfsOf (clauses : List Clause) (formulas : List T := []) : List Clause :=
-  (signatureOf clauses formulas).predicates.map fun (symbol, arity) => onlyIf clauses symbol arity
-
 /-- The evidence-first NAF strategy over the completion of `clauses`. -/
 def strategy (clauses : List Clause) (formulas : List T := []) (select : Selection Nat Nat Sym := fun _ _ _ _ => []) :
     Strategy Nat Nat Sym T :=
-  nafByRefutation vocab .ha (completedOf clauses formulas) (onlyIfsOf clauses formulas)
-    (clashes (signatureOf clauses formulas).constructors) (fun _ => false) select 200
+  nafByRefutation vocab .ha (completionOf clauses formulas) (fun _ => false) select 200
 
 def runOf (clauses : List Clause) (formulas : List T) (flexibles : List Nat) (context : List T) (goal : T) : Run :=
   run (strategy clauses formulas) 2000 (State.init () flexibles context goal)

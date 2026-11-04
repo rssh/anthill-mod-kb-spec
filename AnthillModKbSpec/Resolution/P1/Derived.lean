@@ -340,16 +340,10 @@ theorem orientedEquation_proves {flip : Bool} {equation : Formula Variable Liter
     {shared side : Term Variable Literal Symbol} (oriented : Machine.orient flip equation = some (shared, side))
     (member : equation ∈ context) :
     Proves checker refs context (.equal shared side) (orientedEquation flip equation shared side) := by
-  cases equation with
-  | equal left right =>
-      cases flip
-      · simp only [Machine.orient, Bool.false_eq_true, ↓reduceIte, Option.some.injEq, Prod.mk.injEq] at oriented
-        obtain ⟨rfl, rfl⟩ := oriented
-        exact hypothesis_proves member
-      · simp only [Machine.orient, ↓reduceIte, Option.some.injEq, Prod.mk.injEq] at oriented
-        obtain ⟨rfl, rfl⟩ := oriented
-        exact node₁_proves .equalSymm (hypothesis_proves member)
-  | _ => simp [Machine.orient] at oriented
+  have equal := Machine.orient_eq_some oriented
+  cases flip <;> simp only [Bool.false_eq_true, ↓reduceIte] at equal <;> subst equal
+  · exact hypothesis_proves member
+  · exact node₁_proves .equalSymm (hypothesis_proves member)
 
 /-- The join: both equations are assumed and, oriented, share a side. -/
 theorem equalJoin_proves {first second goal : Formula Variable Literal Symbol} {flipFirst flipSecond : Bool}
@@ -462,8 +456,8 @@ def exportDerived (store : Store Variable Literal Symbol) (goal : Formula Variab
   | .headProject clause@(.definite head _) fresh path, [bodyProof] =>
       Unfold.headProject clause (readInstantiation store fresh)
         (store.resolve (head.instantiate (Substitution.rename fresh))) path bodyProof
-  | .onlyIfUse clause@(.definite cases [.app symbol heads]) args, [continuation] =>
-      (heads.mapM Term.variableName?).map fun names =>
+  | .onlyIfUse clause args, [continuation] =>
+      (onlyIfHead? clause).map fun (cases, symbol, names) =>
         Unfold.onlyIfUse clause ((names.zip args).map fun pair => (pair.1, store.resolve pair.2))
           (store.resolve (.app symbol args)) (store.resolve (onlyIfCases cases names args)) goal continuation
   | .headDenial clause@(.definite (.imp premise .falsity) _) fresh, [bodyProof, argument] =>

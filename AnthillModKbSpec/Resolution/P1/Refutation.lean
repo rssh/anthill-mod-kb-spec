@@ -24,15 +24,25 @@ variable {Variable Literal Symbol : Type} [DecidableEq Variable] [DecidableEq Li
 def Snapshot.positive (snapshot : Snapshot Variable Literal Symbol) : Checker Variable Literal Symbol :=
   ⟨snapshot, NafFailure.disabled, none, []⟩
 
+/-- A supplied proof of `goal` under `context`, checked against the snapshot
+with no NAF. -/
+def Snapshot.provesPositively (vocab : Vocabulary Symbol) (snapshot : Snapshot Variable Literal Symbol)
+    (context : ProofContext Variable Literal Symbol) (goal : Formula Variable Literal Symbol)
+    (proof : Term Variable Literal Symbol) : Bool :=
+  decide (checkProof vocab snapshot.positive [] context goal proof = .accept)
+
+theorem Snapshot.provesPositively_derives {vocab : Vocabulary Symbol} {snapshot : Snapshot Variable Literal Symbol}
+    {context : ProofContext Variable Literal Symbol} {goal : Formula Variable Literal Symbol}
+    {proof : Term Variable Literal Symbol} (checked : snapshot.provesPositively vocab context goal proof = true) :
+    Derives snapshot.hoApplySymbol snapshot.kb context goal NafFailure.disabled :=
+  checked_toDerives vocab snapshot.positive ((checkProof_accept_iff vocab snapshot.positive).mp (of_decide_eq_true checked))
+
 /-- NAF evidence is a supplied proof, as a term, of `operand → false` under the
 NAF's own context, checked against the snapshot. -/
 def refutationCheck (vocab : Vocabulary Symbol) (snapshot : Snapshot Variable Literal Symbol) :
     NafCheck snapshot (refutation snapshot.hoApplySymbol snapshot.kb) where
-  check := fun context operand evidence =>
-    decide (checkProof vocab snapshot.positive [] context (.imp operand .falsity) evidence = .accept)
-  sound _ _ _ accepted :=
-    ⟨rfl, rfl, checked_toDerives vocab snapshot.positive
-      ((checkProof_accept_iff vocab snapshot.positive).mp (of_decide_eq_true accepted))⟩
+  check := fun context operand evidence => snapshot.provesPositively vocab context (.imp operand .falsity) evidence
+  sound _ _ _ accepted := ⟨rfl, rfl, Snapshot.provesPositively_derives accepted⟩
 
 /-- The checker for proofs whose NAF evidence is a refutation in the same
 snapshot. -/

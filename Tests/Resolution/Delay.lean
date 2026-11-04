@@ -307,29 +307,20 @@ def closed := solve (query [X] [] (atom .r [.var X])) closingAware
 #guard recordsAre closed [(0, atom .r [.var X])]
 -- No name is bound while closing: a driver that binds X then is refused, and
 -- the refusal is recorded as floundering, never as a miss.
-def closingBinder : Strategy Nat Nat Sym Unit := fun obligation store =>
+def closingBinder (value : Nat → T) : Strategy Nat Nat Sym Unit := fun obligation store =>
   match store.resolve obligation.goal with
   | .app .r [arg] =>
       match unbound? store arg with
       | some name =>
-          if store.closing then .candidates [{ rule := .extension .r [arg] none, bindings := [(name, k .a)] }]
+          if store.closing then .candidates [{ rule := .extension .r [arg] none, bindings := [(name, value name)] }]
           else .delay [name]
       | none => delaying obligation store
   | _ => delaying obligation store
-#guard (solve (query [X] [] (atom .r [.var X])) closingBinder).kind = .unknown
-#guard gapReasons (solve (query [X] [] (atom .r [.var X])) closingBinder) = [.floundered]
+#guard (solve (query [X] [] (atom .r [.var X])) (closingBinder fun _ => k .a)).kind = .unknown
+#guard gapReasons (solve (query [X] [] (atom .r [.var X])) (closingBinder fun _ => k .a)) = [.floundered]
 -- A real miss while closing stays a miss: binding X := p(X) fails the occurs
 -- check before the closing refusal is reached, and the run is exhausted.
-def closingOccurs : Strategy Nat Nat Sym Unit := fun obligation store =>
-  match store.resolve obligation.goal with
-  | .app .r [arg] =>
-      match unbound? store arg with
-      | some name =>
-          if store.closing then .candidates [{ rule := .extension .r [arg] none, bindings := [(name, atom .p [.var name])] }]
-          else .delay [name]
-      | none => delaying obligation store
-  | _ => delaying obligation store
-#guard (solve (query [X] [] (atom .r [.var X])) closingOccurs).kind = .exhausted
+#guard (solve (query [X] [] (atom .r [.var X])) (closingBinder fun name => atom .p [.var name])).kind = .exhausted
 -- So a NAF barrier is not opened by a refused binding: below, r(X) asked while
 -- closing needs naf q(a), run in the same run, and q(a) holds by an instance
 -- that binds a fresh name. Alone, naf q(a) is exhausted; asked while closing,

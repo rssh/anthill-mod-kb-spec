@@ -63,7 +63,7 @@ theorem Store.allRigid_spec {store : Store Variable Literal Symbol} {terms : Lis
 
 /-- The unbound flexible names of the terms. -/
 def Store.waitingNames (store : Store Variable Literal Symbol) (terms : List (Term Variable Literal Symbol)) : List Variable :=
-  (terms.flatMap Term.freeVars).eraseDups.filter store.assignable
+  ((terms.flatMap Term.freeVars).filter store.assignable).eraseDups
 
 omit [DecidableEq Symbol] [DecidableEq Literal] in
 /-- A NAF goal and its context read the same in every later store when the
@@ -71,9 +71,9 @@ store is closing, or when their free names, as read, are all rigid. -/
 theorem Store.read_stableNegation {store later : Store Variable Literal Symbol} (valid : store.Scoped)
     (laterScoped : later.Scoped) (refines : store.Refines later) {goal operand : Formula Variable Literal Symbol}
     {context : ProofContext Variable Literal Symbol} (readGoal : store.resolve goal = .defaultNeg operand)
-    (stable : store.closing = true ∨ store.allRigid (operand :: context.map store.resolve) = true) :
+    (stable : (store.closing || store.allRigid (operand :: context.map store.resolve)) = true) :
     later.resolve goal = .defaultNeg operand ∧ context.map later.resolve = context.map store.resolve := by
-  rcases stable with closing | rigid
+  rcases Bool.or_eq_true_iff.mp stable with closing | rigid
   · exact ⟨(refines.resolve_closing closing goal).trans readGoal,
       List.map_congr_left fun assumption _ => refines.resolve_closing closing assumption⟩
   have allRigid := Store.allRigid_spec rigid
@@ -113,11 +113,12 @@ theorem mem_refuteOr
     · exact .inl member
   · exact .inl member
 
-/-- Evidence-first NAF: the base strategy's candidates, then a delay on the
-names the NAF waits for, then a NAF node whose refutation checks, for a goal
-whose free names are rigid. While the branch is closing (`Store.close`) the
-NAF no longer waits: no name will be bound, so the names it waited for are
-refuted generically, for every value. -/
+/-- Evidence-first NAF: the base strategy's candidates, then, for a goal whose
+free names are all rigid, or while the branch is closing (`Store.close`), a
+NAF node whose refutation checks; otherwise a delay on the names the NAF waits
+for. While closing no name will be bound, so the names it waited for are
+refuted generically, for every value. A waiting name is flexible, so a goal
+whose names are all rigid waits for none. -/
 def Strategy.withRefutation (check : ProofContext Variable Literal Symbol → Formula Variable Literal Symbol →
       Term Variable Literal Symbol → Bool)
     (refute : ProofContext Variable Literal Symbol → Formula Variable Literal Symbol → Option (Term Variable Literal Symbol))
@@ -127,12 +128,41 @@ def Strategy.withRefutation (check : ProofContext Variable Literal Symbol → Fo
   match store.resolve obligation.goal, response.alternatives with
   | .defaultNeg operand, [] =>
       let reads := obligation.context.map store.resolve
-      if store.closing then refuteOr check refute reads operand response
+      if store.closing || store.allRigid (operand :: reads) then refuteOr check refute reads operand response
       else
         match store.waitingNames (operand :: reads) with
-        | name :: names => .delay (name :: names)
-        | [] => if store.allRigid (operand :: reads) then refuteOr check refute reads operand response else response
+        | [] => response
+        | names => .delay names
   | _, _ => response
+
+omit [DecidableEq Symbol] [DecidableEq Literal] in
+/-- What evidence-first NAF offers: the base's candidates, or a NAF node for a
+goal read as `naf G` that is stable, with evidence that checks for the context
+and operand as read. -/
+theorem mem_withRefutation
+    {check : ProofContext Variable Literal Symbol → Formula Variable Literal Symbol → Term Variable Literal Symbol → Bool}
+    {refute : ProofContext Variable Literal Symbol → Formula Variable Literal Symbol → Option (Term Variable Literal Symbol)}
+    {base : Strategy Variable Literal Symbol (Term Variable Literal Symbol)} {obligation : Obligation Variable Literal Symbol}
+    {store : Store Variable Literal Symbol} {expansion : Expansion Variable Literal Symbol (Term Variable Literal Symbol)}
+    (member : expansion ∈ (Strategy.withRefutation check refute base obligation store).alternatives) :
+    expansion ∈ (base obligation store).alternatives ∨
+      ∃ operand evidence, store.resolve obligation.goal = .defaultNeg operand ∧
+        (store.closing || store.allRigid (operand :: obligation.context.map store.resolve)) = true ∧
+        expansion = Expansion.negation evidence ∧
+        check (obligation.context.map store.resolve) operand evidence = true := by
+  unfold Strategy.withRefutation at member
+  dsimp only at member
+  split at member
+  · rename_i _ _ operand readGoal _
+    split at member
+    · rename_i stable
+      rcases mem_refuteOr member with inBase | ⟨evidence, rfl, checked⟩
+      · exact .inl inBase
+      · exact .inr ⟨operand, evidence, readGoal, stable, rfl, checked⟩
+    · split at member
+      · exact .inl member
+      · cases member
+  · exact .inl member
 
 omit [DecidableEq Symbol] [DecidableEq Literal] in
 /-- Evidence-first NAF is sound when its base is and its check yields evidence
@@ -145,34 +175,13 @@ theorem Strategy.withRefutation_sound {hoApplySymbol : Symbol} {kb : LogicalKb V
     (checkSound : ∀ context operand evidence, check context operand evidence = true → naf hoApplySymbol kb context operand) :
     Strategy.Sound hoApplySymbol kb naf (Strategy.withRefutation check refute base) := by
   intro obligation store valid declared expansion member
-  have fromBase := baseSound obligation store valid declared
-  have refuted : ∀ {operand}, store.resolve obligation.goal = .defaultNeg operand →
-      (store.closing = true ∨ store.allRigid (operand :: obligation.context.map store.resolve) = true) →
-      expansion ∈ (refuteOr check refute (obligation.context.map store.resolve) operand
-        (base obligation store)).alternatives →
-      CandidateSound hoApplySymbol kb naf store obligation expansion := by
-    intro operand readGoal stable inside
-    rcases mem_refuteOr inside with inBase | ⟨evidence, rfl, checked⟩
-    · exact fromBase expansion inBase
-    intro next woken committed later refines laterScoped _
-    obtain ⟨goalRead, contextRead⟩ := Store.read_stableNegation valid laterScoped
-      ((Store.commit_refines committed).trans refines) readGoal stable
-    simp only [ReadDerives, goalRead, contextRead]
-    exact .defaultNegIntro (checkSound _ _ _ checked)
-  unfold Strategy.withRefutation at member
-  dsimp only at member
-  split at member
-  · rename_i operand _ readGoal _
-    split at member
-    · rename_i closing
-      exact refuted readGoal (.inl closing) member
-    · split at member
-      · cases member
-      · split at member
-        · rename_i rigid
-          exact refuted readGoal (.inr rigid) member
-        · exact fromBase expansion member
-  · exact fromBase expansion member
+  rcases mem_withRefutation member with inBase | ⟨operand, evidence, readGoal, stable, rfl, checked⟩
+  · exact baseSound obligation store valid declared expansion inBase
+  intro next woken committed later refines laterScoped _
+  obtain ⟨goalRead, contextRead⟩ := Store.read_stableNegation valid laterScoped
+    ((Store.commit_refines committed).trans refines) readGoal stable
+  simp only [ReadDerives, goalRead, contextRead]
+  exact .defaultNegIntro (checkSound _ _ _ checked)
 
 omit [DecidableEq Symbol] [DecidableEq Literal] in
 /-- Every NAF node evidence-first NAF offers carries evidence that checks for
@@ -189,34 +198,14 @@ theorem Strategy.withRefutation_checked
     (laterScoped : later.Scoped) (refines : store.Refines later) :
     later.resolve obligation.goal = .defaultNeg operand ∧
       check (obligation.context.map later.resolve) operand evidence = true := by
-  have refuted : (store.closing = true ∨ store.allRigid (operand :: obligation.context.map store.resolve) = true) →
-      Expansion.negation evidence ∈ (refuteOr check refute (obligation.context.map store.resolve) operand
-        (base obligation store)).alternatives →
-      later.resolve obligation.goal = .defaultNeg operand ∧
-        check (obligation.context.map later.resolve) operand evidence = true := by
-    intro stable inside
-    rcases mem_refuteOr inside with inBase | ⟨found, same, checked⟩
-    · exact absurd rfl (fresh _ inBase)
-    simp only [Expansion.negation, Expansion.mk.injEq, RuleApp.defaultNegIntro.injEq, and_true] at same
-    subst same
-    obtain ⟨goalRead, contextRead⟩ := Store.read_stableNegation valid laterScoped refines readGoal stable
-    exact ⟨goalRead, contextRead ▸ checked⟩
-  unfold Strategy.withRefutation at member
-  dsimp only at member
-  rw [readGoal] at member
-  split at member
-  · rename_i operandEq _
-    cases operandEq
-    split at member
-    · rename_i closing
-      exact refuted (.inl closing) member
-    · split at member
-      · cases member
-      · split at member
-        · rename_i rigid
-          exact refuted (.inr rigid) member
-        · exact absurd rfl (fresh _ member)
-  · exact absurd rfl (fresh _ member)
+  rcases mem_withRefutation member with inBase | ⟨found, given, foundGoal, stable, same, checked⟩
+  · exact absurd rfl (fresh _ inBase)
+  rw [readGoal] at foundGoal
+  cases foundGoal
+  simp only [Expansion.negation, Expansion.mk.injEq, RuleApp.defaultNegIntro.injEq, and_true] at same
+  subst same
+  obtain ⟨goalRead, contextRead⟩ := Store.read_stableNegation valid laterScoped refines readGoal stable
+  exact ⟨goalRead, contextRead ▸ checked⟩
 
 /-! ## Positive witnesses first
 
@@ -295,13 +284,13 @@ def Strategy.withWitness {Certificate : Type}
     (base : Strategy Variable Literal Symbol Certificate) : Strategy Variable Literal Symbol Certificate :=
   fun obligation store =>
     let response := base obligation store
-    if !response.alternatives.any Expansion.closes then
+    if response.alternatives.any Expansion.closes then response
+    else
       match universalNegative? (store.resolve obligation.goal) with
       | some (binders, guards, operand) =>
           if witnessed (obligation.context.map store.resolve) (positiveWitness binders guards operand) then .candidates []
           else response
       | none => response
-    else response
 
 omit [DecidableEq Symbol] [DecidableEq Literal] in
 /-- A defeat offers nothing, so the witness check keeps the base's soundness. -/
@@ -313,29 +302,10 @@ theorem Strategy.withWitness_sound {Certificate : Type} {hoApplySymbol : Symbol}
   intro obligation store valid declared expansion member
   unfold Strategy.withWitness at member
   dsimp only at member
-  split at member
-  · split at member
-    · split at member
-      · simp [Response.alternatives] at member
-      · exact baseSound obligation store valid declared expansion member
-    · exact baseSound obligation store valid declared expansion member
-  · exact baseSound obligation store valid declared expansion member
-
-/-- A program of the given clauses, keeping a program's guards. Clause sources
-are read only by P0 admission, which completed programs do not enter. -/
-def Program.ofClauses (clauses : List (HornClause Variable Literal Symbol)) (guard : Symbol → Bool) :
-    Program Variable Literal Symbol :=
-  ⟨clauses.map (⟨.signature, ·⟩), guard⟩
-
-omit [DecidableEq Variable] [DecidableEq Symbol] [DecidableEq Literal] [FreshNames Variable] in
-theorem Program.ofClauses_kb (clauses : List (HornClause Variable Literal Symbol)) (guard : Symbol → Bool) :
-    (Program.ofClauses clauses guard).kb = fun clause => clause ∈ clauses := by
-  funext clause
-  simp only [Program.kb, Program.ofClauses, List.mem_map, eq_iff_iff]
-  constructor
-  · rintro ⟨_, ⟨_, member, rfl⟩, rfl⟩
-    exact member
-  · exact fun member => ⟨_, ⟨_, member, rfl⟩, rfl⟩
+  repeat' split at member
+  all_goals first
+    | exact baseSound obligation store valid declared expansion member
+    | simp [Response.alternatives] at member
 
 end Machine
 
@@ -381,16 +351,22 @@ namespace P1
 variable {Variable Literal Symbol : Type} [DecidableEq Variable] [DecidableEq Symbol] [DecidableEq Literal]
   [FreshNames Variable]
 
-/-- A refutation of `operand` under `context`: a run of `refuter` on
-`operand → false` within `fuel` steps, its free names rigid, exported as a
-supplied proof. A run that is exhausted, unknown or interrupted is no refutation. -/
-def refute (vocab : Vocabulary Symbol) (hoApplySymbol : Symbol) (program : Program Variable Literal Symbol)
-    (onlyIfs clashes : List (HornClause Variable Literal Symbol)) (fuel : Nat) (context : ProofContext Variable Literal Symbol)
-    (operand : Formula Variable Literal Symbol) : Option (Term Variable Literal Symbol) :=
-  match run (refuter (Certificate := Unit) hoApplySymbol program onlyIfs clashes) fuel
-      (State.init () [] context (.imp operand .falsity)) with
+/-- A run from `goal` under `context`, its free names rigid, within `fuel`
+steps, exported as a supplied proof. A run that is exhausted, unknown or
+interrupted exports nothing. -/
+def runExport (vocab : Vocabulary Symbol) (strategy : Strategy Variable Literal Symbol Unit) (fuel : Nat)
+    (context : ProofContext Variable Literal Symbol) (goal : Formula Variable Literal Symbol) :
+    Option (Term Variable Literal Symbol) :=
+  match run strategy fuel (State.init () [] context goal) with
   | .success proof _ => exportProof vocab (fun _ => .truth) proof
   | _ => none
+
+/-- A refutation of `operand` under `context`: a run of `refuter` on
+`operand → false` in the completed program, exported. -/
+def refute (vocab : Vocabulary Symbol) (hoApplySymbol : Symbol) (completion : Completion.Completed Variable Literal Symbol)
+    (guard : Symbol → Bool) (fuel : Nat) (context : ProofContext Variable Literal Symbol)
+    (operand : Formula Variable Literal Symbol) : Option (Term Variable Literal Symbol) :=
+  runExport vocab (refuter hoApplySymbol completion guard) fuel context (.imp operand .falsity)
 
 /-- The witness query of a universal negative as a positive run in the
 program within `fuel` steps; it is found when the run's export checks against
@@ -398,12 +374,8 @@ the snapshot as a proof of the query under the context. -/
 def witnessSearch (vocab : Vocabulary Symbol) (snapshot : Snapshot Variable Literal Symbol)
     (program : Program Variable Literal Symbol) (select : Selection Variable Literal Symbol) (fuel : Nat)
     (context : ProofContext Variable Literal Symbol) (witness : Formula Variable Literal Symbol) : Bool :=
-  match run (left (Certificate := Unit) snapshot.hoApplySymbol program select) fuel (State.init () [] context witness) with
-  | .success proof _ =>
-      match exportProof vocab (fun _ => .truth) proof with
-      | some term => decide (checkProof vocab snapshot.positive [] context witness term = .accept)
-      | none => false
-  | _ => false
+  (runExport vocab (left snapshot.hoApplySymbol program select) fuel context witness).any
+    (snapshot.provesPositively vocab context witness)
 
 /-- A witness found is a positive proof of the witness query in the snapshot. -/
 theorem witnessSearch_derives {vocab : Vocabulary Symbol} {snapshot : Snapshot Variable Literal Symbol}
@@ -412,12 +384,11 @@ theorem witnessSearch_derives {vocab : Vocabulary Symbol} {snapshot : Snapshot V
     (found : witnessSearch vocab snapshot program select fuel context witness = true) :
     Derives snapshot.hoApplySymbol snapshot.kb context witness NafFailure.disabled := by
   unfold witnessSearch at found
-  split at found
-  · split at found
-    · exact checked_toDerives vocab snapshot.positive
-        ((checkProof_accept_iff vocab snapshot.positive).mp (of_decide_eq_true found))
-    · cases found
-  · cases found
+  cases exported : runExport vocab (left snapshot.hoApplySymbol program select) fuel context witness with
+  | none => simp [exported] at found
+  | some term =>
+      simp only [exported, Option.any_some] at found
+      exact Snapshot.provesPositively_derives found
 
 open Semantics in
 /-- A witness found defeats the universal negative: it is false in every model
@@ -432,31 +403,30 @@ theorem witnessSearch_defeats {vocab : Vocabulary Symbol} {snapshot : Snapshot V
     ¬ model.Satisfies environment (universalNegative binders guards operand) :=
   model.defeats binders (model.sound validKb (model.disabled_adequate _) (witnessSearch_derives found) environment holds)
 
-/-- Evidence-first NAF over the left strategy on completed clauses: a NAF goal
-the left strategy cannot close is refuted in the same clauses, and the
-refutation is checked against them. `onlyIfs` are the only-if clauses among
-`clauses` that the refutation may use, and `clashes` the clash clauses of its
-equality theory, offered only for a matching equation. -/
-def nafByRefutation (vocab : Vocabulary Symbol) (hoApplySymbol : Symbol) (clauses : List (HornClause Variable Literal Symbol))
-    (onlyIfs clashes : List (HornClause Variable Literal Symbol)) (guard : Symbol → Bool)
+/-- Evidence-first NAF over the left strategy on a completed program: a NAF
+goal the left strategy cannot close is refuted in the same program, and the
+refutation is checked against it. -/
+def nafByRefutation (vocab : Vocabulary Symbol) (hoApplySymbol : Symbol)
+    (completion : Completion.Completed Variable Literal Symbol) (guard : Symbol → Bool)
     (select : Selection Variable Literal Symbol) (fuel : Nat) :
     Strategy Variable Literal Symbol (Term Variable Literal Symbol) :=
-  let program := Program.ofClauses clauses guard
-  Strategy.withRefutation (refutationCheck vocab ⟨hoApplySymbol, clauses⟩).check
-    (refute vocab hoApplySymbol program onlyIfs clashes fuel) (left hoApplySymbol program select)
+  Strategy.withRefutation (refutationCheck vocab ⟨hoApplySymbol, completion.clauses⟩).check
+    (refute vocab hoApplySymbol completion guard fuel)
+    (left hoApplySymbol (Program.ofClauses completion.clauses guard) select)
 
-/-- Evidence-first NAF is sound for the clauses with refutation evidence, so in
-every model of them with complement NAF (`refutation_adequate`). -/
+/-- Evidence-first NAF is sound for the completed program with refutation
+evidence, so in every model of it with complement NAF (`refutation_adequate`). -/
 theorem nafByRefutation_sound (vocab : Vocabulary Symbol) (hoApplySymbol : Symbol)
-    (clauses : List (HornClause Variable Literal Symbol)) (onlyIfs clashes : List (HornClause Variable Literal Symbol))
-    (guard : Symbol → Bool) (select : Selection Variable Literal Symbol) (fuel : Nat) :
-    Strategy.Sound hoApplySymbol (Snapshot.kb ⟨hoApplySymbol, clauses⟩)
-      (refutation hoApplySymbol (Snapshot.kb ⟨hoApplySymbol, clauses⟩))
-      (nafByRefutation vocab hoApplySymbol clauses onlyIfs clashes guard select fuel) := by
+    (completion : Completion.Completed Variable Literal Symbol) (guard : Symbol → Bool)
+    (select : Selection Variable Literal Symbol) (fuel : Nat) :
+    Strategy.Sound hoApplySymbol (Snapshot.kb ⟨hoApplySymbol, completion.clauses⟩)
+      (refutation hoApplySymbol (Snapshot.kb ⟨hoApplySymbol, completion.clauses⟩))
+      (nafByRefutation vocab hoApplySymbol completion guard select fuel) := by
   have base := left_sound (Certificate := Term Variable Literal Symbol) (hoApplySymbol := hoApplySymbol)
-    (naf := refutation hoApplySymbol (Snapshot.kb ⟨hoApplySymbol, clauses⟩)) (Program.ofClauses clauses guard) select
+    (naf := refutation hoApplySymbol (Snapshot.kb ⟨hoApplySymbol, completion.clauses⟩))
+    (Program.ofClauses completion.clauses guard) select
   rw [Program.ofClauses_kb] at base
-  exact Strategy.withRefutation_sound base (refutationCheck vocab ⟨hoApplySymbol, clauses⟩).sound
+  exact Strategy.withRefutation_sound base (refutationCheck vocab ⟨hoApplySymbol, completion.clauses⟩).sound
 
 end P1
 
