@@ -120,13 +120,24 @@ def hoGoalRun := solve [fact (atom .p [k .a])] (query [] [] (applyP (k .p) [k .a
 #guard (solve [] (query [] [] (applyP (k .p) [k .a]))).kind = .exhausted
 #guard (solve [] (query [] [] (atom .p [k .a]))).kind = .exhausted
 
--- The strategy's chosen commands are kept beside `ho_goal`: a disjunction split
--- chosen at the indirect goal proves it in both cases.
+-- A selection is consulted at the canonical direct form: a disjunction split
+-- chosen at p(a) proves the indirect goal ho_apply(p, a).
 def chooseCases : Selection Nat Nat Sym := fun _ _ goal _ =>
-  if (goal.call? Sym.ha).isSome then [.disjCases (.disj (applyP (k .p) [k .a]) (applyP (k .p) [k .a]))] else []
+  match goal with
+  | .app .p _ => [.disjCases (.disj (applyP (k .p) [k .a]) (applyP (k .p) [k .a]))]
+  | _ => []
 def casesRun := solve [] (query [] [.disj (applyP (k .p) [k .a]) (applyP (k .p) [k .a])] (applyP (k .p) [k .a])) chooseCases
 #guard casesRun.kind = .success
 #guard checks [] [.disj (applyP (k .p) [k .a]) (applyP (k .p) [k .a])] (applyP (k .p) [k .a]) casesRun
+-- ...and only there, so a chosen command runs once: one answer, then exhaustion.
+def chooseContradiction : Selection Nat Nat Sym := fun _ _ goal _ =>
+  match goal with
+  | .app .p _ | .app .ha _ => [.contradiction]
+  | _ => []
+def denialKb : List Clause := [.goal [k .r], fact (k .r)]
+def contradictionRun := solve denialKb (query [] [] (applyP (k .p) [k .a])) chooseContradiction
+#guard rulesOf contradictionRun = some [.hoApplyIntro, .falsityElim, .goalClause, .conjIntro, .clause, .truth, .truth]
+#guard (resume denialKb contradictionRun chooseContradiction).kind = .exhausted
 
 /-! ### Indirect evidence for direct goals: `ho_elim` through the indirect view -/
 
@@ -188,23 +199,28 @@ def flexibleGoal := solve [] (query [0] [atom .q [k .a]] (applyP (x 0) [k .a]))
 
 -- Reading conclusions against goals; P (1) may be bound, the rigid 5 not.
 def binds : Nat → Bool := (· == 1)
-#guard compareAtom .ha binds (atom .p [k .a]) (atom .p [x 2]) = .direct
-#guard compareAtom .ha binds (atom .p [k .a]) (applyP (x 1) [x 2]) = .elim
-#guard compareAtom .ha binds (applyP (x 1) [k .a]) (atom .q [x 2]) = .intro
--- A call of another arity: only a lambda could match.
-#guard compareAtom .ha binds (atom .p [k .a, k .b]) (applyP (x 1) [x 2]) = .lambda
+#guard compareAtom .ha binds binds (atom .p [k .a]) (atom .p [x 2]) = .direct
+#guard compareAtom .ha binds binds (atom .p [k .a]) (applyP (x 1) [x 2]) = .elim
+#guard compareAtom .ha binds binds (applyP (x 1) [k .a]) (atom .q [x 2]) = .intro
+-- Introduction needs a goal predicate it may bind or a reference; a rigid name is apart.
+#guard compareAtom .ha binds binds (applyP (k .r) [k .a]) (atom .q [x 2]) = .intro
+#guard compareAtom .ha binds binds (applyP (x 5) [k .a]) (atom .q [x 2]) = .apart
+-- A call of another arity: only a lambda could match, on either side.
+#guard compareAtom .ha binds binds (atom .p [k .a, k .b]) (applyP (x 1) [x 2]) = .lambda
+#guard compareAtom .ha binds binds (applyP (x 1) [k .a]) (atom .q [k .a, k .b]) = .lambda
 -- A goal that is no call, falsity included, is never an application's instance.
-#guard compareAtom .ha binds (.conj (k .p) (k .q)) (applyP (x 1) [x 2]) = .apart
-#guard compareAtom .ha binds .falsity (applyP (x 1) [x 2]) = .apart
+#guard compareAtom .ha binds binds (.conj (k .p) (k .q)) (applyP (x 1) [x 2]) = .apart
+#guard compareAtom .ha binds binds .falsity (applyP (x 1) [x 2]) = .apart
 -- A rigid predicate name or a concrete reference of another arity is apart.
-#guard compareAtom .ha binds (atom .p [k .a, k .b]) (applyP (x 5) [x 2]) = .apart
-#guard compareAtom .ha binds (atom .p [k .a, k .b]) (applyP (k .q) [x 2]) = .apart
+#guard compareAtom .ha binds binds (atom .p [k .a, k .b]) (applyP (x 5) [x 2]) = .apart
+#guard compareAtom .ha binds binds (atom .p [k .a, k .b]) (applyP (k .q) [x 2]) = .apart
 -- Whole formulas compare through their implications.
-#guard compare .ha binds (.imp (k .s) (atom .p [k .a])) (.imp (k .r) (applyP (x 1) [x 2])) = .elim
-#guard compare .ha binds (.imp (k .s) (atom .p [k .a])) (applyP (x 1) [x 2]) = .apart
+#guard compare .ha binds binds (.imp (k .s) (atom .p [k .a])) (.imp (k .r) (applyP (x 1) [x 2])) = .elim
+#guard compare .ha binds binds (.imp (k .s) (applyP (x 1) [k .a])) (.imp (k .s) (atom .q [x 2])) = .intro
+#guard compare .ha binds binds (.imp (k .s) (atom .p [k .a])) (applyP (x 1) [x 2]) = .apart
 -- Whole formulas of the same kind, binders included, go to the matcher as they are.
-#guard compare .ha binds (.forallVar 7 (atom .p [x 7])) (.forallVar 7 (atom .p [x 7])) = .direct
-#guard compare .ha binds (.forallVar 7 (atom .p [x 7])) (.existsVar 7 (atom .p [x 7])) = .apart
+#guard compare .ha binds binds (.forallVar 7 (atom .p [x 7])) (.forallVar 7 (atom .p [x 7])) = .direct
+#guard compare .ha binds binds (.forallVar 7 (atom .p [x 7])) (.existsVar 7 (atom .p [x 7])) = .apart
 
 -- In a run, a lambda comparison is a gap: unknown, never exhausted.
 #guard (solve [fact (applyP (x 1) [k .a])] (query [] [] (atom .p [k .a, k .b]))).kind = .unknown
@@ -216,6 +232,15 @@ def binds : Nat → Bool := (· == 1)
 -- miss there, not a gap.
 #guard (solve [fact (atom .q [k .b])] (query [] [] (.forallVar 5 (applyP (x 5) [k .a])))).kind = .exhausted
 #guard (solve [fact (atom .q [k .a])] (query [] [] (applyP (atom .r [k .b]) [k .a]))).kind = .exhausted
+-- A flexible goal predicate against a call of another arity: a lambda gap, as in
+-- the reverse direction.
+#guard (solve [] (query [0] [atom .q [k .a, k .b]] (applyP (x 0) [k .a]))).kind = .unknown
+#guard (solve [fact (atom .q [k .a, k .b])] (query [0] [] (applyP (x 0) [k .a]))).kind = .unknown
+-- The same gap however deep the local rule's conclusion is nested.
+#guard (run (positive .ha (plain [])) 2000 (query [] [.forallVar 1 (.imp (k .s) (applyP (x 1) [k .a]))]
+  (atom .p [k .a, k .b]))).kind = .unknown
+#guard (run (positive .ha (plain [])) 2000 (query [] [.forallVar 1 (.imp (k .s) (.imp (k .r) (applyP (x 1) [k .a])))]
+  (atom .p [k .a, k .b]))).kind = .unknown
 
 -- The matcher itself is unchanged: ho_apply against a direct call is unsupported.
 #guard match (Store.empty : Store Nat Nat Sym).unify ⟨[], []⟩ .ha (applyP (k .p) [k .a]) (atom .p [k .a]) with
@@ -240,19 +265,43 @@ def step (predicate : T) : T :=
   .forallVar 3 (.imp (isNat (x 3)) (.imp (applyP predicate [x 3]) (applyP predicate [succ (x 3)])))
 def induction : Clause :=
   rule (.imp (isNat (x 2)) (applyP (x 1) [x 2])) [atom .isPred1 [x 1], applyP (x 1) [zero], step (x 1)]
-def nat : List Clause := [fact (isNat zero), rule (isNat (succ (x 2))) [isNat (x 2)]]
 def reach : List Clause := [fact (reachable zero), rule (reachable (succ (x 2))) [reachable (x 2)]]
-/-- The generated registry facts: reachable at arity 1, r2 only at arity 2. -/
-def registry : List Clause := [fact (atom .isPred1 [k .reachable]), fact (atom .isPred2 [k .r2])]
-def kb : List Clause := nat ++ reach ++ [induction] ++ registry
+
+inductive Dom where
+  | nat
+  deriving DecidableEq, Repr
+
+def zeroRule : Rule Dom Sym := ⟨.nat, .zero, []⟩
+def succRule : Rule Dom Sym := ⟨.nat, .succ, [.nat]⟩
+def family : FiniteFamily Dom Sym := ⟨fun rule => rule = zeroRule ∨ rule = succRule, [.nat], fun domain => by cases domain; simp⟩
+def names : Nat → Nat := fun index => 100 + index
+def rules : List (Rule Dom Sym) := [zeroRule, succRule]
+
+/-- The induction signature: Nat by its constructors, `isNat` its membership
+symbol, `isPred1` and `isPred2` the unary and binary predicate ranges, with
+reachable registered at arity 1 and r2 at arity 2 only. -/
+def arityRange : Nat → Sym := fun arity => if arity = 1 then .isPred1 else .isPred2
+def registered : SignatureSnapshot Dom Sym :=
+  ⟨0, ⟨family, fun _ => .isNat, .allData, arityRange, [⟨.reachable, 1⟩, ⟨.r2, 2⟩]⟩⟩
+/-- The generated signature clauses: Nat membership, `allData`, and one fact per
+registered reference. No registry fact is written by hand. -/
+def generated : List Clause := signatureClauses registered names rules
+def kb : List Clause := reach ++ [induction] ++ generated
+/-- The effective program, its guard symbols those of the signature. -/
+def kbProgram : Program Nat Nat Sym :=
+  ⟨(reach ++ [induction]).mapIdx (fun index clause => ⟨.lowered index, clause⟩) ++ generated.map (⟨.signature, ·⟩),
+    guardSymbol registered⟩
 
 /-- Choose the principle by its whole head at the root focus only. -/
 def atRoot : Selection Nat Nat Sym := fun obligation _ _ _ =>
   if obligation.scope.assumptions.isEmpty then [.headMatch induction] else []
 
+def solveKb (state : State Nat Nat Sym Unit Nat) (select : Selection Nat Nat Sym := atRoot) : Run :=
+  run (left .ha kbProgram select) 2000 state
+
 -- The focus with a rigid parameter a (9).
 def focus : T := .imp (isNat (x 9)) (reachable (x 9))
-def inductionRun := solve kb (query [] [] focus) atRoot
+def inductionRun := solveKb (query [] [] focus)
 
 #guard rulesOf inductionRun = some [.converted, .conjIntro, .clause, .truth, .conjIntro, .hoApplyIntro, .clause, .truth,
   .conjIntro, .forallIntro, .impIntro, .impIntro, .hoApplyIntro, .clause, .conjIntro, .converted, .truth, .truth]
@@ -288,10 +337,13 @@ partial def clauseRules : P → List (Clause × List (Nat × T))
   | Option.none => false
 -- The original formula is finished exactly once, by that node.
 #guard ((readNodes inductionRun).filter fun (_, goal) => same goal focus).length = 1
--- The predicate guard is kept and discharged by the generated fact for reachable.
+-- The predicate guard is kept and discharged by the generated fact for
+-- reachable, a signature clause of the program.
+def reachableFact : Clause := Elaboration.predicateFact registered.naming ⟨.reachable, 1⟩
+#guard kbProgram.clauses.any fun entry => entry.source == .signature && decide (entry.clause = reachableFact)
+#guard kbProgram.guard .isPred1 && kbProgram.guard .isNat
 #guard (readNodes inductionRun).any fun
-  | (.clause clause _, goal) =>
-      decide (clause = fact (atom .isPred1 [k .reachable])) && same goal (atom .isPred1 [k .reachable])
+  | (.clause clause _, goal) => decide (clause = reachableFact) && same goal (atom .isPred1 [k .reachable])
   | _ => false
 -- The step keeps its own binder: the universally quantified step obligation is
 -- opened by forallIntro at a fresh rigid name, independent of a.
@@ -311,21 +363,21 @@ partial def clauseRules : P → List (Clause × List (Nat × T))
 
 -- The atomic path cannot select a principle with a compound head: without the
 -- choice, the focus is exhausted.
-#guard (solve kb (query [] [] focus)).kind = .exhausted
+#guard (solveKb (query [] [] focus) noChoice).kind = .exhausted
 -- The guarded universal itself, opened first.
-#guard (solve kb (query [] [] (.forallVar 2 (.imp (isNat (x 2)) (reachable (x 2))))) atRoot).kind = .success
+#guard (solveKb (query [] [] (.forallVar 2 (.imp (isNat (x 2)) (reachable (x 2)))))).kind = .success
 
 /-! ### Rejections: wrong domain, wrong range, arity -/
 
 -- A guard of another domain: the whole head does not match.
-#guard (solve kb (query [] [] (.imp (atom .isBool [x 9]) (reachable (x 9)))) atRoot).kind = .exhausted
+#guard (solveKb (query [] [] (.imp (atom .isBool [x 9]) (reachable (x 9))))).kind = .exhausted
 -- A predicate outside the unary range: r2 is registered at arity 2 only, so
 -- isPred1(r2) has no generated fact; zero is no predicate reference at all.
-#guard (solve kb (query [] [] (.imp (isNat (x 9)) (atom .r2 [x 9]))) atRoot).kind = .exhausted
-#guard (solve kb (query [] [] (.imp (isNat (x 9)) (atom .zero [x 9]))) atRoot).kind = .exhausted
+#guard (solveKb (query [] [] (.imp (isNat (x 9)) (atom .r2 [x 9])))).kind = .exhausted
+#guard (solveKb (query [] [] (.imp (isNat (x 9)) (atom .zero [x 9])))).kind = .exhausted
 -- Arity mismatch: only a lambda answer could make the unary head conclude
 -- reachable(a, b): unsupported, a gap.
-#guard (solve kb (query [] [] (.imp (isNat (x 9)) (atom .reachable [x 9, k .b]))) atRoot).kind = .unknown
+#guard (solveKb (query [] [] (.imp (isNat (x 9)) (atom .reachable [x 9, k .b])))).kind = .unknown
 
 -- Other compound heads are matched as whole formulas, without conversion.
 def conjClause : Clause := rule (.conj (atom .p [x 1]) (atom .q [x 1])) [atom .r [x 1]]
@@ -356,6 +408,17 @@ def directRun := solve [directConj, fact (atom .r [k .a])] (query [0] [] (applyP
 #guard checks [directConj, fact (atom .r [k .a])] [] (applyP (x 0) [k .a]) directRun
 #guard answerIs (solve [fact (atom .q [k .a])] (query [0] [] (applyP (x 0) [k .a]))
   (fun _ _ _ _ => [.headMatch (fact (atom .q [k .a]))])) 0 (k .q)
+-- Under an implication too: the goal's conclusion is read, a flexible name or a
+-- reference alike.
+def implied : Clause := fact (.imp (k .s) (atom .q [k .a]))
+def impliedFlexible := solve [implied] (query [0] [] (.imp (k .s) (applyP (x 0) [k .a])))
+  (fun obligation _ _ _ => if obligation.scope.assumptions.isEmpty then [.headMatch implied] else [])
+#guard answerIs impliedFlexible 0 (k .q)
+#guard checks [implied] [] (.imp (k .s) (applyP (x 0) [k .a])) impliedFlexible
+def impliedReference := solve [implied] (query [] [] (.imp (k .s) (applyP (k .q) [k .a])))
+  (fun obligation _ _ _ => if obligation.scope.assumptions.isEmpty then [.headMatch implied] else [])
+#guard rulesOf impliedReference = some [.converted, .truth]
+#guard checks [implied] [] (.imp (k .s) (applyP (k .q) [k .a])) impliedReference
 
 /-! ### Hand-built conversions -/
 
@@ -377,16 +440,7 @@ def impTree : P := Unfold.convert (.imp (k .s) (applyP (k .p) [k .a])) (.imp (k 
 P0 asks evidence for every application by `ho_apply`; the diagnosis names the
 S11 commands that use it. Inside data nothing converts. -/
 
-inductive Dom where
-  | nat
-  deriving DecidableEq, Repr
-
-def zeroRule : Rule Dom Sym := ⟨.nat, .zero, []⟩
-def succRule : Rule Dom Sym := ⟨.nat, .succ, [.nat]⟩
-def family : FiniteFamily Dom Sym := ⟨fun rule => rule = zeroRule ∨ rule = succRule, [.nat], fun domain => by cases domain; simp⟩
 def snapshot : SignatureSnapshot Dom Sym := ⟨0, ⟨family, fun _ => .isNat, .allData, fun _ => .isPred, [⟨.p, 1⟩]⟩⟩
-def names : Nat → Nat := fun index => 100 + index
-def rules : List (Rule Dom Sym) := [zeroRule, succRule]
 
 theorem listed : ∀ rule ∈ rules, snapshot.signature.data.definitions rule := by
   intro rule member
@@ -421,14 +475,18 @@ def diagnosed (clauses : List Clause) (context : List T) (goal : T) : List (Site
 #guard diagnosed [] [] (.defaultNeg (applyP (k .p) [k .a])) = [(.goal, .none)]
 -- An induction principle's compound head: S09's use, and the whole head converted.
 #guard (diagnosed [induction] [] (atom .q [k .a])).head? = some (.head 0, .commands [.headUse, .converted])
+-- A local rule, or a conjunctive head, with an indirect conclusion: converted too.
+#guard diagnosed [] [.imp (k .q) (applyP (k .p) [k .a])] (atom .p [k .a]) =
+  [(.assumption 0, .commands [.impUse, .converted])]
+#guard (diagnosed [projected] [] (atom .p [k .a])).head? = some (.head 0, .commands [.headProject, .headUse, .converted])
 
 /-! ### The theorems, instantiated -/
 
 /-- A successful run with conversions and the whole-formula choice
 reconstructs `Derives` for its answer instance. -/
 example {proof : CompletedProof Nat Nat Sym Unit Nat} {resume : State Nat Nat Sym Unit Nat}
-    (ran : run (left .ha (plain kb) atRoot) 2000 (query [] [] focus) = .success proof resume) :
-    Derives Sym.ha (plain kb).kb ([].map proof.store.resolve) (proof.store.resolve focus) :=
+    (ran : run (left .ha kbProgram atRoot) 2000 (query [] [] focus) = .success proof resume) :
+    Derives Sym.ha kbProgram.kb ([].map proof.store.resolve) (proof.store.resolve focus) :=
   left_reconstructs (naf := NafFailure.disabled) _ _ 2000 0 [] [] focus ran
 
 /-- Conversion under an implication, by the foundation rules. -/
@@ -437,9 +495,10 @@ example {context : ProofContext Nat Nat Sym}
     Derives Sym.ha (plain kb).kb context (.imp (k .s) (atom .p [k .a])) NafFailure.disabled :=
   Derives.ofIndirect (.imp (.call (by decide))) proof
 
-/-- A lambda comparison: no instance of the conclusion is the goal or its view. -/
-example (σ : Substitution Nat Nat Sym) : (applyP (x 1) [x 2]).instantiate σ ≠ atom .p [k .a, k .b] :=
-  (compareAtom_lambda (hoApplySymbol := Sym.ha) (binds := binds) (by decide) σ).1
+/-- A lambda comparison: the conclusion and the goal have no common instance. -/
+example (σ : Substitution Nat Nat Sym) :
+    (applyP (x 1) [x 2]).instantiate σ ≠ (atom .p [k .a, k .b]).instantiate σ :=
+  (compareAtom_lambda (hoApplySymbol := Sym.ha) (binds := binds) (assignable := binds) (by decide) σ).1
 
 /-- The conversion's nodes are checked given a checked tree of the view. -/
 example {context : ProofContext Nat Nat Sym} {proof : P}

@@ -366,9 +366,10 @@ theorem appliesName_plain {term : Term Variable Literal Symbol} {binds : Variabl
 omit [DecidableEq Variable] [DecidableEq Literal] [FreshNames Variable] in
 /-- Plain terms apply nothing by `ho_apply`, so a plain conclusion without the
 goal's head is apart from it: no conversion and no lambda gap. -/
-theorem compareAtom_plain {goal conclusion : Term Variable Literal Symbol} {binds : Variable → Bool}
+theorem compareAtom_plain {goal conclusion : Term Variable Literal Symbol} {binds assignable : Variable → Bool}
     (goalPlain : Plain hoApplySymbol goal) (conclusionPlain : Plain hoApplySymbol conclusion)
-    (different : sameHead goal conclusion = false) : compareAtom hoApplySymbol binds goal conclusion = .apart := by
+    (different : sameHead goal conclusion = false) :
+    compareAtom hoApplySymbol binds assignable goal conclusion = .apart := by
   have mixed : hoMixed hoApplySymbol goal conclusion = false := by
     cases goalPlain with
     | lit => rfl
@@ -376,15 +377,16 @@ theorem compareAtom_plain {goal conclusion : Term Variable Literal Symbol} {bind
         cases conclusionPlain with
         | lit => rfl
         | app conclusionOrdinary _ => simp [hoMixed, goalOrdinary, conclusionOrdinary]
-  simp [compareAtom, different, mixed, appliesName_plain conclusionPlain]
+  simp [compareAtom, different, mixed, appliesName_plain conclusionPlain, appliesName_plain goalPlain]
 
 omit [DecidableEq Variable] [DecidableEq Literal] [FreshNames Variable] in
 /-- No plain conclusion compares with falsity. -/
-theorem compareAtom_falsity {conclusion : Term Variable Literal Symbol} {binds : Variable → Bool}
-    (plain : Plain hoApplySymbol conclusion) : compareAtom hoApplySymbol binds .falsity conclusion = .apart := by
+theorem compareAtom_falsity {conclusion : Term Variable Literal Symbol} {binds assignable : Variable → Bool}
+    (plain : Plain hoApplySymbol conclusion) :
+    compareAtom hoApplySymbol binds assignable .falsity conclusion = .apart := by
   have different : sameHead (.falsity : Term Variable Literal Symbol) conclusion = false := by cases plain <;> rfl
   have mixed : hoMixed hoApplySymbol (.falsity : Term Variable Literal Symbol) conclusion = false := rfl
-  simp [compareAtom, different, mixed, appliesName_plain plain]
+  simp [compareAtom, different, mixed, isCall]
 
 omit [DecidableEq Variable] [DecidableEq Literal] [DecidableEq Symbol] [FreshNames Variable] in
 private theorem respond_candidates {attempts : List (Attempt Variable Literal Symbol (NegativeCertificate Variable Literal Symbol))}
@@ -474,7 +476,9 @@ theorem clauseAttempt_ground {symbol : Symbol} {args : List (Term Variable Liter
   rw [definite]
   dsimp only
   by_cases candidate : sameHead (.app symbol args) head = true
-  · have direct : compareAtom hoApplySymbol (clauseBinds head body) (.app symbol args) head = .direct := by
+  · have direct : compareAtom hoApplySymbol (clauseBinds head body)
+        (Store.empty : Store Variable Literal Symbol).assignable (.app symbol args) head =
+        .direct := by
       simp [compareAtom, candidate]
     rw [direct]
     simp only [clauseUse, conclusionAttempt, Store.clauseNames, fresh, List.map_nil, Store.empty_prepare,

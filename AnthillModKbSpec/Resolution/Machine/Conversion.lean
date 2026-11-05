@@ -1,4 +1,3 @@
-import AnthillModKbSpec.Resolution.Machine.LeftRules
 import AnthillModKbSpec.Resolution.Machine.Reconstruction
 
 /-! # `ho_apply` conversion (S11)
@@ -200,9 +199,17 @@ def isCall : Term Variable Literal Symbol → Bool
   | .app _ _ => true
   | _ => false
 
-/-- The conclusion applies, by `ho_apply`, a name the candidate may bind. -/
+/-- The term applies, by `ho_apply`, a name `binds` admits. -/
 def appliesName (hoApplySymbol : Symbol) (binds : Variable → Bool) : Term Variable Literal Symbol → Bool
   | .app applied (.var name :: _) => decide (applied = hoApplySymbol) && binds name
+  | _ => false
+
+/-- The predicate a goal applies by `ho_apply`, as introduction sees it: a name
+the goal may bind, or a reference (a symbol value). A rigid name or a compound
+term is neither: nothing assigns or converts it. -/
+def introducible (assignable : Variable → Bool) : Term Variable Literal Symbol → Bool
+  | .app _ (.var name :: _) => assignable name
+  | .app _ (.app _ [] :: _) => true
   | _ => false
 
 /-- How a candidate's conclusion compares with a goal, both as read. -/
@@ -214,12 +221,12 @@ inductive Comparison where
   conclusion is matched against the goal's indirect view, and the candidate's
   proof converted by elimination. -/
   | elim
-  /-- The conclusion is a direct call, the goal a call by `ho_apply`: the goal
-  is matched against the conclusion's indirect view, and the candidate's proof
-  converted by introduction. -/
+  /-- The conclusion is a direct call, the goal a call by `ho_apply` of a name
+  it may bind or of a reference: the goal is matched against the conclusion's
+  indirect view, and the candidate's proof converted by introduction. -/
   | intro
-  /-- The goal is a call, the conclusion applies a name it may bind by
-  `ho_apply`, and only a lambda-valued answer for that name could make it the
+  /-- Both are calls, one applies a name its side may bind by `ho_apply`, and
+  only a lambda-valued answer for that name could make the conclusion the
   goal, such as one of another arity: unsupported, a gap. `Term` has no lambda,
   and this is not general higher-order unification (`compareAtom_lambda`). -/
   | lambda
@@ -227,82 +234,114 @@ inductive Comparison where
   | apart
   deriving DecidableEq, Repr
 
-/-- Compare an atomic conclusion with an atomic or falsity goal: the same head is
-`direct`, an indirect call against a direct one of the matching arity is a
-conversion, and against any other call a call by `ho_apply` of a name `binds`
-admits is `lambda`. A goal that is no call, falsity included, is never an
-instance of an application, and a lambda-valued formula is not considered for
-it: `apart`. -/
-def compareAtom (hoApplySymbol : Symbol) (binds : Variable → Bool)
+/-- Compare an atomic conclusion with an atomic or falsity goal. `binds` admits
+the names the candidate may bind, `assignable` those the goal may bind:
+
+- the same head is `direct`;
+- an indirect conclusion against a direct goal of the matching arity is
+  elimination;
+- a direct conclusion against an indirect goal of the matching arity is
+  introduction when the goal applies a name it may bind or a reference, and
+  `apart` when it applies a rigid name or a compound term;
+- two other calls are `lambda` when either applies a name its side may bind;
+- a goal that is no call, falsity included, is never an instance of an
+  application, and a lambda-valued formula is not considered for it: `apart`. -/
+def compareAtom (hoApplySymbol : Symbol) (binds assignable : Variable → Bool)
     (goal conclusion : Term Variable Literal Symbol) : Comparison :=
   if sameHead goal conclusion then .direct
   else if hoMixed hoApplySymbol goal conclusion then
     (match conclusion with
-      | .app applied _ => if applied = hoApplySymbol then .elim else .intro
+      | .app applied _ =>
+          if applied = hoApplySymbol then .elim else if introducible assignable goal then .intro else .apart
       | _ => .apart)
-  else if isCall goal && appliesName hoApplySymbol binds conclusion then .lambda
+  else if isCall goal && isCall conclusion &&
+      (appliesName hoApplySymbol binds conclusion || appliesName hoApplySymbol assignable goal) then .lambda
   else .apart
 
 /-- Compare a conclusion with a goal through their implications, as a whole
 formula: the premises are left to the matcher; conclusions of the same kind are
-compared by it as they are, and calls by `compareAtom`. -/
-def compare (hoApplySymbol : Symbol) (binds : Variable → Bool) :
+compared by it as they are, and calls by `compareAtom`, so the classification
+reads the goal's conclusion. -/
+def compare (hoApplySymbol : Symbol) (binds assignable : Variable → Bool) :
     Term Variable Literal Symbol → Term Variable Literal Symbol → Comparison
-  | .imp _ goal, .imp _ conclusion => compare hoApplySymbol binds goal conclusion
+  | .imp _ goal, .imp _ conclusion => compare hoApplySymbol binds assignable goal conclusion
   | goal, conclusion =>
-      if sameKind goal conclusion then .direct else compareAtom hoApplySymbol binds goal conclusion
+      if sameKind goal conclusion then .direct else compareAtom hoApplySymbol binds assignable goal conclusion
 
-private theorem appliesName_shape {hoApplySymbol : Symbol} {binds : Variable → Bool}
-    {conclusion : Term Variable Literal Symbol} (applies : appliesName hoApplySymbol binds conclusion = true) :
-    ∃ name rest, conclusion = .app hoApplySymbol (.var name :: rest) := by
-  unfold appliesName at applies
-  split at applies
-  · rename_i applied name rest
-    simp only [Bool.and_eq_true, decide_eq_true_eq] at applies
-    exact ⟨name, rest, by rw [applies.1]⟩
-  · cases applies
+/-- Two calls with neither the same head nor heads that differ only by
+`ho_apply` have no common instance, directly or through either one's indirect
+view. -/
+theorem calls_apart [DecidableEq Variable] [FreshNames Variable] {hoApplySymbol : Symbol}
+    {goal conclusion : Term Variable Literal Symbol} (goalCall : isCall goal = true)
+    (conclusionCall : isCall conclusion = true) (notHead : sameHead goal conclusion = false)
+    (notMixed : hoMixed hoApplySymbol goal conclusion = false) (σ : Substitution Variable Literal Symbol) :
+    conclusion.instantiate σ ≠ goal.instantiate σ ∧
+      (∀ view, goal.indirect? hoApplySymbol = some view → conclusion.instantiate σ ≠ view.instantiate σ) ∧
+      (∀ view, conclusion.indirect? hoApplySymbol = some view → view.instantiate σ ≠ goal.instantiate σ) := by
+  cases goal <;> simp only [isCall, Bool.false_eq_true] at goalCall
+  cases conclusion <;> simp only [isCall, Bool.false_eq_true] at conclusionCall
+  rename_i g ys f xs
+  simp only [sameHead, Bool.and_eq_false_iff, decide_eq_false_iff_not, beq_eq_false_iff_ne, ne_eq] at notHead
+  simp only [hoMixed, Bool.or_eq_false_iff, Bool.and_eq_false_iff, decide_eq_false_iff_not, beq_eq_false_iff_ne,
+    ne_eq, Decidable.not_not] at notMixed
+  have lengths : ∀ {left right : List (Term Variable Literal Symbol)}, left.map (Term.instantiate σ) =
+      right.map (Term.instantiate σ) → left.length = right.length := fun same => by
+    simpa using congrArg List.length same
+  refine ⟨fun same => ?_, fun view found same => ?_, fun view found same => ?_⟩
+  · simp only [Term.instantiate, Term.app.injEq] at same
+    obtain ⟨rfl, same⟩ := same
+    rcases notHead with different | different
+    · exact different rfl
+    · exact different (lengths same).symm
+  · simp only [Term.indirect?] at found
+    split at found
+    · cases found
+    · rename_i ordinary
+      cases found
+      simp only [Term.hoApply, Term.instantiate, List.map_cons, List.map_nil, Term.app.injEq] at same
+      obtain ⟨rfl, same⟩ := same
+      have counted := congrArg List.length same
+      simp only [List.length_map, List.length_cons] at counted
+      simp_all
+  · simp only [Term.indirect?] at found
+    split at found
+    · cases found
+    · rename_i ordinary
+      cases found
+      simp only [Term.hoApply, Term.instantiate, List.map_cons, List.map_nil, Term.app.injEq] at same
+      obtain ⟨rfl, same⟩ := same
+      have counted := congrArg List.length same
+      simp only [List.length_map, List.length_cons] at counted
+      simp_all
 
-/-- A `lambda` conclusion has no instance that is the goal or the goal's
-indirect view: only a lambda-valued answer could conclude the goal from it.
-Structural reference matching has nothing to propose, and the gap stands for
-what general higher-order unification might find, which is not attempted. -/
-theorem compareAtom_lambda [DecidableEq Variable] [FreshNames Variable] {hoApplySymbol : Symbol} {binds : Variable → Bool}
-    {goal conclusion : Term Variable Literal Symbol}
-    (classified : compareAtom hoApplySymbol binds goal conclusion = .lambda) (σ : Substitution Variable Literal Symbol) :
-    conclusion.instantiate σ ≠ goal ∧
-      ∀ view, goal.indirect? hoApplySymbol = some view → conclusion.instantiate σ ≠ view := by
+/-- A `lambda` comparison has no common instance of the conclusion and the
+goal, directly or through either one's indirect view: only a lambda-valued
+answer could conclude the goal from it. Structural reference matching has
+nothing to propose, and the gap stands for what general higher-order
+unification might find, which is not attempted. -/
+theorem compareAtom_lambda [DecidableEq Variable] [FreshNames Variable] {hoApplySymbol : Symbol}
+    {binds assignable : Variable → Bool} {goal conclusion : Term Variable Literal Symbol}
+    (classified : compareAtom hoApplySymbol binds assignable goal conclusion = .lambda)
+    (σ : Substitution Variable Literal Symbol) :
+    conclusion.instantiate σ ≠ goal.instantiate σ ∧
+      (∀ view, goal.indirect? hoApplySymbol = some view → conclusion.instantiate σ ≠ view.instantiate σ) ∧
+      (∀ view, conclusion.indirect? hoApplySymbol = some view → view.instantiate σ ≠ goal.instantiate σ) := by
   unfold compareAtom at classified
   split at classified
   · cases classified
-  rename_i notDirect
+  rename_i notHead
   split at classified
   · split at classified
-    · split at classified <;> cases classified
+    · split at classified
+      · cases classified
+      · split at classified <;> cases classified
     · cases classified
   rename_i notMixed
   split at classified
-  case isFalse => cases classified
-  rename_i applies
-  simp only [Bool.and_eq_true] at applies
-  obtain ⟨call, applies⟩ := applies
-  obtain ⟨name, rest, rfl⟩ := appliesName_shape applies
-  simp only [Term.instantiate, List.map_cons]
-  cases goal with
-  | app symbol args =>
-      simp only [sameHead, Bool.and_eq_true, decide_eq_true_eq, beq_iff_eq, not_and] at notDirect
-      refine ⟨fun same => ?_, fun view found same => ?_⟩
-      · simp only [Term.app.injEq] at same
-        obtain ⟨rfl, rfl⟩ := same
-        exact notDirect rfl (by simp)
-      · simp only [Term.indirect?] at found
-        split at found
-        · cases found
-        · rename_i ordinary
-          cases found
-          simp only [Term.hoApply, Term.app.injEq, List.cons.injEq, true_and] at same
-          have lengths : rest.length = args.length := by rw [← same.2, List.length_map]
-          simp [hoMixed, ordinary, lengths] at notMixed
-  | _ => cases call
+  · rename_i calls
+    simp only [Bool.and_eq_true] at calls
+    exact calls_apart calls.1.1 calls.1.2 (by simpa using notHead) (by simpa using notMixed) σ
+  · cases classified
 
 /-! ## Commands and their contracts -/
 
@@ -349,22 +388,16 @@ theorem convert_soundUnder {conclusion goal : Formula Variable Literal Symbol}
 
 end Expansion
 
-/-- The goal, as read, applies an assignable name by `ho_apply`. -/
-def flexiblePredicate (store : Store Variable Literal Symbol) : Term Variable Literal Symbol → Bool
-  | .app _ (.var name :: _) => store.assignable name
-  | _ => false
-
 /-- A candidate built by `make` for a conclusion compared with the goal as
 `comparison`, its new names `flexibles`:
 
 - `direct`: the conclusion matched against the goal (S05);
 - elimination: the conclusion matched against the goal's indirect view, the
   candidate converted;
-- introduction, for a goal applying an assignable name: the goal matched
-  against the conclusion's view, the candidate converted. Where `intro` does
-  not admit it, a gap: it would choose a predicate for that name among the
-  program's clauses, which needs an admitted finite candidate set. For a goal
-  applying a rigid name or a term, a miss: nothing assigns or converts it;
+- introduction: the goal matched against the conclusion's view, the
+  candidate converted. Where `intro` does not admit it, a gap: it would choose
+  a predicate for the goal's name among the program's clauses, which needs an
+  admitted finite candidate set;
 - a lambda answer is a gap, and `apart` a miss. -/
 def conclusionAttempt (hoApplySymbol : Symbol) (obligation : Obligation Variable Literal Symbol)
     (store : Store Variable Literal Symbol) (flexibles : List Variable) (comparison : Comparison)
@@ -381,15 +414,13 @@ def conclusionAttempt (hoApplySymbol : Symbol) (obligation : Obligation Variable
             fun bindings => (make bindings).convert view
       | none => none
   | .intro =>
-      if flexiblePredicate store (store.resolve obligation.goal) then
-        if intro then
-          match (store.resolve conclusion).indirect? hoApplySymbol with
-          | some view =>
-              attempt ((store.prepare obligation flexibles []).unify obligation.scope hoApplySymbol view obligation.goal)
-                fun bindings => (make bindings).convert conclusion
-          | none => none
-        else none
-      else some none
+      if intro then
+        match (store.resolve conclusion).indirect? hoApplySymbol with
+        | some view =>
+            attempt ((store.prepare obligation flexibles []).unify obligation.scope hoApplySymbol view obligation.goal)
+              fun bindings => (make bindings).convert conclusion
+        | none => none
+      else none
   | .lambda => none
   | .apart => some none
 
@@ -444,13 +475,11 @@ theorem conclusionAttempt_sound (valid : store.Scoped) {flexibles : List Variabl
     · intro _ found; cases found
   · split
     · split
-      · split
-        · rename_i view found
-          refine attempt_sound_refines valid (fun bindings => shape bindings) fun bindings later refines matched => ?_
-          have indirect := (Term.indirect?_spec found).resolve later
-          rw [← valid.read_refines rfl refines, matched] at indirect
-          exact Expansion.convert_soundUnder (inner bindings later conclusion rfl) (.inr indirect)
-        · intro _ found; cases found
+      · rename_i view found
+        refine attempt_sound_refines valid (fun bindings => shape bindings) fun bindings later refines matched => ?_
+        have indirect := (Term.indirect?_spec found).resolve later
+        rw [← valid.read_refines rfl refines, matched] at indirect
+        exact Expansion.convert_soundUnder (inner bindings later conclusion rfl) (.inr indirect)
       · intro _ found; cases found
     · intro _ found; cases found
   all_goals intro _ found; cases found

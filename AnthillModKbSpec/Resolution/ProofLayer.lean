@@ -90,15 +90,19 @@ def inAtomData : List Nat → Term Variable Literal Symbol → Bool
   | _ :: _, .app _ _ => true
   | _, _ => false
 
-/-- The goal path, as `goalRequests` builds it, enters a NAF operand and ends
-inside the arguments of one of its atoms: a name in data, which the refutation
-route treats as a parameter. A formula variable as the operand, or as a goal
-inside it, is not refuted. -/
-def nafAlong : List Nat → Term Variable Literal Symbol → Bool
-  | 0 :: rest, .defaultNeg operand => inAtomData rest operand
-  | 0 :: rest, .conj left _ => nafAlong rest left
-  | 1 :: rest, .conj _ right => nafAlong rest right
+/-- Follow a goal path, as `goalRequests` builds it, through conjunctions to a
+NAF operand, where `atNaf` reads the rest of the path and the operand. -/
+def toNaf (atNaf : List Nat → Term Variable Literal Symbol → Bool) :
+    List Nat → Term Variable Literal Symbol → Bool
+  | 0 :: rest, .defaultNeg operand => atNaf rest operand
+  | 0 :: rest, .conj left _ => toNaf atNaf rest left
+  | 1 :: rest, .conj _ right => toNaf atNaf rest right
   | _, _ => false
+
+/-- The goal path enters a NAF operand and ends inside the arguments of one of
+its atoms: a name in data, which the refutation route treats as a parameter. A
+formula variable as the operand, or as a goal inside it, is not refuted. -/
+def nafAlong : List Nat → Term Variable Literal Symbol → Bool := toNaf inAtomData
 
 /-- The goal formula at a site: the query goal or a KB clause's body goal. -/
 def Input.goalAt? (input : Input Domain Variable Literal Symbol) : Site → Option (Term Variable Literal Symbol)
@@ -107,13 +111,6 @@ def Input.goalAt? (input : Input Domain Variable Literal Symbol) : Site → Opti
       (OperationDictionaries.lookup input.kbClauses clause).bind fun
         | .definite _ body | .goal body => body[position]?
   | _ => none
-
-/-- The goal path, as `goalRequests` builds it, enters a NAF operand. -/
-def throughNaf : List Nat → Term Variable Literal Symbol → Bool
-  | 0 :: _, .defaultNeg _ => true
-  | 0 :: rest, .conj left _ => throughNaf rest left
-  | 1 :: rest, .conj _ right => throughNaf rest right
-  | _, _ => false
 
 /-- The S11 commands for an application by `ho_apply` that P0 asks evidence
 for: as a goal, `ho_goal` (`hoApplyIntro`) and converted candidates; as an
@@ -127,29 +124,38 @@ def Request.conversionLayer (input : Input Domain Variable Literal Symbol) (requ
   match request.site with
   | .goal | .body _ _ =>
       if ((input.goalAt? request.site).map fun goal =>
-          inAtomData request.path goal || throughNaf request.path goal).getD true then .none
+          inAtomData request.path goal || toNaf (fun _ _ => true) request.path goal).getD true then .none
       else .commands [.hoApplyIntro, .converted]
   | .assumption _ | .head _ => if request.path.isEmpty then .commands [.converted] else .none
 
-/-- The conclusion of a formula, through its implications, applies a predicate
-by `ho_apply`. -/
+/-- Some conclusion of a formula, through implications, quantifiers,
+conjunctions, and disjunctions, applies a predicate by `ho_apply`: once the
+left rules or a head command reach it, it is used converted (S11). -/
 def concludesIndirect [DecidableEq Symbol] (hoApplySymbol : Symbol) : Term Variable Literal Symbol → Bool
-  | .imp _ conclusion => concludesIndirect hoApplySymbol conclusion
+  | .imp _ conclusion | .forallVar _ conclusion | .existsVar _ conclusion => concludesIndirect hoApplySymbol conclusion
+  | .conj left right | .disj left right =>
+      concludesIndirect hoApplySymbol left || concludesIndirect hoApplySymbol right
   | .app symbol _ => decide (symbol = hoApplySymbol)
   | _ => false
 
+/-- A capability's commands with S11's conversion added. -/
+def ProofLayer.withConversion : ProofLayer → ProofLayer
+  | .commands used => .commands (used ++ [.converted])
+  | other => other
+
 /-- The proof-layer capability for one request of an input: a ground-instance
 request inside a NAF operand has the refutation route, and an application by
-`ho_apply` in a goal, an assumption, or a head the S11 conversion. A compound
-head concluding a call by `ho_apply`, such as an induction principle's, is also
-selected whole and converted (S11's `headMatch`). -/
+`ho_apply` in a goal, an assumption, or a head the S11 conversion. A
+non-atomic assumption or a compound head with a conclusion applying a
+predicate by `ho_apply`, such as a local rule's or an induction principle's,
+is also used converted: by `ruleUse`, `headProject`, or `headMatch`. -/
 def Request.proofLayerIn [DecidableEq Symbol] (hoApplySymbol : Symbol) (input : Input Domain Variable Literal Symbol)
     (request : Request Variable Literal Symbol) : ProofLayer :=
   if request.capability == .groundInstance && ((input.goalAt? request.site).map (nafAlong request.path)).getD false then
     .refutation
   else if request.capability == .hoApplyConversion then request.conversionLayer input
-  else if request.capability == .compoundHead && concludesIndirect hoApplySymbol request.formula then
-    .commands (headCommands request.formula ++ [.converted])
+  else if (request.capability == .compoundHead || request.capability == .scopedProof) &&
+      concludesIndirect hoApplySymbol request.formula then request.proofLayer.withConversion
   else request.proofLayer
 
 variable [DecidableEq Variable] [DecidableEq Literal] [DecidableEq Symbol]

@@ -116,7 +116,9 @@ The strategy differs from `positive` in three places:
   goal with no new failure search. Exact candidates still close a goal alone.
 - The chosen commands follow `positive`'s candidates as further OR
   alternatives (`atomResponse`'s `extra`). A waiting goal is `positive`'s, and
-  the selection runs only where its commands are offered.
+  the selection runs only where its commands are offered: at a concrete
+  indirect call, whose one candidate is `ho_goal`, it runs at the direct form
+  (S11).
 
 The selection is a parameter, and the library defines no automatic one. Which
 commands to try where is a search policy: an admitted P2 strategy (S15) will be

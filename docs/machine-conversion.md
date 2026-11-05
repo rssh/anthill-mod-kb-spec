@@ -36,21 +36,22 @@ context-indexed evidence moves to another context.
 
 **`ho_goal`.** A goal reading as a concrete indirect call `ho_apply(p, args)`
 (`Term.call?`) has the one candidate `Expansion.hoGoal`: the direct goal
-`p(args)`, its node `hoApplyIntro`, followed by the commands a strategy
-chose at that focus (S09's `extra`). The direct goal is answered like any
-other. It is never normalized again (`atomResponse_indirect`), so the two
-directions cannot form a rewrite loop. Direct and indirect calls therefore
-share their candidates.
+`p(args)`, its node `hoApplyIntro`. The direct goal is the canonical form:
+it is answered like any other, and a selection (S09) is consulted there, not
+at the indirect form, so a chosen command runs once. It is never normalized
+again (`atomResponse_indirect`), so the two directions cannot form a rewrite
+loop. Direct and indirect calls therefore share their candidates.
 
 **Converted candidates.** A candidate concluding a call by `ho_apply` meets a
 direct goal through the goal's indirect view: the S05 matcher compares the
 candidate's conclusion with the view. The candidate built for the view is
 wrapped as `converted view`: its node proves the view, and the goal follows by
-elimination. In the reverse direction, a direct conclusion meets a goal that
-applies an assignable name by `ho_apply`. The goal is matched against the
-conclusion's view, and the node is converted by introduction. A goal applying
-a rigid name or a compound term gets no introduction: nothing assigns or
-converts it, so a direct candidate is a miss there. The wrapper
+elimination. In the reverse direction, a direct conclusion meets a goal whose
+conclusion applies, by `ho_apply`, an assignable name or a reference. The goal
+is matched against the conclusion's view, and the node is converted by
+introduction. A goal applying a rigid name or a compound term gets no
+introduction: nothing assigns or converts it, so a direct candidate is a miss
+there. The wrapper
 changes no premise, name, or binding (`Expansion.convert`). The commit replays
 the match exactly, so `Store.unify_sound` and `Store.commit_unify` hold as in
 S05.
@@ -73,13 +74,15 @@ provides, so that comparison is a gap.
 
 ## Static classification
 
-`compareAtom hoApplySymbol binds goal conclusion` reads an atomic conclusion
-against an atomic or falsity goal, both as read. `compare` reads whole formulas
-through their implications, leaving the premises to the matcher. Formulas of
-the same kind (binders included), a conclusion that is a name, and operation
-calls go to the matcher as they are; it reports differently named binders and
-calls as gaps. Calls are compared by `compareAtom`. `binds` admits the names
-the candidate may bind:
+`compareAtom hoApplySymbol binds assignable goal conclusion` reads an atomic
+conclusion against an atomic or falsity goal, both as read. `compare` reads
+whole formulas through their implications, leaving the premises to the
+matcher, so it classifies the goal's conclusion. Formulas of the same kind
+(binders included), a conclusion that is a name, and operation calls go to the
+matcher as they are; it reports differently named binders and calls as gaps.
+Calls are compared by `compareAtom`. `assignable` admits the names the goal
+may bind, the store's assignable names, and `binds` those the candidate may
+bind:
 
 - clause template names;
 - a local rule's leading binders, or assignable names it captures;
@@ -89,16 +92,18 @@ the candidate may bind:
 | --- | --- | --- |
 | `direct` | The same head, or for whole formulas the same kind | The S05 matcher, as before |
 | `elim` | An indirect conclusion and a direct goal of the matching arity | Against the goal's view, converted by elimination |
-| `intro` | A direct conclusion and an indirect goal of the matching arity | For a goal applying an assignable name, the goal against the conclusion's view, converted by introduction (a gap for clauses the strategy enumerates); otherwise a miss |
-| `lambda` | The goal is a call, the conclusion applies a name `binds` admits, and nothing above holds | A gap: only a lambda-valued answer could match |
-| `apart` | Otherwise | A miss |
+| `intro` | A direct conclusion and an indirect goal of the matching arity applying an assignable name or a reference | The goal against the conclusion's view, converted by introduction; a gap for clauses the strategy enumerates |
+| `lambda` | Two calls, nothing above holds, and the conclusion applies a name `binds` admits or the goal one `assignable` admits | A gap: only a lambda-valued answer could match |
+| `apart` | Otherwise, an indirect goal applying a rigid name or a compound term included | A miss |
 
-`compareAtom_lambda`: no instance of a `lambda` conclusion is the goal or the
-goal's view, whatever the substitution. Structural reference matching has
-nothing to propose. A higher-order unifier might bind the name to
+`compareAtom_lambda`: whatever the substitution, a `lambda` conclusion and the
+goal have no common instance, directly or through either one's indirect view
+(`calls_apart`). Structural reference matching has nothing to propose. A higher-order unifier might bind the name to
 `λx̄. …`, but `Term` has no lambda and this is not general higher-order
 unification. The case is therefore an unsupported gap, never a miss: an arity
-mismatch such as `ho_apply(P, x)` against `p(a, b)`. A goal that is no call,
+mismatch such as `ho_apply(P, x)` against `p(a, b)`, or the goal
+`ho_apply(X, a)` against `q(a, b)`. Nested under a local rule's premises, such
+a conclusion is the same gap (`mayConclude`). A goal that is no call,
 falsity included, is never an instance of an application, and a
 lambda-valued formula is not considered for it: `apart`. One flexible head
 thus leaves contradiction search exhaustive. A concrete reference of another
@@ -164,8 +169,10 @@ P0 asks for evidence for every application by `ho_apply` (`hoApplyConversion`).
 
 - a goal gets `hoApplyIntro` (`ho_goal`) and `converted`;
 - an assumption or a clause head gets `converted`;
-- a compound head concluding a call by `ho_apply`, such as an induction
-  principle's, gets S09's commands and `converted`, for `headMatch`;
+- a non-atomic assumption or a compound head with a conclusion, through
+  implications, quantifiers, conjunctions, and disjunctions, applying a
+  predicate by `ho_apply` gets its S09 commands and `converted`: a local rule's
+  conclusion, a projected conjunct, an induction principle's head;
 - inside data nothing converts. `holds_hoApply` relates truth, not values, so
   an indirect call as an argument is compared only with an indirect call;
 - inside a NAF operand nothing converts either: conversion gives positive
@@ -181,8 +188,8 @@ The input stays outside P0 (`diagnose_not_ready`).
 | Views read through the answers are views of the read goals | `Indirect.resolve`, `Converts.resolve` |
 | `ho_goal` and every conclusion's candidate, direct or converted, are sound in every later store | `Expansion.hoGoal_soundUnder`, `Expansion.convert_soundUnder`, `hoGoal_sound`, `conclusionAttempt_sound`, `clauseUse_sound` |
 | `positive` and `left`, with conversion and `headMatch`, stay sound; their runs reconstruct `Derives` | `positive_sound`, `left_sound`, `Choice.attempt_sound`, `positive_reconstructs`, `left_reconstructs` |
-| An indirect goal has the one candidate `ho_goal` before the chosen commands, and its direct premise is never normalized again | `atomResponse_indirect` |
-| A `lambda` conclusion has no instance that is the goal or its view | `compareAtom_lambda` |
+| An indirect goal has the one candidate `ho_goal`, and its direct premise is never normalized again | `atomResponse_indirect` |
+| A `lambda` comparison has no common instance, directly or through either view | `compareAtom_lambda`, `calls_apart` |
 | A registered reference's predicate guard holds by its generated fact | `Program.predicateGuard_derives` |
 | The conversion's nodes are valid given a valid tree of the conclusion; so is a converted node's export | `Unfold.convert_proves`, `exportNode_converted_proves` |
 | A clause candidate is the clause use or its conversion, with fresh names | `clauseAttempt_fresh` |
@@ -194,7 +201,7 @@ The input stays outside P0 (`diagnose_not_ready`).
 | --- | --- |
 | `ho_apply(p, a)` with the fact `p(a)`; under `p(a)` | `hoApplyIntro`, then the fact; then identity. Exported, accepted |
 | `ho_apply(p, a)` or `p(a)` with no evidence | Exhausted, not interrupted: no rewrite loop |
-| `ho_apply(p, a)` under `ho_apply(p, a) ∨ ho_apply(p, a)`, `disjCases` chosen there | Success: the chosen command is kept beside `ho_goal` |
+| `ho_apply(p, a)` under `ho_apply(p, a) ∨ ho_apply(p, a)`, `disjCases` chosen at `p(a)`; contradiction chosen at both forms with a denial | Success; one answer, then exhausted: the selection runs at the direct form only |
 | `p(a)` under `ho_apply(p, a)`; under `ho_apply(q, a)` | `converted` assumption, exported as `hoApplyElim(assumption)`; exhausted |
 | `ho_apply(q, x) :- r(x)`, `r(a)`, goal `q(a)` / `p(a)` | The converted clause node; exhausted |
 | `q(a)`, `ho_apply(P, x) :- q(x)`, goal `r(a)` | `P := r` by the view; the node records the view; with the clauses reversed the run is interrupted (no termination claim) |
@@ -202,16 +209,18 @@ The input stays outside P0 (`diagnose_not_ready`).
 | `∀P. ho_apply(P, a)` under `q(a)`; `q(a)` under a rigid `ho_apply(P, a)` | Exhausted both: rigid predicates are never assigned |
 | `∀P. ho_apply(P, a)` with the fact `q(b)`; `ho_apply(r(b), a)` with `q(a)` | Exhausted: no introduction for a rigid or compound predicate, so no gap |
 | A flexible clause head for a goal applying a rigid name | The S05 match binds the clause name to the rigid name |
-| `compareAtom` on direct, indirect, mismatched-arity, compound, falsity, rigid, and concrete cases; `compare` on implications and binders | `direct`, `elim`, `intro`, `lambda`, `apart` ×4; `elim`, `apart`, `direct`, `apart` |
+| `compareAtom` on direct, indirect, reference, rigid, mismatched-arity (both sides), compound, falsity, and concrete cases; `compare` on implications and binders | `direct`, `elim`, `intro` ×2, `apart`, `lambda` ×2, `apart` ×4; `elim`, `intro`, `apart`, `direct`, `apart` |
 | A flexible fact for `p(a, b)`; a concrete `ho_apply(q, a)` for it; a flexible head for `false` | Unknown (lambda gap); exhausted; exhausted |
+| `ho_apply(X, a)` under `q(a, b)` or with that fact; local rules `∀P. s → ho_apply(P, a)` and `∀P. s → (r → ho_apply(P, a))` for `p(a, b)` | Unknown: lambda gaps on the goal's side and at any nesting depth |
 | The matcher on `ho_apply(p, a)` against `p(a)` | Still `unsupported` |
-| The induction focus `isNat(a) → reachable(a)` with `headMatch` | `converted` clause node with `x := a`, `P := reachable`; the guard by the generated fact; base by `ho_goal`; the step opened at a fresh name, its hypothesis converted; the focus finished once; the export accepted |
+| The induction focus `isNat(a) → reachable(a)` with `headMatch`, on a program with the generated signature clauses and guard symbols | `converted` clause node with `x := a`, `P := reachable`; the guard by the generated fact `isPred1(reachable)`, a signature clause; base by `ho_goal`; the step opened at a fresh name, its hypothesis converted; the focus finished once; the export accepted |
 | The same focus without the choice; the universal `∀x. isNat(x) → reachable(x)` with it | Exhausted; success |
 | A guard of another domain; `r2` registered at arity 2 only; `zero`; `reachable(a, b)` | Exhausted ×3; unknown (lambda gap) |
 | A conjunctive head for a conjunctive goal, by `headMatch`; a quantified head for the same universal | Matched as a whole, without conversion; accepted; matched |
 | `headProject` of `ho_apply(P, x)` from `ho_apply(P, x) ∧ q(x)` for `p(a)`; of `p(x)` for `ho_apply(X, a)` | Converted by elimination; converted by introduction, `X := p`; both accepted |
+| `headMatch` of `s → q(a)` for `s → ho_apply(X, a)` and for `s → ho_apply(q, a)` | `X := q`; converted by introduction under the implication; both accepted |
 | Hand-built conversions | Accepted; rejected for another predicate and for another implication premise |
-| Diagnoses | An indirect goal: `hoApplyIntro`, `converted`; an indirect assumption or head: `converted`; inside data or a NAF operand: nothing; the induction principle's head: `headUse`, `converted` |
+| Diagnoses | An indirect goal: `hoApplyIntro`, `converted`; an indirect assumption or head: `converted`; inside data or a NAF operand: nothing; the induction principle's head: `headUse`, `converted`; a local rule `q → ho_apply(p, a)`: `impUse`, `converted`; a head `ho_apply(P, x) ∧ q(x)`: `headProject`, `headUse`, `converted` |
 
 ## Boundaries
 

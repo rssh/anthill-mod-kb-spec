@@ -1,6 +1,19 @@
 import AnthillModKbSpec.Resolution.Machine.State
 import AnthillModKbSpec.Resolution.Machine.Instantiation
 
+namespace AnthillModKbSpec
+
+/-- A cut, by implication introduction and elimination: the lemma, then the
+goal under it, in the original context. -/
+theorem Derives.cut {Variable Literal Symbol : Type} [DecidableEq Variable] {hoApplySymbol : Symbol}
+    {kb : LogicalKb Variable Literal Symbol} {context : ProofContext Variable Literal Symbol}
+    {naf : NafFailure Variable Literal Symbol} {lemma goal : Formula Variable Literal Symbol}
+    (proof : Derives hoApplySymbol kb context lemma naf)
+    (continuation : Derives hoApplySymbol kb (lemma :: context) goal naf) : Derives hoApplySymbol kb context goal naf :=
+  .impElim (.impIntro continuation) proof
+
+end AnthillModKbSpec
+
 namespace AnthillModKbSpec.Machine
 
 variable {Variable Literal Symbol Certificate : Type} [DecidableEq Variable]

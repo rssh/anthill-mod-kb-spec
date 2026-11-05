@@ -152,7 +152,8 @@ def Choice.attempt (hoApplySymbol : Symbol) (program : Program Variable Literal 
             | some component =>
                 let fresh := store.clauseNames avoid head body
                 conclusionAttempt hoApplySymbol obligation store (fresh.map Prod.snd)
-                  (compare hoApplySymbol (clauseBinds head body) (store.resolve obligation.goal) component)
+                  (compare hoApplySymbol (clauseBinds head body) store.assignable (store.resolve obligation.goal)
+                    component)
                   (component.instantiate (Substitution.rename fresh))
                   (fun bindings => Expansion.headProject head body fresh path bindings) true
             | none => some none
@@ -170,7 +171,8 @@ def Choice.attempt (hoApplySymbol : Symbol) (program : Program Variable Literal 
         match clause with
         | .definite head body =>
             clauseUse hoApplySymbol obligation store avoid head body
-              (compare hoApplySymbol (clauseBinds head body) (store.resolve obligation.goal) head) true
+              (compare hoApplySymbol (clauseBinds head body) store.assignable (store.resolve obligation.goal) head)
+              true
         | .goal _ => some none
       else some none
   | .contradiction =>
@@ -219,7 +221,8 @@ goal that waits on an unbound name is `positive`'s. An atomic or falsity goal
 gets `positive`'s candidates, compound assumptions left to the chosen commands
 (`localAttempt`'s `leftRules`); a compound goal closed by an exact candidate
 gets only those, as for `positive`. The selection runs only where its commands
-are offered. -/
+are offered: not at a concrete indirect call, whose one candidate is `ho_goal`,
+but at its direct form (S11). -/
 def left (hoApplySymbol : Symbol) (program : Program Variable Literal Symbol) (select : Selection Variable Literal Symbol) :
     Strategy Variable Literal Symbol Certificate := fun obligation store =>
   let goal := store.resolve obligation.goal
@@ -230,7 +233,8 @@ def left (hoApplySymbol : Symbol) (program : Program Variable Literal Symbol) (s
       match goal with
       | .app _ _ | .falsity =>
           atomResponse hoApplySymbol program obligation store goal context true
-            (chosenAttempts hoApplySymbol program select obligation store goal context)
+            (if (goal.call? hoApplySymbol).isSome then []
+             else chosenAttempts hoApplySymbol program select obligation store goal context)
       | _ =>
           match exactCandidates obligation goal context with
           | [] => leftComposite hoApplySymbol program (chosenAttempts hoApplySymbol program select obligation store goal context)
@@ -325,9 +329,16 @@ theorem left_sound_within {program full : Program Variable Literal Symbol}
   dsimp only at member
   split at member
   · exact positive_sound_within within obligation store valid declared expansion member
-  · split at member
-    · exact atomResponse_sound_within valid rfl within chosen expansion member
-    · exact atomResponse_sound_within valid rfl within chosen expansion member
+  · have unlessIndirect : ∀ candidate ∈ (if ((store.resolve obligation.goal).call? hoApplySymbol).isSome then []
+        else chosenAttempts (Certificate := Certificate) hoApplySymbol program select obligation store
+          (store.resolve obligation.goal) (store.readContext obligation)),
+        AttemptSound hoApplySymbol full.kb naf store obligation candidate := fun candidate inside => by
+      split at inside
+      · cases inside
+      · exact chosen candidate inside
+    split at member
+    · exact atomResponse_sound_within valid rfl within unlessIndirect expansion member
+    · exact atomResponse_sound_within valid rfl within unlessIndirect expansion member
     · split at member
       · refine respond_sound (fun candidate inside => ?_) expansion member
         simp only [List.mem_append] at inside
