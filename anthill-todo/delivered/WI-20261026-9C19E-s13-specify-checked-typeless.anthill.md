@@ -3,9 +3,9 @@
 - id: WI-20261026-9C19E-s13-specify-checked-typeless
 - created: 2026-10-26T08:32:34Z
 
-- status: Claimed
+- status: Delivered
 - status_agent: claude
-- status_at: 2026-11-07T18:44:36Z
+- status_at: 2026-11-07T21:25:48Z
 
 - acceptance: lake build
 
