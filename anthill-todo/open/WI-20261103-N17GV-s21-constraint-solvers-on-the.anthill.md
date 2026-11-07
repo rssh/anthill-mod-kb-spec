@@ -3,19 +3,19 @@
 - id: WI-20261103-N17GV-s21-constraint-solvers-on-the
 - created: 2026-11-03T17:07:09Z
 
-- status: PreOpened
+- status: Open
 - status_agent: user
-- status_at: 2026-11-07T14:55:33Z
+- status_at: 2026-11-07T15:37:32Z
 
 - acceptance: lake build
 
-- depends_on: WI-20261026-ANXY6-s10-implement-evidence-first
+- depends_on: WI-20261026-ANXY6-s10-implement-evidence-first, WI-20261107-R9YMZ-s24-tabled-backtracking-on-the, WI-20261107-JA6WZ-s22-answers-yes-no-unknown-and
 
 - tags: resolution-machine
 
 ## Description
 
-S21: Constraint solvers on the machine store
+S21: Constraint solvers on the machine store: disequality and constructive negation in the tabled fragment
 
 Current scope: Lean formalization in /Users/rssh/work/oss/anthill-mod-kb-spec only. Rust-model/component development has its own separate scope. Use the existing Term representation and semantic infrastructure; do not add parser/frontend work, redesign runtime term representation, bootstrap Rust crates, or implement production APIs here. Anthill docs/proposals are optional requirements references. No Rust or Anthill source changes/builds are prerequisites. Executable definitions in this ticket mean Lean functions or abstract-machine relations supporting the proofs.
 
@@ -36,12 +36,19 @@ Acceptance:
 - First solvers: disequality (`X ≠ t`, checked at each binding, discharged by the free equality theory) and constructive negation for NAF on flexible operands (`naf p(X)` with `p(one)` answers `X ≠ one`), with evidence from the S10 completion.
 - Traces: a conditional answer, a constraint failing a later binding with rollback, a discharged constraint exported and checked, and floundering kept for goals no solver owns.
 
+In the tabled fragment (re-scoped 2026-11-07, with the user; docs/fast-decision-routes.md, "Constructive negation"): back from the backlog, after S24. Disequality constraints over free constructors make NAF on goals with flexible names or eigenvariables answer with a constraint instead of waiting or floundering.
+- Constructive negation: for NAF on a goal with free or rigid names, the operand's answers, as equations, come from its completed tabled search; their negation is normalized by disunification into a finite disjunction of conjunctions of disequations, and each disjunct is a branch of the answer, its disequations added to the store. Sound for the completion with the free equality theory (S10's clash and injectivity) and domain closure for declared domains (S02's exact realization).
+- An operand with infinitely many answers, such as a recursive predicate with a free argument (naf nat(X)), is not answered here: it is S25's or a blocker.
+- Universals over eigenvariables: a universal goal ∀x:D. G whose body answers with a constraint C(x) on its eigenvariable is decided by disunification with domain closure: Yes when C is valid over D's members, No with a counterexample term otherwise, Unknown when an open predicate is involved.
+- Tables store conditional answers: each answer with its constraint, and a call's table is completed under the constraints of its context.
+- S23's NAF rule is relaxed: a NAF goal ground in data runs as finite failure, and one with free or rigid names is admitted when its operand is in the complete class.
+- Traces: with the fact isZero(zero), naf isZero(Y) for a flexible Y answers Y ≠ zero; ∀x:Nat. ¬isZero(succ(x)) is Yes; ∀x:Nat. ¬isZero(x) is No with the counterexample zero; naf nat(X) is a blocker.
+
 Validation: lake build and focused Lean tests/examples appropriate to the changed definitions and proofs.
-Design references: docs/machine-delay.md (Restrictions and constraints, Closing), docs/machine-negation.md, docs/resolution-state-machine.md.
+Design references: docs/fast-decision-routes.md, docs/machine-delay.md (Restrictions and constraints, Closing), docs/machine-negation.md, docs/resolution-state-machine.md.
 
 ## Changes
 
 ### 2026-11-07T14:55:34Z — feedback — user
 
 Moved to the backlog (2026-11-07 reorganization): not needed for the fast fragment (docs/fast-decision-routes.md). Constructive negation would later relax the fragment's ground-NAF safety condition, and constraints would then need to live in S24's tables; disequality is a candidate first solver there.
-

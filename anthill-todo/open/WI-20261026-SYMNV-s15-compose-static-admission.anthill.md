@@ -9,7 +9,7 @@
 
 - acceptance: lake build
 
-- depends_on: WI-20261026-ANXY6-s10-implement-evidence-first, WI-20261026-P6JQV-s12-admit-explicit-induction, WI-20261026-5G8F5-s14-implement-dictionary-law, WI-20261107-JA6WZ-s22-answers-yes-no-unknown-and, WI-20261107-7PQMQ-s23-moded-structural-recursion, WI-20261107-R9YMZ-s24-tabled-backtracking-on-the, WI-20261107-Q3FVM-s26-contexts-in-tabled, WI-20261107-SFQPM-s25-regular-unary-predicates, WI-20261103-2QMVP-s20-use-checked-lemmas-inside
+- depends_on: WI-20261026-ANXY6-s10-implement-evidence-first, WI-20261026-P6JQV-s12-admit-explicit-induction, WI-20261026-5G8F5-s14-implement-dictionary-law, WI-20261107-JA6WZ-s22-answers-yes-no-unknown-and, WI-20261107-7PQMQ-s23-moded-structural-recursion, WI-20261107-R9YMZ-s24-tabled-backtracking-on-the, WI-20261107-Q3FVM-s26-contexts-in-tabled, WI-20261107-SFQPM-s25-regular-unary-predicates, WI-20261103-2QMVP-s20-use-checked-lemmas-inside, WI-20261103-N17GV-s21-constraint-solvers-on-the
 
 - tags: resolution-machine
 
@@ -56,4 +56,3 @@ NAF in induction cases (from S12, 2026-11-07): S12's Induction.check reports NAF
 ### 2026-11-07T13:03:20Z — feedback — user
 
 Correction to the 2026-11-07 NAF note: only NAF as a goal in a clause the S12 cases may select is a negation need (CaseGap .negation). NAF assumed in the query's context is a hypothesis, reported as P0's scopedProof request, and is not a route for nafByRefutation.
-

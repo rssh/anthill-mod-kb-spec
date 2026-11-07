@@ -26,10 +26,10 @@ Acceptance:
 - An existential assumption is opened at a fresh name.
 - An implication goal D → G with D a Harrop clause: D is a scoped local clause used by backchaining, tables keyed by the context. A ground antecedent the fragment decides is read materially (D false gives Yes, otherwise G decides); otherwise a failure is Undecided. Data-dependent antecedents are P2.
 - A universal goal ∀x. G at a fresh eigenvariable: success is Yes; a failure is Undecided, except over a finite domain (expanded) or for regular predicates (S25).
-- NAF inside an implication's or a split's scope is judged against the program extended by that scope's assumptions, and its soundness is stated for that program.
+- The two readings (docs/fast-decision-routes.md): goals run by hereditary Harrop execution, answers about the completion (Lloyd–Topor), so a success is Yes and other failures Undecided.
+- NAF inside an implication's or a split's scope is judged against the program extended by that scope's assumptions. Theorem: every model of the original completion satisfying an assumed Harrop clause is a model of the extended completion, so a Yes is sound for the original KB.
 - The soundness of each combination, with the run invariants extended.
 - Traces: a split whose branches agree (Yes; No) and one whose branches disagree (Unknown); a hypothetical goal with a local rule; the material reading answering No; a generic universal Yes and its failure Undecided; ∀x:Bool. p(x) expanded.
 
 Validation: lake build and focused Lean tests/examples appropriate to the changed definitions and proofs.
 Design references: docs/fast-decision-routes.md, docs/machine-left.md, docs/machine-positive.md.
-

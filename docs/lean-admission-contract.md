@@ -275,8 +275,10 @@ positively without making every formula of that shape decidable.
 
 P2 includes P1 and admits the tabled fragment of
 [fast evaluation](fast-decision-routes.md) where a run may end Undecided. Its
-one hard condition is safety: every variable a NAF goal, a guard, or an output
-uses is bound by an input or an earlier positive goal. Its runs are tabled
+one hard condition is safety: every variable a guard or an output uses is
+bound by an input or an earlier positive goal. NAF on a goal with free or rigid
+names answers with a disequality constraint (constructive negation, S21) when
+its operand has finitely many answers. Its runs are tabled
 backtracking on the shared machine, bounded by fuel, and answer Yes, No,
 Unknown (with witnesses), or Undecided with blockers. Answers are monotone in
 the fuel: only Undecided can change with more fuel. A predicate whose recursion

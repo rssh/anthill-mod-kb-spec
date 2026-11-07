@@ -34,11 +34,19 @@ and loops, positive or through NAF, all stay.
 
 ## Conditions and cost classes
 
-**Safety** is the one hard condition: every variable a NAF goal, a guard, or an
-output uses is bound by an input or by an earlier positive goal, so nothing
-enumerates an infinite domain. Predicates declare their input and output
+**Safety** is the one hard condition: every variable a guard or an output uses
+is bound by an input or by an earlier positive goal, so nothing enumerates an
+infinite domain. Predicates declare their input and output
 arguments (modes), which the KB generator emits as it emits explicit binder
 ranges; they are never inferred.
+
+A NAF goal ground in data runs as finite failure. One with a flexible name, or
+with an eigenvariable opened by a universal goal, is answered by constructive
+negation (below), when its operand has finitely many answers. Finite failure on
+an eigenvariable would be unsound: an eigenvariable stands for every value, and
+with the fact `p(1)`, `p(a)` matches no head, yet `p(a)` holds when `a` is `1`
+(S10 rejects this reading). Delay does not help there: an eigenvariable is never
+bound, so a delayed NAF on it would flounder.
 
 **Term growth** decides a predicate's cost class, not its admission:
 
@@ -90,8 +98,55 @@ with more fuel; only Undecided can.
 | An implication goal `D → G`, `D` a Harrop clause | `D` added as a scoped local clause, used by backchaining; tables keyed by the context | Success is Yes. With a ground antecedent the fragment decides, `D → G` is read materially: `D` false gives Yes, otherwise `G` decides. Otherwise a failure is Undecided. Antecedents that depend on the data can reach PSPACE (hypothetical Datalog): budgeted |
 | A universal goal `∀x. G` | At a fresh eigenvariable, never by enumeration | Success is Yes. A failure is Undecided, since the goal may hold by induction, unless a decided reading exists: expansion over a finite domain, or regular predicates (below) |
 
-NAF inside an implication's or a split's scope is judged against the program
-extended by that scope's assumptions.
+**Two readings.** NAF is outside hereditary Harrop formulas, whose search is
+complete for intuitionistic provability and monotone. With NAF judged by the
+completion, implication and universal goals have two readings:
+
+| Reading | `A → G` | `∀x. G` | Role |
+| --- | --- | --- | --- |
+| Hereditary Harrop (λProlog) | Prove `G` with `A` added as a clause | Prove `G` at a fresh eigenvariable | A proof procedure |
+| Completion (Lloyd–Topor) | `¬(A ∧ ¬G)`, judged against the original KB | `¬∃x. ¬G` | The truth the answers are about |
+
+The fragment runs the first and answers about the second: a success is Yes, a
+ground antecedent the fragment decides is read materially, and any other
+failure is Undecided.
+
+**NAF inside a scope.** NAF inside an implication's or a split's scope is
+judged against the program extended by that scope's assumptions, and a Yes
+stays sound for the original KB. Every model of the original completion that
+satisfies an assumed Harrop clause `D` is a model of the extended program's
+completion: the disjunct `D` adds to its head's completed definition is implied
+by `D` and the old definition. So if `G` holds in every model of the extended
+completion, `D → G` holds in every model of the original one.
+
+## Constructive negation
+
+Over free constructors, NAF on a goal with free or rigid names answers with a
+**disequality constraint** instead of waiting or floundering (Chan 1988,
+Stuckey 1995). With the fact `p(zero)`, `naf p(a)` is the constraint `a ≠ zero`.
+
+- **Free equality.** Constructors are injective and pairwise distinct, and no
+  term contains itself: S10's completion already has the clash and injectivity
+  facts, valid in exact-domain models.
+- **Domain closure.** Every member of a declared inductive domain is built by
+  its constructors (`x = zero ∨ ∃y. x = succ(y)`), by S02's exact realization.
+  With it, formulas of equations and disequations over the members are
+  decidable (disunification, Comon and Lescanne 1989).
+- **The answer.** The operand's answers, as equations, come from its completed
+  tabled search; their negation normalizes to a finite disjunction of
+  conjunctions of disequations, each disjunct a branch, its disequations added
+  to the store. Tables store conditional answers: each with its constraint.
+- **On an eigenvariable.** A universal goal `∀x:D. G` whose body answers with a
+  constraint `C(x)` is decided by disunification with domain closure: Yes when
+  `C` is valid over `D`'s members, No with a counterexample term otherwise,
+  Unknown when an open predicate is involved. `∀x:Nat. ¬isZero(succ(x))` is
+  Yes; `∀x:Nat. ¬isZero(x)` is No, with the counterexample `zero`.
+- **The limit.** The operand must have finitely many answers. A recursive
+  predicate with a free argument, as in `naf nat(X)`, unfolds forever: it is
+  the regular predicates' case (below), or a blocker.
+
+This is S21's disequality solver and constructive negation, inside the
+fragment.
 
 ## Regular unary predicates
 
@@ -134,7 +189,7 @@ statements, used through a checked proof (S08) or a checked lemma (S20):
 | Term-choosing uses of non-Harrop assumptions | Choosing an instance of `∀x. A(x)`, or using a compound conclusion |
 | Conditional equations as replacement | Equational reasoning; operations run by total evaluators instead |
 | Dictionary-law reasoning | Choosing laws; laws are statements |
-| NAF on a goal not ground by mode | Refutation search (S10) or constructive negation |
+| NAF whose operand has infinitely many answers (`naf nat(X)` with `X` free) | Constructive negation cannot finish; outside the regular predicates, refutation search (S10) |
 
 Denials `⊥ :- body` are never selected as clauses: ex falso would make every
 goal a candidate. They constrain the witnesses, and a denial whose body is Yes

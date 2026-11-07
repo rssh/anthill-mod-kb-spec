@@ -23,7 +23,7 @@ Scope: the admission side of docs/fast-decision-routes.md. Before anything runs,
 
 Acceptance:
 - Mode declarations per predicate (input and output argument positions), as admission input the KB generator emits, like explicit binder ranges; never inferred.
-- Safety, the one hard condition: reading each body left to right, every variable a NAF goal, a guard, or an output uses is bound by an input or an earlier positive goal. A violation is an Undecided blocker (S22) with its site and path.
+- Safety, the one hard condition: reading each body left to right, every variable a guard or an output uses is bound by an input or an earlier positive goal. A NAF goal ground in data runs as finite failure; one with flexible names or an eigenvariable of a universal goal needs S21's constructive negation, since finite failure on an eigenvariable is unsound (S10), and is admitted when its operand is in the complete class. A violation is an Undecided blocker (S22) with its site and path.
 - Cost classes: complete when every recursive call's arguments are subterms of the head's inputs or data constants, budgeted otherwise. A complete predicate's degree k (roughly the free variables a clause joins) is reported, and non-overlapping input patterns are reported as determinism.
 - Profiles: P1 for complete predicates with no NAF or denial over a predicate on a cycle of the dependency graph; P2 for the rest of the fragment; each construct outside the fragment (docs/fast-decision-routes.md, "Outside the fragment") a blocker.
 - The classification is local: a predicate's class and blockers follow from its own clauses and the classes of the predicates they call, and a query's profile from the predicates it uses.
@@ -32,4 +32,3 @@ Acceptance:
 
 Validation: lake build and focused Lean tests/examples appropriate to the changed definitions and proofs.
 Design references: docs/fast-decision-routes.md, docs/lean-admission-contract.md (profiles), docs/machine-p0.md.
-
