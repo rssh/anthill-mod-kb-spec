@@ -120,7 +120,7 @@ the final answers, the renaming is the clause instance (`clause_soundUnder`).
 
 Exhausting one candidate only resumes the next. A goal whose candidates are all
 exhausted is not false: `exhausted` carries no negative evidence. There is no loop
-check. Under the S01 profile, P0 admission (S07) rejects cyclic programs, and P2
+check. Under the S01 profile, P0 admission (S07) rejects cyclic programs, and P3
 needs a strategy with its own termination argument. Here a looping run ends
 `interrupted` by the step budget, which is no result about the goal.
 

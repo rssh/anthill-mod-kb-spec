@@ -1,10 +1,10 @@
-import AnthillModKbSpec.Resolution.P2.Principle
+import AnthillModKbSpec.Resolution.P3.Principle
 import AnthillModKbSpec.Resolution.P1.Export
 
 /-! # Admitted induction (S12)
 
 The induction path for a lowered guarded universal `∀x:D. p(x)` over a
-declared inductive domain `D`, by its structural principle (`P2/Principle`).
+declared inductive domain `D`, by its structural principle (`P3/Principle`).
 `check` decides, before anything runs, whether the path is Ready:
 
 - the goal is the lowered `∀x. G_D(x) → p(x)` over one declared domain
@@ -35,7 +35,7 @@ its term (`guardSplits`), as a case's field guards need. The principle's
 premises are never such a focus, nor are their instances
 (`Plan.body_unfocused`), and `positive` never selects a compound head for an
 atomic goal. The run is bounded by its fuel: an interrupted run is Unknown,
-never failure. Induction search is P2: failure of a case for this predicate
+never failure. Induction search is P3: failure of a case for this predicate
 does not refute the universal.
 
 A successful run reconstructs `Derives` for the guarded universal
@@ -215,7 +215,7 @@ def guardForm (program : Machine.Program Variable Literal Symbol) : Term Variabl
         | other => guardForm program other
   | _ => false
 
-/-- P0's requests as gaps, except ground instances of data, which a P2 search
+/-- P0's requests as gaps, except ground instances of data, which a P3 search
 does not need, and range guards: positive search decides a guard goal by its
 atoms (S06), and the plan's selection splits a guard assumption at a guard
 goal on the same term (`guardSplits`). -/

@@ -15,21 +15,21 @@
 
 ## Description
 
-S23: Moded structural recursion as a P1 route
+S23: The fast fragment's admission: modes, safety, cost classes, blockers
 
 Current scope: Lean formalization in /Users/rssh/work/oss/anthill-mod-kb-spec only. Rust-model/component development has its own separate scope. Use the existing Term representation and semantic infrastructure; do not add parser/frontend work, redesign runtime term representation, bootstrap Rust crates, or implement production APIs here. Anthill docs/proposals are optional requirements references. No Rust or Anthill source changes/builds are prerequisites. Executable definitions in this ticket mean Lean functions or abstract-machine relations supporting the proofs.
 
-Scope: the first fast decision route of docs/fast-decision-routes.md. Under its admission condition the shared machine's depth-first search terminates and decides, with no machine change. Answers are S22's.
+Scope: the admission side of docs/fast-decision-routes.md. Before anything runs, each predicate of a KB program is classified into P1, P2, or a blocker, for S24's tabled evaluation. No machine change.
 
 Acceptance:
-- Mode declarations per predicate (input and output argument positions) and a decreasing input for each recursive predicate, as admission input the KB generator emits, like explicit binder ranges; never inferred.
-- Admission checks, local and syntactic: well-moded bodies read left to right (each call's inputs ground by the head's inputs and earlier outputs; NAF and guards only on calls ground by mode); every call into the predicate's recursive group, NAF included, with its decreasing argument a strict subterm of the head's; determinism as a speed class (non-overlapping input patterns), not a blocker.
-- Termination: an admitted query's run ends in success or a complete failure, never needing more fuel than a bound computed from the query's inputs (stated as P0's run_total_of_p0 is).
-- Decision: success is Yes by Derives; a complete failure is No, the goal false in every model of the completion, with failure evidence like P0's; an open predicate reached is Unknown with S22's witnesses.
-- Determinism: with non-overlapping input patterns, at most one clause is a candidate for each call (a theorem), and traces show no choice points.
-- Blockers (S22 Undecided), each with site and path: a call not ground by mode, a recursive call not on a smaller input, NAF on a call not ground by mode.
-- Traces: reachable(+) on a numeral (Yes), even(+) on succ(zero) (No), append(+, +, -) computing its output, a non-decreasing recursion reported as a blocker, an open predicate answered Unknown.
+- Mode declarations per predicate (input and output argument positions), as admission input the KB generator emits, like explicit binder ranges; never inferred.
+- Safety, the one hard condition: reading each body left to right, every variable a NAF goal, a guard, or an output uses is bound by an input or an earlier positive goal. A violation is an Undecided blocker (S22) with its site and path.
+- Cost classes: complete when every recursive call's arguments are subterms of the head's inputs or data constants, budgeted otherwise. A complete predicate's degree k (roughly the free variables a clause joins) is reported, and non-overlapping input patterns are reported as determinism.
+- Profiles: P1 for complete predicates with no NAF or denial over a predicate on a cycle of the dependency graph; P2 for the rest of the fragment; each construct outside the fragment (docs/fast-decision-routes.md, "Outside the fragment") a blocker.
+- The classification is local: a predicate's class and blockers follow from its own clauses and the classes of the predicates they call, and a query's profile from the predicates it uses.
+- Theorems: each condition is decided (spec theorems), and a complete predicate has finitely many distinct calls from any ground input, the bound S24 uses.
+- Traces: reachable(+), append(+, +, -), and path(+, -) over facts classified P1 with their degrees; p(x) :- p(succ(x)) budgeted (P2); NAF over a predicate on a cycle P2; an unsafe NAF goal and a compound head as blockers.
 
 Validation: lake build and focused Lean tests/examples appropriate to the changed definitions and proofs.
-Design references: docs/fast-decision-routes.md, docs/machine-p0.md, docs/lean-admission-contract.md (decision contracts).
+Design references: docs/fast-decision-routes.md, docs/lean-admission-contract.md (profiles), docs/machine-p0.md.
 

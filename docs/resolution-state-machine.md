@@ -2,9 +2,11 @@
 
 Status: design discussion, not an implemented resolver or a completeness theorem.
 
-The [S01 Lean admission contract](lean-admission-contract.md) defines P0, P1, and P2
+The [S01 Lean admission contract](lean-admission-contract.md) defines P0, P1, P2, and P3
 admission rules for this same syntax and state machine. P1 extends P0 with certified
-decision procedures; P2 admits broader proof strategies with Unknown permitted.
+decision procedures; P2 admits budgeted tabled evaluation that may end Undecided;
+P3 admits broader proof strategies with Unknown permitted (see
+[fast evaluation](fast-decision-routes.md) for P2).
 
 Current implementation scope: Lean formalization in this repository, reusing
 the existing Term representation and semantic infrastructure. Rust-model/component
@@ -40,11 +42,11 @@ Proof language: statement + explicit proof
     -> usable core fact/rule, when admissible
 ```
 
-An explicit proof is a finite tree in the same logic used by P0/P1/P2, passed as
+An explicit proof is a finite tree in the same logic used by P0/P1/P2/P3, passed as
 a `Term`. P1 checks each rule application via a known terminating procedure;
 the conclusion and intermediate formulas need no automatic P1 discovery plan.
 The tree may be built manually, produced externally, or exported from successful
-P2 search. User-provided contexts retain their local assumption scopes. S08
+P3 search. User-provided contexts retain their local assumption scopes. S08
 defines the internal tree encoding and checker; this does not require a parser
 or public proof syntax. The roadmap assigns the P0 baseline and proof-export
 obligations and identifies deferred P1 decision procedures explicitly.
@@ -242,12 +244,11 @@ negation in an arbitrary model. If a core returns Boolean truth using NAF, its
 closure/completion interpretation and adequacy theorem are part of the contract.
 
 S01 defines finite ground acyclic resolution as P0, certified decidable extensions
-as P1, and scoped proof strategies permitting Unknown as P2; see the
-[admission contract](lean-admission-contract.md)
-for their requirements and shared execution semantics. A possible additional
-strategy is finite-domain, function-free,
-range-restricted Datalog with stratified NAF and total terminating primitives.
-Finite saturation and stratum evaluation would require their own formalization.
+as P1, budgeted tabled evaluation as P2, and scoped proof strategies permitting
+Unknown as P3; see the [admission contract](lean-admission-contract.md)
+for their requirements and shared execution semantics. Tabled backtracking over
+a safe Prolog-like fragment, which subsumes finite saturation and stratum
+evaluation, is specified in [fast evaluation](fast-decision-routes.md).
 Admitting scoped implication, richer quantifiers, higher-order calls, operation
 equations, or infinite domains requires an additional decision procedure and proof;
 the earlier transition catalogue does not automatically supply one.
@@ -297,8 +298,8 @@ it must not emerge as an unexpected unsupported-form error during core evaluatio
 
 ### Next concrete design step
 
-Implement S01's shared machine and P0/P1/P2 admission definitions with their specified
-decision, strategy, and model contracts. Implement theorem admission and the P1/P2
+Implement S01's shared machine and P0/P1/P2/P3 admission definitions with their specified
+decision, strategy, and model contracts. Implement theorem admission and the P1/P2/P3
 requirements for the broader transitions below. No decision procedure for all
 formulas in the common syntax is claimed.
 

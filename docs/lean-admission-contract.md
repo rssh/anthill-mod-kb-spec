@@ -1,6 +1,6 @@
 # Lean admission and operational-semantics contract
 
-S01 / WI-20261026-VJVCB. This document specifies P0, P1, and P2 and
+S01 / WI-20261026-VJVCB. This document specifies P0, P1, P2, and P3 and
 the obligations for subsequent tickets. It defines a contract, not an already
 implemented admission checker or a new soundness theorem. The broader design is
 [resolution-state-machine.md](resolution-state-machine.md); the delivery sequence
@@ -21,14 +21,14 @@ CheckedProof(snapshot, context, goal, proof : Term)
 ```
 
 The first justifies automatic execution under checked admission conditions. The
-second checks a supplied proof tree in the same logic used by P0/P1/P2, encoded
+second checks a supplied proof tree in the same logic used by P0/P1/P2/P3, encoded
 as a `Term`. The tree may be constructed manually, produced by an external
-system, or found by P2 search, including through nondeterministic choices. This
+system, or found by P3 search, including through nondeterministic choices. This
 allows a proved formula to be used without repeating its discovery. A theorem
 can enter automatic execution only after its use also passes operational admission.
 
 **There is one syntax and one interpreter/state machine.** The deductive and
-proof-oriented parts both use the existing formulas. P0, P1, and P2 are nested sets
+proof-oriented parts both use the existing formulas. P0, P1, P2, and P3 are nested sets
 of admission rules for that same machine; they are not languages, engines, or
 different interpretations of truth. Every Ready result contains a plan for the
 same command semantics. Profile information is evidence for admission, not an
@@ -38,10 +38,21 @@ instruction to switch interpreters.
   reuse `GroundSearch`; this is not the intended deductive language boundary.
 - **P1: certified decidable extensions.** Includes P0 and additional supported
   decision procedures with checked termination, soundness, and completeness,
-  including checking an explicit proof supplied as a `Term`.
-- **P2: scoped proof strategies, with Unknown permitted.** Includes P1 and
+  including checking an explicit proof supplied as a `Term`, the exact part of
+  the tabled fragment, and regular unary predicates
+  ([fast evaluation](fast-decision-routes.md)). A P1 decision answers Yes,
+  No, or the logical Unknown (the completion leaves the goal open, shown by
+  witnesses); it never ends Undecided after admission.
+- **P2: budgeted evaluation.** Includes P1 and the tabled fragment's runs that
+  may end Undecided: recursion that grows terms, bounded by fuel; case splits
+  or hypotheses that depend on the data; NAF or denials over a predicate on a
+  cycle. The same language and machine as P1; every answer is sound, and the
+  answers are complete within the fuel.
+- **P3: scoped proof strategies, with Unknown permitted.** Includes P2 and
   sound proof attempts for broader formulas, including generic induction and
-  dictionary-law reasoning without a complete decision procedure.
+  dictionary-law reasoning without a complete decision procedure. P3
+  strategies are proof producers: their results enter the KB module as
+  checked proofs, and inside the module a goal that needs one is Undecided.
 
 The common syntax also represents formulas requiring supplied proofs or further
 extensions. Such formulas are not rewritten into another language. Admission
@@ -72,7 +83,7 @@ P0 excludes variable-bearing templates, flexible query answers, quantified goals
 disjunction, scoped implication, compound heads, denial clauses, equality goals,
 dictionary calls, and goal-position `ho_apply`. These remain well-formed foundation
 formulas: they are outside the P0 admission rule, not outside the language. The
-checker considers the enabled P1/P2 rules and the requested result guarantee
+checker considers the enabled P1/P2/P3 rules and the requested result guarantee
 before returning `NeedsEvidence`. Profile exclusion
 alone never produces `Invalid`.
 
@@ -98,7 +109,7 @@ changing the existing meaning of finite failure to a fixed-point semantics.
 P0 matches complete ground atoms by syntactic identity. It does not enumerate
 inhabitants, even if data domains or predicate references have been registered.
 There is no domain-coverage assumption and no implicit universal closure to
-instantiate during P0 execution. Quantifier compilation in P1 or P2 must
+instantiate during P0 execution. Quantifier compilation in P1, P2, or P3 must
 justify its range, instance coverage, and resulting program dependencies.
 
 ## P1: certified decidable extensions
@@ -144,8 +155,9 @@ its callers. An incompatible negative result cannot be coerced into NAF.
 
 These entries specify procedures to formalize, not existing implementations.
 Each needs its full decision contract before it is enabled. The
-[fast decision routes](fast-decision-routes.md) (S23–S25) specify three of
-them on the shared backtracking machine, under the completion.
+[fast evaluation](fast-decision-routes.md) (S23–S26) replaces finite rule
+saturation and stratified NAF by tabled backtracking on the shared machine,
+under the completion, and specifies regular unary predicates.
 The [roadmap's route ownership table](resolution-implementation-plan.md#p1-route-ownership-and-delivery-boundary)
 assigns the implemented subset to S01-S17 and explicitly defers the other
 catalog procedures; listing a route here does not enable it.
@@ -180,9 +192,9 @@ facts, or handled by another contract with a proved composition rule.
 
 ### Explicit proof: a proof tree in the shared logic
 
-An explicit proof is a finite proof tree in the same logic used by P0/P1/P2,
+An explicit proof is a finite proof tree in the same logic used by P0/P1/P2/P3,
 passed as a `Term`. It is needed when a result is proved manually, obtained from
-an external system, or found by P2 search whose successful choices we want to
+an external system, or found by P3 search whose successful choices we want to
 retain. Once the tree is supplied, P1 checks its steps without repeating the
 search that discovered them. The source of the tree does not change its meaning
 or the rules it must satisfy.
@@ -223,7 +235,7 @@ The reconstruction line is schematic: it preserves the application symbol,
 KB, local assumptions, and exact NAF evidence provider of the foundation judgment.
 The proof-tree encoding and executable checker remain to be formalized against
 the shared inference rules represented by `Derives`. Any new inference rule
-needs the same soundness justification as when used by P0/P1/P2; an external
+needs the same soundness justification as when used by P0/P1/P2/P3; an external
 system must supply a tree in this logic. No concrete encoding or new `Term`
 constructor is fixed here.
 
@@ -232,7 +244,7 @@ condition, including substitution, freshness, non-escape, guards, and NAF
 evidence. References to previously checked proofs must resolve in the fixed
 snapshot and preserve scope; cyclic references cannot justify themselves. A
 NAF node must include the required complete-failure/coverage evidence: a failed
-P2 search is insufficient. The tree contains all required branches, including
+P3 search is insufficient. The tree contains all required branches, including
 both cases for disjunction elimination, and no unresolved proof-search holes.
 
 This route belongs to P1 because checking a supplied finite tree terminates and
@@ -249,19 +261,33 @@ a decision procedure for its conclusion.
 
 In particular, deciding an induction base and step does not decide an arbitrary
 universal statement: failure of the step for the chosen invariant does not
-refute the universal. Generic induction proof search therefore belongs to P2
+refute the universal. Generic induction proof search therefore belongs to P3
 unless a complete decision procedure for that restricted problem is supplied.
 A supplied induction proof tree is checked by the P1 explicit-proof route and
 can be imported as a fact and used by a P1 plan.
 
 Likewise, failure of one dictionary-law premise does not refute the target
 equation. A total complete evaluator may supply a P1 decision, while incomplete
-law-based proof search is P2. A supplied theorem can settle a specific goal
+law-based proof search is P3. A supplied theorem can settle a specific goal
 positively without making every formula of that shape decidable.
 
-## P2: scoped proof strategies with Unknown
+## P2: budgeted evaluation
 
-P2 includes P1 and extends admission for the existing shared syntax, including all
+P2 includes P1 and admits the tabled fragment of
+[fast evaluation](fast-decision-routes.md) where a run may end Undecided. Its
+one hard condition is safety: every variable a NAF goal, a guard, or an output
+uses is bound by an input or an earlier positive goal. Its runs are tabled
+backtracking on the shared machine, bounded by fuel, and answer Yes, No,
+Unknown (with witnesses), or Undecided with blockers. Answers are monotone in
+the fuel: only Undecided can change with more fuel. A predicate whose recursion
+grows no terms, with no NAF or denial over a predicate on a cycle, is in P1:
+its run ends without needing fuel, in time polynomial in the data, and its
+Unknown is exact by the least and greatest fixpoints. P2 is planned in
+S22–S26.
+
+## P3: scoped proof strategies with Unknown
+
+P3 includes P2 and extends admission for the existing shared syntax, including all
 its logical constructors. It does not admit every program using those constructors. A plan
 can use ordinary deduction, checked lemmas, and registered strategies; unresolved
 requirements are reported before evaluation, not discovered by a solver at runtime.
@@ -273,7 +299,7 @@ recursion justified by a checked well-founded measure. It is not a successful
 proof tree: it may contain clause alternatives, symbolic matching, domain traversal,
 and subgoals whose outcome is not known when admission succeeds.
 
-For every reachable command schema, P2 requires:
+For every reachable command schema, P3 requires:
 
 1. A finite candidate source or admitted terminating generator, including the
    effect of local assumptions on candidate availability.
@@ -284,7 +310,7 @@ For every reachable command schema, P2 requires:
 4. Termination of the entire strategy, including backtracking and repeated local
    rule selection. Acyclic control, checked structural decrease, or a supplied
    well-founded strategy contract can establish this. Cyclic predicate dependencies
-   alone do not reject P2.
+   alone do not reject P3.
 5. Successful-step reconstruction into the declarative calculus, or a separately
    proved semantic extension. Negative results require their own coverage and
    semantic evidence; positive-step soundness alone is insufficient.
@@ -334,7 +360,7 @@ row also satisfies the strategy conditions above.
 Existential witness search can succeed without covering the domain; concluding
 absence needs a separate coverage argument. Generic rigid proof can establish
 a universal over an infinite domain without enumeration; failure of that strategy
-is not a counterexample. Raw falsity is not immediately failed in P2 merely because
+is not a counterexample. Raw falsity is not immediately failed in P3 merely because
 P0 has such a transition: the P0 restrictions must still hold to use that shortcut.
 
 Closed NAF can reuse existing certificate rules. NAF on operands with rigid
@@ -346,7 +372,7 @@ identify NAF with logical negation.
 
 ### Outcomes and profile inclusion
 
-P2 guarantees termination of its admitted plan and no missing-capability requests,
+P3 guarantees termination of its admitted plan and no missing-capability requests,
 not completeness of arbitrary proof discovery. A plan can finish with a proof or
 **strategy exhausted**: that strategy did not establish the goal. Exhaustion is
 Unknown at the logical-result level unless further coverage/refutation evidence
@@ -359,19 +385,20 @@ preserves a binary answer for its declared decision problem. Require:
 ```text
 P0Admitted(input, plan) -> P1Admitted(input, plan)
 P1Admitted(input, plan) -> P2Admitted(input, plan)
+P2Admitted(input, plan) -> P3Admitted(input, plan)
 run(input, embedded plan) = run(input, original plan)
 ```
 
 There is one `run` and one `Step`; embedding preserves the actual plan and its
-evidence. Another P2 strategy for the same input may have a different trace but
+evidence. Another P3 strategy for the same input may have a different trace but
 must remain sound under the same declared semantic contracts.
 
 For example, P0 rejects a program containing `p :- p` even alongside a fact p.
-P2 can admit a finite strategy selecting that fact to prove p; it does not thereby
+P3 can admit a finite strategy selecting that fact to prove p; it does not thereby
 claim exhaustive failure coverage for other goals. Recursion on a constructor
 input may also be admitted with a checked decreasing measure.
 
-One admission check considers the enabled P0/P1/P2 rules and available proofs. It
+One admission check considers the enabled P0/P1/P2/P3 rules and available proofs. It
 does not return NeedsEvidence just because P0 does not apply. Profile evidence
 does not change formula syntax or select a different interpreter.
 
@@ -391,7 +418,7 @@ AdmissionResult =
 ```
 
 The requested guarantee is either a Decision for a named problem or a ProofAttempt
-which may return Unknown. A decision request must not silently fall back to P2:
+which may return Unknown. A decision request must not silently fall back to P3:
 report NeedsEvidence and identify the available proof-attempt route. All plans
 use the same interpreter. The guarantee is an evidence contract, not another
 syntax or execution engine.
@@ -414,7 +441,7 @@ wrong snapshot. A legal formula outside P0 is never invalid just for being outsi
 P0. Raw `Term` permits more expressions than any admitted profile.
 
 The checker terminates by structural inspection, finite graph analysis, and
-terminating verification of the supplied P1 decision/P2 strategy contracts; it
+terminating verification of the supplied P1 decision/P3 strategy contracts; it
 does not execute the KB or attempt to decide a semantic model's validity. Required
 semantic facts are explicit proof parameters or checked certificates, not Boolean
 queries to an assumed semantic oracle.
@@ -427,7 +454,7 @@ queries to an assumed semantic oracle.
 | Success | A `GroundSearch.Succeeds program context goal` certificate in P0 |
 | Complete failure | A `GroundSearch.Fails program context goal` certificate in P0 |
 | Decision Yes / No | P1 evidence for the named problem or its negation; No has the contract's specified meaning |
-| Strategy exhausted | A P2 plan finished without establishing the goal; not automatically complete failure or refutation |
+| Strategy exhausted | A P3 plan finished without establishing the goal; not automatically complete failure or refutation |
 | Semantic refutation | Evidence that the formula is false under the declared model/context contracts |
 | Unknown | An interrupted or incomplete broader proof attempt; no negative evidence |
 
@@ -547,7 +574,7 @@ this ticket. `P`, `C`, `G` refer to the same program, context, and goal througho
 | `Machine.step_preserves_admission` | Every reachable obligation has an admitted capability/strategy | S07, S15 |
 | `Machine.progress` | An admitted nonterminal state has a next step, never a missing-capability state | S07, S15 |
 | `Admission.P1Admitted`, `DecisionContract` | Check procedure input restrictions, totality, soundness, completeness, and negative-result meaning | S07–S15 |
-| `Admission.P2Admitted`, `StrategyContract` | Check command modes, scopes, evidence reconstruction, and whole-plan termination; permit Unknown | S08–S15 |
+| `Admission.P3Admitted`, `StrategyContract` | Check command modes, scopes, evidence reconstruction, and whole-plan termination; permit Unknown | S08–S15 |
 | `Admission.p0_to_p1`, `p1_to_p2`, `Machine.embedding_preserves_run` | Nested admission and unchanged execution of embedded plans | S15 |
 | `Machine.run`, `run_total_of_p0`, `run_total_of_p1`, `run_total_of_p2` | One interpreter with termination theorems under each admission contract | S06–S07, S15 |
 | `Machine.run_decides_of_p1` | Sound and complete Yes/No decision for the specified problem; no completed Unknown result | S15–S16 (the P0 case: `Plan.answer_true`, `Plan.answer_false`, `checkProgram_decides`, S07) |
@@ -557,7 +584,7 @@ this ticket. `P`, `C`, `G` refer to the same program, context, and goal througho
 | `Elaboration.satisfies`, `elaboration_substitutes` | Preserve range semantics and capture-safe substitution over existing Term | S03 |
 | `ProofImport.checked_sound`, `admit_import` | Separate logical validity from safe automatic use of a proved statement | S08 (`ProofImport.checked_sound`, `admitImports`) |
 | `ProofTree.check`, `check_accepts_iff`, `checked_toDerives` | Term-encoded finite trees; known terminating rule checks; validity independent of automatic P1 discovery | S08 (`P1.check`, `checkProof`, `checkProof_accept_iff`, `checked_toDerives`); S09 commands as S08 logical nodes (`Unfold.*_proves`); rule-specific nodes/checks S10-S14 |
-| `Machine.exportProof`, `exportProof_checked` | Successful P2 execution exports a Term tree accepted by P1 for the same answer instance, snapshot/context, and NAF provider | S04 interfaces; S06-S14 construction/checking (S08: `P1.exportProof`, and `Plan.exportProof_checked` for P0 runs); S15-S16 composition; S17 regressions |
+| `Machine.exportProof`, `exportProof_checked` | Successful P3 execution exports a Term tree accepted by P1 for the same answer instance, snapshot/context, and NAF provider | S04 interfaces; S06-S14 construction/checking (S08: `P1.exportProof`, and `Plan.exportProof_checked` for P0 runs); S15-S16 composition; S17 regressions |
 | `Machine.p0_model_exists`, `Machine.sound` | Supply the model witness and compose with existing soundness, distinguishing new certificate rules | S16 |
 
 S07 implements its rows as `Admission.P0Input` and `Acyclic` (with the rank
@@ -571,7 +598,7 @@ plan's query with no fuel (`Plan.answer_true`, `Plan.answer_false`), and
 (`checkProgram_decides`). A plan carries its admission
 (`Admits`), so no plan pairs one input with another's run, and `check` answers
 `invalid` for a program that is not the snapshot's effective program (a forged
-or a missing generated clause). The composed P1/P2 forms remain S15's.
+or a missing generated clause). The composed P1/P2/P3 forms remain S15's.
 
 S08 implements the explicit-proof rows. A supplied tree is a `Term` checked by
 `P1.checkProof`; acceptance is exactly `CheckedProof` (`checkProof_accept_iff`)
@@ -582,7 +609,7 @@ Missing capabilities answer NeedsEvidence before checking. Every successful
 P0 run exports an accepted term (`Plan.exportProof_checked`); the general S06
 export theorem is S15/S16's ([details](proof-checking.md)).
 
-S09 implements the left-rule and compound-head rows of the P2 table as machine
+S09 implements the left-rule and compound-head rows of the P3 table as machine
 commands: conjunctive, disjunctive, existential, universal, and implication
 assumptions with their continuations, and compound clause heads assumed after
 their body, split, or read as a denial. Each command reconstructs `Derives` by
@@ -632,7 +659,7 @@ cannot establish Ready. Proof checking and proof discovery are distinct tasks.
 | `MembershipClauses` | Constructor-membership clauses generated from domain definitions, valid under `Realizes` and deriving every generated member and its guard | Elaborated KBs must include them (through `Elaboration.signatureKb`); values outside generated data stay underivable |
 | `CounterexampleSearch`, `CertifiedScopedSearch` | Finite covers/induction evidence and guarded semantic success | Domain certificates do not generally reconstruct KB-only `Derives` |
 | `MillerCertificates`, `CoreMatcherCertificate`, `MillerResolution` | `UnaryMatch`, `Expansion.toDerives`, `certifiedClause`, `Proves.toDerives` | Unary symbol-valued atomic matching only; no whole-implication-head expansion certificate or complete scheduler |
-| `InductionModel` | `inductionRule_valid`, `induction_rule_applies`, `model_exists` | The registry-guarded whole-formula principle and its admitted strategy are S12's (`P2/Induction`) |
+| `InductionModel` | `inductionRule_valid`, `induction_rule_applies`, `model_exists` | The registry-guarded whole-formula principle and its admitted strategy are S12's (`P3/Induction`) |
 | `Induction` (S12) | The structural principle of every declared domain, one case per constructor, lowered with `P` at `.predicate 1` and valid in every realizing model, static admission reporting as needs what the cases cannot run in the query's context and the clauses they may select, the plan's selection of the principle once by its whole head, reconstruction, soundness, no P0 plan for the universal, the exported tree checked by S08's rules per run; `lower_rejects`, `lower_principle`, `admissible?_spec`, `principle_valid`, `check_input`, `carried?_spec`, `Plan.selection_focus`, `Plan.body_unfocused`, `Plan.lowered`, `Plan.reconstructs`, `leftCommitted_reconstructs`, `Plan.sound`, `Plan.not_p0` ([details](machine-induction.md)) | A checked termination argument beyond fuel (S15); simultaneous induction over mutually recursive domains and other invariants; a complete decision for guarded universals; the whole-run export theorem (S15/S16); NAF in the cases' search |
 | `OperationDictionaries`, `OrderDictionaries` | Callable-value equality, nested lookup contracts, Nat/Bool witnesses | Effective law registry, selection command, and operational admission |
 | `EquationOracle` | `models_extension`, `derive`, `sound_with_equation_oracle` | Oracle acceptance is a semantic specification, not a total executable evaluator |
@@ -647,17 +674,17 @@ Likewise, a predicate's arity declaration is not a proof of an induction princip
 
 These are the acceptance examples for later implementations, not assertions that
 S01 has already added a checker. P0 outcomes refer to a fixed ground atomic context;
-a P0 rejection alone does not determine the combined P0/P1/P2 admission result.
+a P0 rejection alone does not determine the combined P0/P1/P2/P3 admission result.
 
 | ID | Input/case | Required result |
 | --- | --- | --- |
 | R01 | `p(a) :- q(a)` and `q(a)`; query `p(a)` | Ready; success with clause and assumption/fact evidence |
 | R02 | `p :- q`, `p :- r`, and `r`; query `p` | First candidate fails; second succeeds; original p completes once |
 | R03 | `p :- naf-not q`, no defining q; query p | Ready; success with exact-program q failure; semantic reading requires completion |
-| R04 | `p :- p`, with a separate fact p | P0 rejects the cycle; P2 admits a finite fact-selection plan for p |
+| R04 | `p :- p`, with a separate fact p | P0 rejects the cycle; P3 admits a finite fact-selection plan for p |
 | R05 | `p :- naf-not p` | NeedsEvidence; never silently construct a two-valued completed model |
 | R06 | `naf-not p` established in one context, then add p | Old evidence cannot be reused; new snapshot/context required |
-| R07 | Query `p(X)` over an exactly covered finite predicate definition containing `p(c)` | P1 finite-answer route includes X:=c and covers all answers; a partial match-only strategy is P2 |
+| R07 | Query `p(X)` over an exactly covered finite predicate definition containing `p(c)` | P1 finite-answer route includes X:=c and covers all answers; a partial match-only strategy is P3 |
 | R08 | `forall x:D. p(x)` with an exact finite cover and compatible P1 instance decisions | P1 decides the guarded formula; every member is covered |
 | R09 | `forall P:P_1. ...`, instantiated with reachable | Predicate-membership evidence required; do not add D_all(reachable) |
 | R10 | `forall x:D. naf-not p(x)` with `p(1)` and `1 in D` | Positive witness defeats the universal negative; rigid matching failure is irrelevant |
@@ -667,18 +694,18 @@ a P0 rejection alone does not determine the combined P0/P1/P2 admission result.
 | R14 | `less(d,b,a)=False_Boolean` from proved asymmetry and `less(d,a,b)=True_Boolean` | Preserve dictionary/domain guards; derive the focused equation only after conditions |
 | R15 | Empty KB, failed search for `p -> q` | Not a semantic refutation; preserve `Tests/Resolution/ScopedNafBoundary.lean` counterexample |
 | R16 | Scope tests `forall x exists y y=x` versus `exists y forall x y=x` | Later matching permits the first witness dependency and forbids the second's escape |
-| R17 | P0-admitted input embedded through P1 into P2 | Same machine run and success/failure evidence; no interpreter switch |
-| R18 | P2 induction strategy on infinite Nat with admitted base/step plans | Ready without finite-domain enumeration; the strategy's subgoal control must terminate |
-| R19 | P2 finishes a finite proof attempt for a logical negation without contradiction | Strategy exhausted/Unknown, not NAF success |
-| R20 | A plan can select an undeclared dictionary evaluator at runtime | NeedsEvidence in P1 and P2; a predicate name alone does not prove capability |
+| R17 | P0-admitted input embedded through P1 into P3 | Same machine run and success/failure evidence; no interpreter switch |
+| R18 | P3 induction strategy on infinite Nat with admitted base/step plans | Ready without finite-domain enumeration; the strategy's subgoal control must terminate |
+| R19 | P3 finishes a finite proof attempt for a logical negation without contradiction | Strategy exhausted/Unknown, not NAF success |
+| R20 | A plan can select an undeclared dictionary evaluator at runtime | NeedsEvidence in P1, P2, and P3; a predicate name alone does not prove capability |
 | R21 | Finite positive cyclic program with complete grounding and a certified saturation contract | P1 decision despite P0 cycle rejection; use the least-relation semantic contract |
-| R22 | Decision requested for a goal with only an incomplete induction strategy | NeedsEvidence; do not silently return a P2 plan |
+| R22 | Decision requested for a goal with only an incomplete induction strategy | NeedsEvidence; do not silently return a P3 plan |
 | R23 | Complete propositional procedure answers No for derivability | No NAF evidence is obtained without a separate semantic adequacy argument |
-| R24 | Registered total dictionary comparison versus partial law search | Complete comparison is P1; partial law search is P2 |
+| R24 | Registered total dictionary comparison versus partial law search | Complete comparison is P1; partial law search is P3 |
 | R25 | Goal G with a valid explicit proof supplied as a Term, even outside automatic P1 discovery | P1 proof checking accepts and reconstructs evidence for G under the original snapshot/context |
 | R26 | Goal G with a rejected explicit proof Term | Reject this proof only; no evidence for logical negation, NAF, or non-derivability of G |
 | R27 | Supplied proof context merely assumes G, or a proof reference escapes its scope | Cannot establish G under the original context; reject the invalid proof |
-| R28 | The same proof tree is constructed manually, produced externally, or found by P2 search and passed as a Term | The P1 checker uses the same shared inference rules and accepts independently of how the tree was found |
+| R28 | The same proof tree is constructed manually, produced externally, or found by P3 search and passed as a Term | The P1 checker uses the same shared inference rules and accepts independently of how the tree was found |
 | R29 | Valid supplied proof tree whose root and intermediate formulas lack P1 discovery plans | Accept by checking the shared inference rules; do not require automatic P1 admission of the tree's formulas |
 | R30 | Proof-tree node with explicit premises, conclusion, and rule parameters | P1 checks the rule application via its known terminating procedure and recursively checks the premise subtrees |
 
@@ -689,12 +716,12 @@ Existing regression anchors: `Tests/Resolution/P0/GroundSearch.lean`, `Tests/Res
 
 ## Delivery boundary
 
-S01 specifies P0, P1, and P2. S02–S07 implement shared definitions and the full P0
+S01 specifies P0, P1, P2, and P3. S02–S07 implement shared definitions and the full P0
 baseline, including ranked total evaluation and nested ground NAF; S08–S14
-implement P1 proof-tree checking, dictionary decision contracts, and P2
+implement P1 proof-tree checking, dictionary decision contracts, and P3
 evidence/command contracts. Other P1 catalog procedures are explicitly deferred
 in the roadmap's route ownership table. S15–S17 compose admission, prove profile
-inclusions and P2 proof-export/P1 checking, and establish the shared machine's
+inclusions and P3 proof-export/P1 checking, and establish the shared machine's
 guarantees. The deductive and proof-oriented layers retain the same syntax and foundation
 model. Intermediate proof commands need not be automatically admitted before
 their strategies satisfy these contracts.

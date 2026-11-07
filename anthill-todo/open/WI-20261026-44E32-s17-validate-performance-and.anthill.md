@@ -23,8 +23,8 @@ Scope: complete the Lean example/regression suite and document exactly what the 
 Acceptance:
 - Run lake build and the relevant positive/negative Lean regressions, including model-backed induction, guarded NAF, compound assumptions, dictionary laws, and admission diagnostics.
 - Include reproducible Lean-level transition traces showing focus, local context, generated obligations, continuations, and proof reconstruction.
-- Run P2-to-Term-to-P1 round-trip regressions for induction, compound local assumptions, dictionaries, and every enabled NAF route. Check manually supplied and externally supplied example trees with the same checker, including formulas outside P1 discovery, invalid rule applications, stale references, and scope escape (contract R25-R30).
-- Cover the full P0 baseline R01-R06 and distinguish deferred P1 decision routes from implemented ones. A request for a deferred route must yield NeedsEvidence; no completed P1 decision may silently use P2 or return Unknown.
+- Run P3-to-Term-to-P1 round-trip regressions for induction, compound local assumptions, dictionaries, and every enabled NAF route. Check manually supplied and externally supplied example trees with the same checker, including formulas outside P1 discovery, invalid rule applications, stale references, and scope escape (contract R25-R30).
+- Cover the full P0 baseline R01-R06 and distinguish deferred P1 decision routes from implemented ones. A request for a deferred route must yield NeedsEvidence; no completed P1 decision may silently use P3 or return Unknown.
 - Audit theorem assumptions and axioms; document the boundary among soundness, termination, completeness for an admitted profile, and static capability coverage.
 - Document which evidence is snapshot-indexed (closed-world) and which is monotonic in KB and registry growth.
 - State any remaining admitted-profile or certificate limitations explicitly.
@@ -33,3 +33,8 @@ Acceptance:
 
 Validation: lake build and focused Lean tests/examples appropriate to the changed definitions and proofs. Documentation-only work is checked against its stated deliverables; a build alone does not establish them.
 Design references: docs/resolution-state-machine.md and docs/resolution-implementation-plan.md.
+## Changes
+
+### 2026-11-07T14:55:37Z — feedback — user
+
+Profiles reorganized (2026-11-07): the former P2 is P3; the new P2 is budgeted tabled evaluation. Regressions also cover the fast fragment: S23's classes and degrees, S24's tabled answers with witnesses, budgeted runs ending Undecided, S26's contexts, and S25's regular decisions; the guarantees document states which answers are exact (P1) and which complete only within the fuel (P2).

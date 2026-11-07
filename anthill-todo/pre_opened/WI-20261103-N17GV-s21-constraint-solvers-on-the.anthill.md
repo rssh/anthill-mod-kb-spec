@@ -3,9 +3,9 @@
 - id: WI-20261103-N17GV-s21-constraint-solvers-on-the
 - created: 2026-11-03T17:07:09Z
 
-- status: Open
+- status: PreOpened
 - status_agent: user
-- status_at: 2026-11-03T17:07:09Z
+- status_at: 2026-11-07T14:55:33Z
 
 - acceptance: lake build
 
@@ -25,7 +25,7 @@ Decided form (2026-11-03, with the user): closing has two stages, replacing `Sto
 - Settle: at the end of a proved branch with residual goals or constraints, the phase becomes `settling` and the solvers receive them. A solver may bind (e.g. labeling a name over a finite domain, with choice points). A binding is an ordinary commit: it wakes what waits on the bound names (`Store.commit_wakes`), and a commit that binds while settling resets the phase to `running`, so the branch runs normally and closes again when it is proved again.
 - Final: when settling binds nothing, the phase becomes `final`, frozen as S10's closing is now: no binding (`Store.Refines.closed` holds only for `final`); generic NAF on names still unbound (S10) runs only here; residual constraints are discharged with evidence or reported as conditional answers; what is left flounders.
 - Ordering is the soundness argument for generic NAF: a closing NAF node is valid only if its names are never bound afterwards, so no binding may follow it. A substitution lemma for checked evidence is not needed for this design.
-- Termination: settle rounds may repeat; the run is bounded by fuel, and a solver admitted by P2 states a progress measure (e.g. each round binds a name over a finite domain).
+- Termination: settle rounds may repeat; the run is bounded by fuel, and a solver admitted by P3 states a progress measure (e.g. each round binds a name over a finite domain).
 
 Acceptance:
 - A solver interface for constraints: a decidable check at every binding (consistency; a failed check fails the commit), a discharge rule (entailment) with evidence that exports as S08 nodes or checked certificates, and a residual form at the end.
@@ -38,4 +38,10 @@ Acceptance:
 
 Validation: lake build and focused Lean tests/examples appropriate to the changed definitions and proofs.
 Design references: docs/machine-delay.md (Restrictions and constraints, Closing), docs/machine-negation.md, docs/resolution-state-machine.md.
+
+## Changes
+
+### 2026-11-07T14:55:34Z — feedback — user
+
+Moved to the backlog (2026-11-07 reorganization): not needed for the fast fragment (docs/fast-decision-routes.md). Constructive negation would later relax the fragment's ground-NAF safety condition, and constraints would then need to live in S24's tables; disequality is a candidate first solver there.
 

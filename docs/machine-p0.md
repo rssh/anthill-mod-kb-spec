@@ -323,7 +323,7 @@ formulas do not, since lowering takes only the naming
 ## Limitations
 
 - **Ready is not truth.** It is admission evidence; the run may be exhausted.
-  P0 rejection is not a negative answer either: P1 or P2 may admit the input.
+  P0 rejection is not a negative answer either: P1, P2, or P3 may admit the input.
 - **Exhaustion is complete failure for the plan's program**: the KB clauses
   with the decided guard facts, under the exact context. It is semantic
   falsity only under `GroundCompleted` and `ComplementNAF` for that program and

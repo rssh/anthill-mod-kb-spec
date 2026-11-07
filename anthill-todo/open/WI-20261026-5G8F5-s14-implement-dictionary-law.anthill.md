@@ -9,26 +9,24 @@
 
 - acceptance: lake build
 
-- depends_on: WI-20261026-9C19E-s13-specify-checked-typeless, WI-20261026-WHDHK-s09-implement-left-rule
+- depends_on: WI-20261026-9C19E-s13-specify-checked-typeless, WI-20261026-WHDHK-s09-implement-left-rule, WI-20261103-2QMVP-s20-use-checked-lemmas-inside, WI-20261107-JA6WZ-s22-answers-yes-no-unknown-and
 
 - tags: resolution-machine
 
 ## Description
 
-S14: Formalize dictionary-law selection and checked evaluation contracts
+S14: Dictionary operations by total evaluators; laws as checked lemmas
 
 Current scope: Lean formalization in /Users/rssh/work/oss/anthill-mod-kb-spec only. Rust-model/component development has its own separate scope. Use the existing Term representation and semantic infrastructure; do not add parser/frontend work, redesign runtime term representation, bootstrap Rust crates, or implement production APIs here. Anthill docs/proposals are optional requirements references. No Rust or Anthill source changes/builds are prerequisites. Executable definitions in this ticket mean Lean functions or abstract-machine relations supporting the proofs.
 
-Scope: implement select_dictionary_law and FinishDictionaryLaw, plus a separate operation-evaluation action returning checked equations. Index by dictionary/interface, path/name, arity, and conclusion shape; verify full matching and guards after retrieval.
+Scope: dictionary operations inside the fast fragment, and dictionary laws as statements (docs/fast-decision-routes.md). Reorganized 2026-11-07: law selection by search is P3, a proof producer outside the KB module, and is not part of this item.
+
 Acceptance:
-- For goal less(myOrd,b,a)=False_Boolean, the proved asymmetry law generates OrdDictionary(myOrd), both DomainMember obligations, and less(myOrd,a,b)=True_Boolean.
-- All conditions must succeed before closing the goal; rollback restores rejected candidates.
-- A bare operation term is evaluated on value demand, not by firing all laws.
-- Equality reconstruction uses existing equation/implication rules or the explicit equation-oracle contract; preserve exact-KB NAF dependencies.
-- Emit Term proof trees for law application and checked evaluation equations, with known terminating rule/certificate checks through S08. Prove exported trees pass checking; merely trusting an evaluator callback or an oracle assertion is insufficient.
-- Own the initial P1 dictionary operation/equality route: provide a registered total concrete evaluator (using the Nat ordering example), its declared decision problem, and termination/soundness/completeness proofs. Keep partial dictionary-law search in P2 and missing evaluator contracts as NeedsEvidence.
-- Complete tests with a concrete Nat ordering example, unmet domain guards, nested dictionary paths, and missing evaluator evidence.
+- Own the initial P1 dictionary operation/equality route: a registered total concrete evaluator (using the Nat ordering example), its declared decision problem, and termination, soundness, and completeness proofs. A bare operation term is evaluated on value demand, not by firing laws.
+- Evaluation equations reconstruct with the existing equation/implication rules or the explicit equation-oracle contract, preserving exact-KB NAF dependencies. They export as Term proof trees with known terminating rule and certificate checks through S08, and the exported trees are proved to pass checking. Trusting an evaluator callback or an oracle assertion is insufficient.
+- Dictionary laws are statements, used only as checked lemmas (S20). For the goal less(myOrd,b,a)=False_Boolean, the proved asymmetry law used as a checked lemma generates OrdDictionary(myOrd), both DomainMember obligations, and less(myOrd,a,b)=True_Boolean; all conditions succeed before the goal closes, and rollback restores rejected candidates. A goal that needs a law with no checked lemma is Undecided, naming the law.
+- Tests: the Nat ordering example, unmet domain guards, nested dictionary paths, and missing evaluator evidence (Undecided).
 - Structural dictionary matching is not mislabeled general higher-order unification; symmetric laws do not silently become unrestricted rewriting.
 
 Validation: lake build and focused Lean tests/examples appropriate to the changed definitions and proofs. Documentation-only work is checked against its stated deliverables; a build alone does not establish them.
-Design references: docs/resolution-state-machine.md and docs/resolution-implementation-plan.md.
+Design references: docs/fast-decision-routes.md, docs/resolution-state-machine.md, docs/resolution-implementation-plan.md.

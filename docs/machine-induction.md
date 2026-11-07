@@ -6,12 +6,12 @@ declared inductive domain and proves the Nat example. It builds on S11's
 [S03 lowering](guarded-elaboration.md), the [S09 left strategy](machine-left.md),
 and the [S08 checker](proof-checking.md). Each principle is an ordinary KB
 clause with a proved validity theorem; no induction rule is added to `Derives`.
-Traces are in [Tests/Resolution/P2/Induction.lean](../Tests/Resolution/P2/Induction.lean).
+Traces are in [Tests/Resolution/P3/Induction.lean](../Tests/Resolution/P3/Induction.lean).
 
 | Module | Contents |
 | --- | --- |
-| [P2/Principle](../AnthillModKbSpec/Resolution/P2/Principle.lean) | The structural principle of a domain from its rules (`source`, `ranges`, `rangeOf`, `principle`, `lower_principle`, `lower_rejects`), admissible names (`Admissible`, `admissible?`), its validity (`principle_valid`) |
-| [P2/Induction](../AnthillModKbSpec/Resolution/P2/Induction.lean) | The target goal (`Target`, `target?`), admission (`CaseGap`, `dependencies`, `contextGaps`, `casesGaps`, `carried?`, `Need`, `check`, `Plan`, `check_input`), the plan's strategy (`guardSplits`, `Plan.selection`, `Plan.run`, `Plan.selection_focus`, `Plan.body_unfocused`, `Plan.lowered`), what a run establishes (`Plan.reconstructs`, `Plan.models`, `Plan.sound`, `Plan.not_p0`) |
+| [P3/Principle](../AnthillModKbSpec/Resolution/P3/Principle.lean) | The structural principle of a domain from its rules (`source`, `ranges`, `rangeOf`, `principle`, `lower_principle`, `lower_rejects`), admissible names (`Admissible`, `admissible?`), its validity (`principle_valid`) |
+| [P3/Induction](../AnthillModKbSpec/Resolution/P3/Induction.lean) | The target goal (`Target`, `target?`), admission (`CaseGap`, `dependencies`, `contextGaps`, `casesGaps`, `carried?`, `Need`, `check`, `Plan`, `check_input`), the plan's strategy (`guardSplits`, `Plan.selection`, `Plan.run`, `Plan.selection_focus`, `Plan.body_unfocused`, `Plan.lowered`), what a run establishes (`Plan.reconstructs`, `Plan.models`, `Plan.sound`, `Plan.not_p0`) |
 
 ## The principle
 
@@ -82,7 +82,7 @@ and registering a predicate proves nothing about induction.
      name, and none can;
    - P0's other requests (`capability`), a formula variable as a goal, an
      assumption, or a head among them (`formulaVariable`), apart from ground
-     instances of data, which P2 search does not need, and range guards: a
+     instances of data, which P3 search does not need, and range guards: a
      guard goal is decided by its atoms, and a guard assumption is split at a
      guard goal on its term (below). Any other non-atomic assumption, NAF
      included, is a `scopedProof` request: it is a hypothesis, and the plan's
@@ -102,7 +102,7 @@ and registering a predicate proves nothing about induction.
    needs are not split by case.
 
 Every shortfall is a `Need` listed together. Recursive definitions with
-variables are not gaps: P2 search does not ground them. A clause outside the
+variables are not gaps: P3 search does not ground them. A clause outside the
 dependencies is not reported. A Ready `Plan` records its input
 (`check_input`) and what admission established. It says nothing about whether
 the goal holds.
@@ -146,7 +146,7 @@ concluding a call by `ho_apply`, and `positive` never selects a compound head
 for an atomic goal. The theorem does not cover those opened goals: a clause a
 case selects may ask a focus again, a nested induction, which the selection
 answers by the principle. The run is bounded by its fuel: an
-interrupted run is Unknown, never failure. Induction search is P2. Failure of
+interrupted run is Unknown, never failure. Induction search is P3. Failure of
 a case for this predicate does not refute the universal, and a decision
 request for the universal is not answered by this plan: P0 asks evidence for
 it (`Plan.not_p0`).
@@ -228,13 +228,13 @@ not carry the principle.
 - **Termination is by fuel.** The plan applies the principle once per focus,
   and its cases' clauses need no extension, but no structural decrease
   of the subgoal search is proved: the run is bounded by its fuel, and an
-  interrupted run is Unknown. A checked termination argument for P2
+  interrupted run is Unknown. A checked termination argument for P3
   strategies is S15's.
 - **One principle per domain.** Each declared domain gets its structural
   principle for a unary predicate, `∀x:D. p(x)`. Simultaneous induction over
   mutually recursive domains (one predicate per domain), invariants of other
   arities, and well-founded induction on other orders are not generated.
-- **No decision.** Induction is P2: a failed case refutes nothing, and
+- **No decision.** Induction is P3: a failed case refutes nothing, and
   no complete decision contract for guarded universals is supplied.
 - **Whole-run export.** Acceptance of an exported tree is decided per run, as
   the traces do. That every successful run exports an accepted tree belongs

@@ -6,9 +6,10 @@ This sequence implements the Lean specification and proofs. Rust-model/component
 development belongs to its own separate scope.
 
 The [S01 admission contract](lean-admission-contract.md) defines P0 (finite ground
-acyclic resolution), P1 (certified decidable extensions), and P2 (proof strategies
-that may return Unknown) as nested admission rules for one syntax and one state
-machine. It specifies the proposed Lean
+acyclic resolution), P1 (certified decidable extensions), P2 (budgeted tabled
+evaluation that may end Undecided), and P3 (proof strategies that may return
+Unknown) as nested admission rules for one syntax and one state machine. P2 and
+the tabled part of P1 are specified in [fast evaluation](fast-decision-routes.md). It specifies the proposed Lean
 interfaces and theorem obligations and inventories reusable results and gaps.
 
 ## Scope
@@ -21,7 +22,7 @@ Place generic logic and model contracts in `AnthillModKbSpec/Foundation/`,
 concrete model witnesses in `AnthillModKbSpec/Models/`, and shared operational,
 matching, certificate, and admission code in `AnthillModKbSpec/Resolution/`.
 Ground-profile modules live in `Resolution/P0/`; add `Resolution/P1/` and
-`Resolution/P2/` when their specific implementations are introduced. Shared
+`Resolution/P3/` when their specific implementations are introduced. Shared
 machinery remains in `Resolution/`. Foundation modules must not import models
 or resolution, and concrete models must not import resolution. Profile-specific
 bridges using a concrete model belong in `Resolution/`, as with
@@ -39,7 +40,7 @@ represented formulas; it does not require implementing a parser or replacing Ter
 
 ## Milestones
 
-1. **Foundation and baseline formal machine slice (S01–S07, S18, S19).** Specify P0/P1/P2
+1. **Foundation and baseline formal machine slice (S01–S07, S18, S19).** Specify P0/P1/P2/P3
    admission contracts, formalize quantifier ranges and guarded elaboration, define
    state, delayed goals, and matching relations, prove ordinary resolution steps, and define an
    P0 admission checker and total evaluator, including nested ground NAF and
@@ -48,11 +49,11 @@ represented formulas; it does not require implementing a parser or replacing Ter
    proof trees encoded as Term, proof imports, left rules,
    and compound heads, followed by NAF, induction, and dictionary-law contracts.
    Each motivating example should have concrete transitions and checked evidence.
-   Distinguish P1 total sound/complete decisions from P2 incomplete proof strategies;
+   Distinguish P1 total sound/complete decisions from P3 incomplete proof strategies;
    termination alone does not establish a P1 decision contract.
 3. **Composition and verification (S15–S17).** Compose static admission, prove
    reconstruction and semantic soundness, and complete Lean regressions and
-   theorem/assumption documentation. Prove successful P2 runs export Term proof
+   theorem/assumption documentation. Prove successful P3 runs export Term proof
    trees accepted by P1, without replaying discovery. No Rust performance or
    integration milestone.
 
@@ -77,16 +78,17 @@ dependencies are preserved after this scope correction.
 | [S09](../anthill-todo/delivered/WI-20261026-WHDHK-s09-implement-left-rule.anthill.md) | Left rules on selected assumptions and compound clause heads: one-step commands with their continuations, the left strategy, constructions in S08 logical nodes, proof-layer diagnostics beside P0 ([implemented](machine-left.md), delivered) | S06, S08 |
 | [S20](../anthill-todo/open/WI-20261103-2QMVP-s20-use-checked-lemmas-inside.anthill.md) | Use checked lemmas inside machine runs: lemmas declared as input entries beside clauses, used by backchaining or instantiation, exported as checked references | S08, S09 |
 | [S10](../anthill-todo/delivered/WI-20261026-ANXY6-s10-implement-evidence-first.anthill.md) | Evidence-first NAF and guarded-universal refutation: NAF on rigid parameters by refutation in the Clark completion, open predicates by a reserved marker, the refutation search on the shared machine, positive witnesses first, checked snapshot-indexed evidence, the closing phase for NAF still delayed at the end ([implemented](machine-negation.md), delivered) | S09, S07 |
-| [S21](../anthill-todo/open/WI-20261103-N17GV-s21-constraint-solvers-on-the.anthill.md) | Constraint solvers on the machine store: checks at every binding, discharge with evidence, conditional answers, solvers in the closing phase; first solvers disequality and constructive negation | S10, S18 |
+| [S21](../anthill-todo/pre_opened/WI-20261103-N17GV-s21-constraint-solvers-on-the.anthill.md) | Constraint solvers on the machine store: checks at every binding, discharge with evidence, conditional answers, solvers in the closing phase; first solvers disequality and constructive negation (backlog since the 2026-11-07 reorganization: not needed for the fast fragment) | S10, S18 |
 | [S11](../anthill-todo/delivered/WI-20261026-DABJW-s11-add-ho-apply-conversion.anthill.md) | `ho_apply` conversion and whole-formula induction-head matching: `ho_goal` normalization, converted candidates matched against indirect views with the S05 matcher unchanged, structural reference matching that never assigns a rigid predicate, lambda-valued answers classified as gaps, the explicit whole-formula choice, conversion nodes checked by S08 ([implemented](machine-conversion.md), delivered) | S02, S09 |
 | [S12](../anthill-todo/delivered/WI-20261026-P6JQV-s12-admit-explicit-induction.anthill.md) | Admitted induction and the Nat example: the structural principle of every declared domain, one case per constructor, lowered with `P` at `.predicate 1` and proved valid from exact realization, static admission reporting what the cases cannot run in the query's context and the clauses they may select, the principle selected once by its whole head on the shared machine, reconstruction and truth in the induction model, the exported tree checked by S08 ([implemented](machine-induction.md), delivered) | S11, S08, S07 |
 | [S22](../anthill-todo/open/WI-20261107-JA6WZ-s22-answers-yes-no-unknown-and.anthill.md) | Answers Yes, No, Unknown, and Undecided(blockers): logical Unknown for open predicates kept apart from the machine's gaps and from operational outcomes, admission requests reported as blockers, Yes, No, and Unknown each sound, Unknown by two checked witness models | S10, S07, S12 |
-| [S23](../anthill-todo/open/WI-20261107-7PQMQ-s23-moded-structural-recursion.anthill.md) | Moded structural recursion as a P1 route ([design](fast-decision-routes.md)): declared modes and decreasing inputs, well-moded bodies, recursion on strict subterms, determinism as a speed class; the shared machine's run terminates and decides against the completion | S22, S07 |
-| [S24](../anthill-todo/open/WI-20261107-GDENC-s24-recursion-over-finite.anthill.md) | Recursion over finite domains with a loop check on the current branch ([design](fast-decision-routes.md)): a failure that depends on a cut is Unknown under the completion, with witnesses | S23, S22 |
-| [S25](../anthill-todo/open/WI-20261107-SFQPM-s25-regular-unary-predicates.anthill.md) | Regular unary predicates ([design](fast-decision-routes.md)): guarded universals and existentials decided over finitely many states, Yes by state closure, No by a counterexample | S23, S22, S12 |
+| [S23](../anthill-todo/open/WI-20261107-7PQMQ-s23-moded-structural-recursion.anthill.md) | The fast fragment's admission ([design](fast-decision-routes.md)): declared modes, safety, the complete and budgeted cost classes with each predicate's degree, P1 or P2 per predicate, blockers for constructs outside the fragment | S22, S07 |
+| [S24](../anthill-todo/open/WI-20261107-R9YMZ-s24-tabled-backtracking-on-the.anthill.md) | Tabled backtracking on the shared machine ([design](fast-decision-routes.md)): variant tables per call and context, completion per component, delayed NAF loops, fuel; Yes, No, Unknown with witnesses (exact in P1 by least and greatest fixpoints), Undecided | S23, S22, S10 |
+| [S26](../anthill-todo/open/WI-20261107-Q3FVM-s26-contexts-in-tabled.anthill.md) | Contexts in tabled evaluation ([design](fast-decision-routes.md)): eager case splits with branch answers combined, Harrop implication goals as scoped local clauses with the material reading, generic universals | S24, S22 |
+| [S25](../anthill-todo/open/WI-20261107-SFQPM-s25-regular-unary-predicates.anthill.md) | Regular unary predicates, a P1 route ([design](fast-decision-routes.md)): guarded universals and existentials decided over finitely many states, Yes by state closure, No by a counterexample | S24, S23, S22, S12 |
 | [S13](../anthill-todo/open/WI-20261026-9C19E-s13-specify-checked-typeless.anthill.md) | Specify checked typeless dictionary registration and domain connections | S02, S08 |
-| [S14](../anthill-todo/open/WI-20261026-5G8F5-s14-implement-dictionary-law.anthill.md) | Formalize dictionary-law selection and checked evaluation contracts | S13, S09 |
-| [S15](../anthill-todo/open/WI-20261026-SYMNV-s15-compose-static-admission.anthill.md) | Compose static admission across proof imports, NAF, induction, and dictionaries | S10, S12, S14 |
+| [S14](../anthill-todo/open/WI-20261026-5G8F5-s14-implement-dictionary-law.anthill.md) | Dictionary operations by total evaluators, a P1 route; dictionary laws as checked lemmas; law search is P3, outside the KB module | S13, S09, S20, S22 |
+| [S15](../anthill-todo/open/WI-20261026-SYMNV-s15-compose-static-admission.anthill.md) | Compose static admission across the profiles: P0 ⊂ P1 ⊂ P2 ⊂ P3, with supplied proofs, imports and checked lemmas, dictionaries, and the fast fragment, answering with S22's results; the P3 export theorem | S10, S12, S14, S20, S22–S26 |
 | [S16](../anthill-todo/open/WI-20261026-0AA47-s16-prove-composed-machine.anthill.md) | Prove composed machine soundness through elaboration and the declarative calculus | S15 |
 | [S17](../anthill-todo/open/WI-20261026-44E32-s17-validate-performance-and.anthill.md) | Complete Lean regression examples and document formal guarantees | S16 |
 
@@ -101,8 +103,8 @@ Generic interfaces for a decision contract do not implement a decision procedure
 | Embedded P0 | S07: whole-program acyclicity/rank checker, total shared-machine evaluation, nested ground NAF, and exact success/complete-failure certificates; S15: profile embedding |
 | Explicit proof tree supplied as Term | S04: construction interfaces; S06-S07: baseline evidence; S08: encoding, recursive checker, known terminating rule checks, and correctness; S09: its commands export as S08 logical nodes, checked given checked premise trees; S10-S14: nodes/checks for their commands; S15-S17: composed export/check theorem and regressions |
 | Dictionary operation/equality decision | S13: registry contracts; S14: total concrete evaluator and full decision contract, including the Nat ordering example; S15: composition |
-| Finite rule saturation | Replaced by S24 on the backtracking machine, under the completion: a loop check on the current branch, and a goal cut on a positive cycle Unknown, not a least-relation No |
-| Stratified NAF over finite rules | Replaced by S24, which admits stratified NAF over finite domains; S07 ground acyclic NAF and S10 scoped certificates do not supply this procedure |
+| Finite rule saturation | Replaced by S24's tabled backtracking on the shared machine, under the completion: a goal that depends on a positive cycle is Unknown, not a least-relation No, and exact in P1 by the least and greatest fixpoints |
+| Stratified NAF over finite rules | Replaced by S24, which tables NAF, loops through NAF included (P2 when NAF is over a predicate on a cycle); S07 ground acyclic NAF and S10 scoped certificates do not supply this procedure |
 | Finite guarded quantification | Deferred as a general complete decision procedure; S03 elaboration and S10 finite absence certificates remain in scope. S25 decides guarded quantification over any declared domain, finite or not, for regular unary predicates |
 | Finite predicate-reference quantification | Deferred as a complete enumeration/decision procedure; S02 reference registration remains in scope. The symbolic `Pred_n` guard and its generated facts give no closure over the registry; such a decision would be snapshot-indexed closed-world evidence |
 | Finite-answer variable queries | Deferred as a complete answer-set procedure; S05-S06 matching and individual successful answers remain in scope |
@@ -110,7 +112,7 @@ Generic interfaces for a decision contract do not implement a decision procedure
 | Additional certified decision procedure | S08/S15 define contract and composition interfaces; concrete additional procedures require follow-up tickets before enablement |
 
 A decision request that requires a deferred procedure returns NeedsEvidence.
-An available P2 proof attempt does not satisfy that request. Successful P2 search
+An available P3 proof attempt does not satisfy that request. Successful P3 search
 can instead produce a proof tree that the P1 explicit-proof route checks. Its
 root and intermediate formulas need no automatic P1 discovery plan. S17 records
 the final implemented/deferred route matrix and any remaining limitations.
@@ -159,9 +161,9 @@ Key boundaries carried through the sequence:
 - Explicit proofs are trees in the shared logic encoded as Term. P1 checks each
   rule application via a known terminating procedure; the tree's formulas need
   no automatic P1 admission.
-- Successful P2 runs export trees accepted by the same P1 checker used for
+- Successful P3 runs export trees accepted by the same P1 checker used for
   manual and external proofs; checking does not repeat discovery.
 - Reuse foundation soundness through reconstruction; justify new certificate rules.
 - Soundness, termination, completeness, and admission coverage are separate claims.
-- Completed P1 decisions return Yes/No for their declared problem; P2 may return
+- Completed P1 decisions return Yes/No for their declared problem; P3 may return
   Unknown. A decision request must not silently fall back to an incomplete strategy.

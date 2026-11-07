@@ -203,7 +203,7 @@ def choiceThenNaf := input
 /-! ### R04, R05: cycles are rejected before execution -/
 
 -- p :- p beside the fact p: NeedsEvidence, an acyclic strategy for clause 0,
--- even though selecting the fact would prove p. P2 may admit that strategy.
+-- even though selecting the fact would prove p. P3 may admit that strategy.
 #guard requested (admission (input [rule (k .p) [k .p], fact (k .p)] [] (k .p))) = [(.head 0, [], .acyclicStrategy)]
 -- p :- naf p: the cycle through NAF is rejected; no two-valued model is built.
 #guard requested (admission (input [rule (k .p) [naf (k .p)]] [] (k .p))) = [(.head 0, [], .acyclicStrategy)]

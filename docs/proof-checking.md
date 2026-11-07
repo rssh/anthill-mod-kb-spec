@@ -297,4 +297,4 @@ evidence into `E(KB)` under one provider is S16's.
 - **The encoding is internal.** There is no public proof syntax, parser, or
   serialized format; the vocabulary's symbols are a parameter.
 - **The checker decides validity of the supplied tree, not derivability.**
-  Finding a proof is P2's.
+  Finding a proof is P3's.

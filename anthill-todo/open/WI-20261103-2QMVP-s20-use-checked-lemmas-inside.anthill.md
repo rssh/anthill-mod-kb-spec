@@ -19,7 +19,7 @@ S20: Use checked lemmas inside machine runs
 
 Current scope: Lean formalization in /Users/rssh/work/oss/anthill-mod-kb-spec only. Rust-model/component development has its own separate scope. Use the existing Term representation and semantic infrastructure; do not add parser/frontend work, redesign runtime term representation, bootstrap Rust crates, or implement production APIs here. Anthill docs/proposals are optional requirements references. No Rust or Anthill source changes/builds are prerequisites. Executable definitions in this ticket mean Lean functions or abstract-machine relations supporting the proofs.
 
-Scope: let a run close a subgoal with a checked lemma instead of rediscovering it (the P2 row "Assumption or supplied theorem: return its proof"). Today checked proofs reach execution only as closed facts and rules in the P0 classes (`admitImports`) or answer a whole query (`admit`). A universal theorem, one proved under assumptions, or one outside the P0 classes stays in the proof layer, and the machine has no node for a lemma: `RuleApp` has no counterpart of S08's `Rule.reference`.
+Scope: let a run close a subgoal with a checked lemma instead of rediscovering it (the P3 row "Assumption or supplied theorem: return its proof"). Today checked proofs reach execution only as closed facts and rules in the P0 classes (`admitImports`) or answer a whole query (`admit`). A universal theorem, one proved under assumptions, or one outside the P0 classes stays in the proof layer, and the machine has no node for a lemma: `RuleApp` has no counterpart of S08's `Rule.reference`.
 
 Decided form: a lemma is declared as its own kind of input entry beside clauses (name, statement, its context, checked proof term), building on S08's `ProofImport` and import table. Statements stay ordinary formulas: no citation marker in formulas, no new `Term` constructor, no surface syntax. Only exported trees mention `reference`.
 
@@ -34,4 +34,10 @@ Acceptance:
 
 Validation: lake build and focused Lean tests/examples appropriate to the changed definitions and proofs. Documentation-only work is checked against its stated deliverables; a build alone does not establish them.
 Design references: docs/resolution-state-machine.md, docs/resolution-implementation-plan.md, docs/proof-checking.md, docs/machine-left.md.
+
+## Changes
+
+### 2026-11-07T14:55:39Z — feedback — user
+
+Fast fragment (2026-11-07 reorganization): in P1 and P2, a lemma shaped as a Harrop clause is used by backchaining like a local clause, and its use is tabled as any call is (S24); a lemma with a compound conclusion is used only by P3's left commands. Statements outside the fragment (induction principles, dictionary laws) enter computation through this item.
 

@@ -18,7 +18,7 @@ the input contradicts its own declarations.
 shared machine (`Plan.run`), and that run terminates with a success or a
 complete-failure certificate (`run_total_of_p0`, `run_correct_of_p0`).
 `Plan.answer` decides the query with no fuel. `checkProgram` admits a program
-for every P0 query at once. P0 rejection is not a negative answer: a P1 or P2
+for every P0 query at once. P0 rejection is not a negative answer: a P1, P2, or P3
 route may admit the same input. -/
 
 variable {Domain Variable Literal Symbol : Type}

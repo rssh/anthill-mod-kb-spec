@@ -29,7 +29,7 @@ principle with a compound head. A projected conjunct (`headProject`) is
 compared the same way.
 
 The selection is a parameter: this module defines no automatic one and claims
-no termination. An admitted P2 strategy (S15) is a checked plan, with its
+no termination. An admitted P3 strategy (S15) is a checked plan, with its
 termination argument, interpreted into a `Selection`. -/
 
 variable {Variable Literal Symbol Certificate Snapshot : Type}

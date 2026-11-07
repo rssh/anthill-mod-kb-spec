@@ -121,7 +121,7 @@ The strategy differs from `positive` in three places:
   (S11).
 
 The selection is a parameter, and the library defines no automatic one. Which
-commands to try where is a search policy: an admitted P2 strategy (S15) will be
+commands to try where is a search policy: an admitted P3 strategy (S15) will be
 a checked plan, with its termination argument, interpreted into a `Selection`.
 No ticket owns unadmitted automatic discovery, and complete propositional search
 is deferred ([roadmap](resolution-implementation-plan.md)).
@@ -236,7 +236,7 @@ guarantees (`step_valid`, `Store.commit_no_escape_resolved`; see
 
 - **Export of whole runs is not proved here.** The constructions are checked
   given checked premise trees and their side conditions. The theorem that
-  every successful run of the left strategy, or of any S06/P2 strategy,
+  every successful run of the left strategy, or of any S06/P3 strategy,
   exports an accepted tree belongs to S15/S16. That theorem includes reading
   each node's side conditions through the final store across the whole run.
   The P0 case is S08's `Plan.exportProof_checked`.

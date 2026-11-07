@@ -227,7 +227,7 @@ when it retains no closed-world evidence (`CompletedProof.Valid.monotonic_iff`).
   proved inside the operand.
 - **S08**: machine output has no reference, so the completed tree is what it
   encodes, and the records need no encoding. A supplied tree (manual, external,
-  P2) that still holds a reference is an unresolved hole and is rejected.
+  P3) that still holds a reference is an unresolved hole and is rejected.
 - **S10**: NAF on a flexible operand delays until the operand is bound ("retain a
   dependency and retry after instantiation"). Still waiting when the branch
   closes, it is refuted for every value of the names it waited on. Waiting
