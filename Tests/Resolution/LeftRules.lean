@@ -281,7 +281,7 @@ def indirectRun := solve [] (query [] indirectRule (atom .p [k .a]))
 -- A gap of the matcher stays a gap: a local rule whose head differs from the
 -- goal only by an alpha-variant binder is unknown, never exhausted.
 #guard (solve [] (query [] [.imp (k .q) (atom .p [.forallVar 1 (atom .r [x 1])]), k .q]
-  (atom .p [.forallVar 2 (atom .r [x 2])]))).kind = .unknown
+  (atom .p [.forallVar 2 (atom .r [x 2])]))).kind = .abandoned
 
 -- A conjunction is split once per branch: under p ∧ q, r has no proof.
 #guard (solve [] (query [] [.conj (k .p) (k .q)] (k .r))).kind = .exhausted
@@ -384,7 +384,7 @@ def captureRun := solve [] (query [] captureContext (atom .r [x 2])) (also [] (c
 -- A witness must name declared names in scope: where 2 is no parameter of the
 -- query, the commit refuses the instance, a contract gap and no answer.
 #guard match solve [] (query [] captureContext (atom .r [k .c])) (also [] (captureChoice (atom .r [k .c]))) with
-  | .unknown gaps => gaps.any (·.reason == .contract)
+  | .abandoned gaps => gaps.any (·.reason == .contract)
   | _ => false
 
 -- A captured parameter is kept: ∀1. (p(1) ∨ q(7)) at 1 := a gives p(a) ∨ q(7),

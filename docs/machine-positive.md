@@ -248,14 +248,14 @@ The run-level theorems hold for every sound strategy, so later strategies
 | `∀1. (q(1, 7) → p(1))` under `q(a, 7)` / `q(a, 8)` | Success / exhausted: the captured 7 is kept |
 | `∀1. ∀2. (q(1, 2) → p(2, 1))` under `q(a, b)`; the fact `∀1. ∀2. r(1, 2, 1)` | `p(b, a)` and `r(a, b, a)` by two universal eliminations; `p(a, b)` and `r(a, b, b)` exhausted |
 | `∀1. ∀2. p(2)` for `p(a)` | The vacuous binder's witness is `true`; every witness names declared names |
-| `∀1. (q(1) → Z)` with `Z` bound to `p(c)`; an assumption `X` bound to a rule, to `p(c) ∧ q(c)`, to `p(c)` | Success through the read head; unknown; unknown; success by identity, then exhausted |
+| `∀1. (q(1) → Z)` with `Z` bound to `p(c)`; an assumption `X` bound to a rule, to `p(c) ∧ q(c)`, to `p(c)` | Success through the read head; abandoned; abandoned; success by identity, then exhausted |
 | `∀1. (q(op(1)) → p(1))` under `q(op(a))` | Success: the instance with an operation call is found exactly |
 | `∀1. ((∀2. r(1, 2)) → p(1))`, `∀3. r(2, 3)`, goal `p(2)` with 2 a parameter | Success: reading the premise renames binder 2, but the instance is closed as written |
-| A curried rule `∀1. (q(1) → (r(1) → p(1)))`; a rule concluding `∀2. p(1, 2)`; the assumption `p ∧ q` for `p`; `∀1. 1` | Unknown: gaps |
+| A curried rule `∀1. (q(1) → (r(1) → p(1)))`; a rule concluding `∀2. p(1, 2)`; the assumption `p ∧ q` for `p`; `∀1. 1` | Abandoned: gaps |
 | `∀1. ∀2. (q(1, 2) → p(1, 2))` for its own instance `q(2, 7) → p(2, 7)`, 2 a parameter | Success: the exact step whose premise would read renamed is not offered |
 | `false` assumed, for `p(a)` and for `p ∧ q` | `falsityElim` closed by the assumption |
 | A built program: `v(X) :- true`, `num(X) :- natDomain(X)`, the `natDomain` generator, and the signature clauses | Lowered bodies begin with `D_all(X)`; guard symbols exclude `natDomain` |
-| `v(Y)` alone | The guard delays and flounders: unknown |
+| `v(Y)` alone | The guard delays and flounders: abandoned |
 | `v(Y) ∧ q(Y)` under `q(succ(zero))` / `q(b)` | The caller binds `Y` after `v` returned and wakes the guard, proved from the signature clauses / exhausted |
 | `w(X) :- true` with `X : nat` explicitly: guard `isNat(X) ∨ false` | Delays as a whole; `q(b)` exhausted, `q(succ(zero))` succeeds and resuming is exhausted; alone it flounders |
 | `w(P) :- true` with `P : Pred₁`: guard `isPred(P)` | `e(p)` succeeds from the registered fact; `e(q)` is exhausted |
@@ -266,9 +266,9 @@ The run-level theorems hold for every sound strategy, so later strategies
 | A clause applying a data-ranged variable by `ho_apply`; the same query goal | Reported (`clause 4`, `goal`); with `.predicate 1` the clause is lowered |
 | R04: `p :- p` before `p` / after it | Interrupted / an answer on every resume, never exhausted |
 | Falsity under an assumed `false`; by a negation `∀1. (p(1) → false)` and `p(a)`; by a denial clause `false :- p(X), q(X)` | `assumption`; `impElim` with an exact `forallElim`; `goalClause` with answer `b`, then exhausted |
-| `p(a)` with the facts `p(a)` and `p(op(b))` | Success; resuming is unknown: the call is a gap, recorded without losing `p(a)` |
+| `p(a)` with the facts `p(a)` and `p(op(b))` | Success; resuming is abandoned: the call is a gap, recorded without losing `p(a)` |
 | `q(X) ∧ ho_apply(X, a)` with `p(a)`, `q(p)`; `p(a)` with a flexible-head fact `ho_apply(P, a)` | Success by `ho_goal`, then exhausted; success, then the converted fact, then exhausted (S11) |
-| An alpha-variant argument; a plain clash; falsity with no source; NAF | Unknown (gap); exhausted (miss); exhausted (miss); unknown |
+| An alpha-variant argument; a plain clash; falsity with no source; NAF | Abandoned (gap); exhausted (miss); exhausted (miss); abandoned |
 
 ## Boundaries
 

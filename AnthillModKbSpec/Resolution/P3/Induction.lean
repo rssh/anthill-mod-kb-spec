@@ -34,8 +34,8 @@ implication's introduction, and splits a guard assumption at a guard goal on
 its term (`guardSplits`), as a case's field guards need. The principle's
 premises are never such a focus, nor are their instances
 (`Plan.body_unfocused`), and `positive` never selects a compound head for an
-atomic goal. The run is bounded by its fuel: an interrupted run is Unknown,
-never failure. Induction search is P3: failure of a case for this predicate
+atomic goal. The run is bounded by its fuel: an interrupted run is Undecided
+(S22), never failure. Induction search is P3: failure of a case for this predicate
 does not refute the universal.
 
 A successful run reconstructs `Derives` for the guarded universal

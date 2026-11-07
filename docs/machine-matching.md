@@ -213,15 +213,15 @@ freshened clauses, each matched against the prepared store.
 | Opening `∀5. ∀6. r(5, 6, 1)` with 6 | `∀7. r(6, 7, 1)`: the inner binder is renamed |
 | `p(0) ∧ ∀5. ∀1. r(5, 1, 0)` under `p(1)` with `r(X, X, Y)`, and its `∃5` and `∀9` variants | Exhausted: after `0 := 1` the conjunct reads as `∀5. ∀6. r(5, 6, 1)`. A driver that opens with the read inner binder uses 6, and the opening renames without capture |
 | `∀5. ∀6. (p(5, 6) → p(5, 6))`, opened with the inner binder 6 | Success: a binder name of the obligation is a new name of the store (S05 refused it) |
-| `∃2. (q(2) ∧ ∀1. p(1, 2))` under `q(a)`, `∀1. p(1, a)` | Success with the driver's witness 3, which avoids the read binder names. With store freshness alone the witness is 1, the inner binder is renamed, and the alpha-variant is unsupported (unknown) |
+| `∃2. (q(2) ∧ ∀1. p(1, 2))` under `q(a)`, `∀1. p(1, a)` | Success with the driver's witness 3, which avoids the read binder names. With store freshness alone the witness is 1, the inner binder is renamed, and the alpha-variant is unsupported (abandoned) |
 | `r(X) :- s(X, Z)` used by a strategy that freshens only the head | Contract gap on `r(Y)`: the body names the undeclared `Z`. Freshening every template answers `a` |
-| `∀x. ∃y. y = x` / `∃y. ∀x. y = x` | Success / exhausted (a mismatch, not unknown) |
+| `∀x. ∃y. y = x` / `∃y. ∀x. y = x` | Success / exhausted (a mismatch, not abandoned) |
 | `∃y. ∀x. ∃z. (y = z ∧ z = x)` | Exhausted: `y = z` narrows `z`, so `z = x` is refused |
 | `(∀x. X = x) ∨ X = a` | The scope miss rolls back; answer `a`; a strategy proposing `X := x` directly is rejected by the commit, with no gap |
 | `r(X) :- s(X)`, `r(X) :- t(X)` for `r(Y) ∧ u(Y)` | The first clause's bindings are discarded; answer `b`; only the second clause is in the proof; resuming is exhausted |
 | `p(a, b)` from `∀1. p(1, C)` | Answer `C = b`: the captured answer name is kept and matched |
 | `p(X) ∧ ∀5. (r(5, X) → r(5, X))` under `p(5)` | Success: reading the pending conjunct renames its binder (S04 reported this as unsupported) |
-| Alpha-variant data / a plain clash | Unknown (gap) / exhausted |
+| Alpha-variant data / a plain clash | Abandoned (gap) / exhausted |
 
 ## Boundaries
 

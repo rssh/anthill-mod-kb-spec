@@ -340,7 +340,7 @@ def runNegating (program : Program Nat Nat Sym) (flexibles : List Nat) (context 
 -- NAF under an assumption with an unbound answer name is not ground: the
 -- operand's search could bind X. It is a gap, never an exhaustion.
 #guard (runNegating (program []) [] [] (.existsVar 9 (.imp (atom .p [.var 9]) (naf (atom .p [k .a]))))).kind
-  = .unknown
+  = .abandoned
 -- An answer name bound before the NAF is read through its binding: r(a)
 -- binds X, so naf q(X) is the ground naf q(a), decided either way however
 -- the conjunction nests. An operand naming X while X is unbound is a gap.
@@ -351,16 +351,16 @@ def runNegating (program : Program Nat Nat Sym) (flexibles : List Nat) (context 
 #guard (runNegating (program [fact (atom .r [k .a])]) [] [] (.existsVar 7 (.conj (atom .r [.var 7]) (naf (atom .q [.var 7]))))).kind
   = .success
 #guard (runNegating (program [fact (atom .r [k .a])]) [7] [] (.conj (naf (atom .q [.var 7])) (atom .r [.var 7]))).kind
-  = .unknown
+  = .abandoned
 -- A rigid parameter is not ground either: it stands for every value. With the
 -- fact p(a), p(X) fails for the eigenvariable X, but that does not show
 -- ∀X. naf p(X): it is a gap, not a success. The same for a rigid name in an
 -- assumption: under p(X), q(a) :- p(c) fails for the eigenvariable, but not
 -- for X = c. A free name of the query is a rigid parameter too.
-#guard (runNegating (program [fact (atom .p [k .a])]) [] [] (.forallVar 9 (naf (atom .p [.var 9])))).kind = .unknown
+#guard (runNegating (program [fact (atom .p [k .a])]) [] [] (.forallVar 9 (naf (atom .p [.var 9])))).kind = .abandoned
 #guard (runNegating (program [rule (atom .q [k .a]) [atom .p [k .c]]]) [] []
-  (.forallVar 9 (.imp (atom .p [.var 9]) (naf (atom .q [k .a]))))).kind = .unknown
-#guard (runNegating (program [fact (atom .p [k .a])]) [] [] (naf (atom .p [.var 9]))).kind = .unknown
+  (.forallVar 9 (.imp (atom .p [.var 9]) (naf (atom .q [k .a]))))).kind = .abandoned
+#guard (runNegating (program [fact (atom .p [k .a])]) [] [] (naf (atom .p [.var 9]))).kind = .abandoned
 -- Ground NAF decides no operand whose search delays a goal. Here the guard
 -- isNat(Y) delays inside the operand and is proved after r binds Y: q is
 -- proved, so naf q fails, but the NAF is recorded as a gap and the run is
@@ -368,13 +368,13 @@ def runNegating (program : Program Nat Nat Sym) (flexibles : List Nat) (context 
 def wokenGuard := program [rule (k .q) [atom .isNat [.var 7], atom .r [.var 7]], fact (atom .r [zero]),
   fact (atom .isNat [zero])] (· == .isNat)
 #guard (runNegating wokenGuard [] [] (k .q)).kind = .success
-#guard (runNegating wokenGuard [] [] (naf (k .q))).kind = .unknown
+#guard (runNegating wokenGuard [] [] (naf (k .q))).kind = .abandoned
 -- The same when the operand fails after its delayed guard woke: s has no
 -- clause, so q is exhausted, but naf q is not proved: unknown.
 def wokenThenFails := program [rule (k .q) [atom .isNat [.var 7], atom .r [.var 7], k .s], fact (atom .r [zero]),
   fact (atom .isNat [zero])] (· == .isNat)
 #guard (runNegating wokenThenFails [] [] (k .q)).kind = .exhausted
-#guard (runNegating wokenThenFails [] [] (naf (k .q))).kind = .unknown
+#guard (runNegating wokenThenFails [] [] (naf (k .q))).kind = .abandoned
 -- Without a delay, the same operand is decided: naf q holds.
 #guard (runNegating (program [rule (k .q) [atom .r [.var 7], k .s], fact (atom .r [zero])]) [] [] (naf (k .q))).kind
   = .success
@@ -457,8 +457,8 @@ example (plan : Plan Dom Nat Nat Sym .ha) :
 -- proof with the exact ground failure provider; exhaustion, a failure certificate.
 example {plan : Plan Dom Nat Nat Sym .ha} (admitted : admission r03 = .ready plan) (fuel : Nat) :
     (plan.run fuel = .exhausted → GroundSearch.Fails plan.ground.program plan.ground.context (k .p)) ∧
-      ∀ gaps, plan.run fuel ≠ .unknown gaps :=
-  ⟨(run_correct_of_p0 admitted fuel).2.1, (run_correct_of_p0 admitted fuel).2.2⟩
+      ∀ gaps, plan.run fuel ≠ .abandoned gaps :=
+  ⟨(run_correct_of_p0 admitted fuel).2.1, (run_correct_of_p0 admitted fuel).2.2.1⟩
 
 -- A plan never asks for a capability during its run.
 example (plan : Plan Dom Nat Nat Sym .ha)
@@ -475,5 +475,37 @@ example :
   checkProgram_decides (decides_iff.mp (by decide))
     ⟨.atom (.app (by decide) fun _ member => by cases member), .app (by decide) fun _ member => by cases member⟩
     (fun _ member => by cases member)
+
+
+/-! ### Answers (S22) -/
+
+def answerKind (query : Input Dom Nat Nat Sym) : String :=
+  match Admission.answer (fun _ => false) .ha query with
+  | .ok (.yes _) => "yes"
+  | .ok (.no _) => "no"
+  | .ok (.unknown _ _) => "unknown"
+  | .ok (.undecided blockers) => s!"undecided {blockers.length}"
+  | .error _ => "invalid"
+
+-- A Ready plan answers Yes or No, never Undecided or Unknown (the P1 contract).
+#guard answerKind r01 = "yes"
+#guard answerKind allFail = "no"
+#guard answerKind r03 = "yes"
+-- A request is an Undecided blocker, reported before anything runs, at its
+-- site and path: the cycle p :- p lacks a termination argument.
+#guard answerKind (input [rule (k .p) [k .p]] [] (k .p)) = "undecided 1"
+#guard match Admission.answer (fun _ => false) .ha (input [rule (k .p) [k .p]] [] (k .p)) with
+  | .ok (.undecided [⟨.site (.head 0), [], _, .termination⟩]) => true
+  | _ => false
+-- P0 reads a marker closed, so it decides no formula reaching one: with q the
+-- open marker, p :- q is a blocker at its body goal, and naf p is not decided.
+#guard match Admission.answer (· == Sym.q) .ha (input [rule (k .p) [k .q]] [] (naf (k .p))) with
+  | .ok (.undecided [⟨.site (.body 0 0), [], _, .construct .openPredicate⟩]) => true
+  | _ => false
+#guard answerKind (input [rule (k .p) [k .q]] [] (naf (k .p))) = "yes"
+-- No carries a valid complete-failure certificate for the goal.
+#guard match Admission.answer (fun _ => false) .ha allFail with
+  | .ok (.no certificate) => certificate.check .ha
+  | _ => false
 
 end P0AdmissionTests

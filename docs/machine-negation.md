@@ -80,7 +80,10 @@ inconsistent, and then no model satisfies it.
 
 **Open predicates.** A clause `p(x̄) :- UNKNOWN` keeps `p` open. `UNKNOWN` is
 a marker with no clauses and no completion. The case it adds to `p`'s
-completion is never refuted, so NAF of `p` stays a gap. `complete?` reports a
+completion is never refuted. Since S22 a NAF whose operand reaches that case, and a
+marker atom as a goal, are reported `opened`, not as gaps, and no refutation
+is searched for them at first; the logical Unknown they lead to needs two checked
+witnesses ([answers](answers.md)). `complete?` reports a
 KB clause that may conclude a marker as invalid, by its position: one whose
 head mentions a marker, also through a compound head or as the predicate a
 `ho_apply` head applies, and, when a marker is used at all, one whose head may
@@ -145,7 +148,7 @@ logical nodes (`exportDerived`, `Unfold.*_proves`). No new rule is checked.
 
 ## Evidence-first NAF
 
-`Strategy.withRefutation check refute base` answers a goal that reads
+`Strategy.withRefutation opens check refute base` answers a goal that reads
 `naf G`:
 
 1. **Evidence first.** If the base has candidates, such as an assumed `naf G`
@@ -164,15 +167,19 @@ logical nodes (`exportDerived`, `Unfold.*_proves`). No new rule is checked.
    Still not refuted, the goal is a gap; it is never NAF evidence without a
    refutation.
 4. **Refutation.** Otherwise every free name is a rigid parameter, or the
-   branch is closing. If `refute` finds evidence and `check` accepts it, a NAF
+   branch is closing. An operand that reaches an open predicate's marked case
+   (`opens`, S22) is reported `opened`, and no refutation is searched. If
+   `refute` finds evidence and `check` accepts it, a NAF
    node is offered with it. Otherwise the base answer stands, so the goal is a
    gap or a miss, never refuted.
 
 `refute` runs `refuter` on `G → false`, within its fuel, with the context and
 operand as read and their free names rigid. It exports the run as a proof
-term. A run that is exhausted, unknown, or interrupted gives no evidence.
-`nafByRefutation` puts this together over the left strategy and a completed
-program, with `refutationCheck` as the check.
+term. A run that is exhausted, opened, abandoned, or interrupted gives no
+evidence. `nafByRefutation` puts this together over the left strategy and a
+completed program, with `refutationCheck` as the check; given the open marker,
+it also reports marker goals (`Strategy.withOpenGoals`) and NAF on open
+operands as `opened`.
 
 The NAF node is read the same in every later store, because rigid names are
 never bound (`Store.read_rigid`) and a closing store binds nothing more
@@ -272,7 +279,8 @@ annotates only inputs that P0 does not admit (`diagnose_not_ready`).
 | The same with `p(one)` | A gap: `X` may be `one` |
 | `naf p(X) ∧ r(X)` with `p(one)`, `r(two)` | `r` binds `X := two`, the NAF wakes and refutes `p(two)`; accepted |
 | The same with `r(one)` | A gap |
-| `q(X) :- UNKNOWN`, `naf q(5)` | A gap: the `UNKNOWN` case is never refuted |
+| `q(X) :- UNKNOWN`, `naf q(5)` | Opened, with no refutation searched (S22); a gap without the marker |
+| `q(one) :- UNKNOWN`, `naf q(two)` | Refuted: the marked case cannot match `two` |
 | A KB clause concluding `UNKNOWN` | Invalid, by its position |
 | `∀1. r(1) → naf p(1)`, `r(two)`, `p(one)` | The cases `x = two` and `x = one` join to `two = one`, a clash; accepted |
 | The same over `r(one)`, with witnesses first; without | Exhausted: the witness `one` defeats the negative; a gap |

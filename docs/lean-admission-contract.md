@@ -48,7 +48,7 @@ instruction to switch interpreters.
   or hypotheses that depend on the data; NAF or denials over a predicate on a
   cycle. The same language and machine as P1; every answer is sound, and the
   answers are complete within the fuel.
-- **P3: scoped proof strategies, with Unknown permitted.** Includes P2 and
+- **P3: scoped proof strategies, with Undecided permitted.** Includes P2 and
   sound proof attempts for broader formulas, including generic induction and
   dictionary-law reasoning without a complete decision procedure. P3
   strategies are proof producers: their results enter the KB module as
@@ -128,7 +128,8 @@ DecisionContract(problem, inputConditions, plan):
     the two cases cover every admitted input
 ```
 
-Ordinary completed P1 execution never returns Unknown. Admission checking is
+Ordinary completed P1 execution never returns Undecided or an operational
+result; the logical Unknown is a decided value. Admission checking is
 decidable because it checks input restrictions and supplied finite certificates;
 it does not synthesize arbitrary termination/completeness proofs. A missing
 contract yields NeedsEvidence. Merely proving successful steps sound, bounding
@@ -287,7 +288,7 @@ its run ends without needing fuel, in time polynomial in the data, and its
 Unknown is exact by the least and greatest fixpoints. P2 is planned in
 S22–S26.
 
-## P3: scoped proof strategies with Unknown
+## P3: scoped proof strategies with Undecided
 
 P3 includes P2 and extends admission for the existing shared syntax, including all
 its logical constructors. It does not admit every program using those constructors. A plan
@@ -377,9 +378,9 @@ identify NAF with logical negation.
 P3 guarantees termination of its admitted plan and no missing-capability requests,
 not completeness of arbitrary proof discovery. A plan can finish with a proof or
 **strategy exhausted**: that strategy did not establish the goal. Exhaustion is
-Unknown at the logical-result level unless further coverage/refutation evidence
-establishes more; it is not non-derivability in `Derives`. External interruption
-is a separate way to have an unresolved result.
+Undecided at the answer level unless further coverage or refutation evidence
+establishes more; it is not non-derivability in `Derives`, and it is never the
+logical Unknown. External interruption is another way to stay Undecided.
 
 P0 remains a special case with success/complete-failure certificates, and P1
 preserves a binary answer for its declared decision problem. Require:
@@ -420,7 +421,7 @@ AdmissionResult =
 ```
 
 The requested guarantee is either a Decision for a named problem or a ProofAttempt
-which may return Unknown. A decision request must not silently fall back to P3:
+which may return Undecided. A decision request must not silently fall back to P3:
 report NeedsEvidence and identify the available proof-attempt route. All plans
 use the same interpreter. The guarantee is an evidence contract, not another
 syntax or execution engine.
@@ -450,22 +451,29 @@ queries to an assumed semantic oracle.
 
 ### Outcome distinctions
 
-| Outcome | Meaning and evidence |
-| --- | --- |
-| Candidate miss | One selected clause cannot discharge the goal; try remaining candidates |
-| Success | A `GroundSearch.Succeeds program context goal` certificate in P0 |
-| Complete failure | A `GroundSearch.Fails program context goal` certificate in P0 |
-| Decision Yes / No | P1 evidence for the named problem or its negation; No has the contract's specified meaning |
-| Strategy exhausted | A P3 plan finished without establishing the goal; not automatically complete failure or refutation |
-| Semantic refutation | Evidence that the formula is false under the declared model/context contracts |
-| Unknown | An interrupted or incomplete broader proof attempt; no negative evidence |
+The module answers Yes, No, Unknown, or Undecided(blockers)
+([answers](answers.md), S22). Unknown is logical; Undecided is the module's
+own; operational outcomes are neither answers nor Unknown.
+
+| Kind | Result | Meaning and evidence |
+| --- | --- | --- |
+| Answer | Yes | A proof (`Derives`, exportable as an S08 term): the goal holds in every model of the KB with the tracked NAF provider. P0: a `GroundSearch.Succeeds program context goal` certificate |
+| Answer | No | A failure certificate or a refutation in the completion: the goal fails in every model of the completion. P0: a `GroundSearch.Fails program context goal` certificate |
+| Answer | Unknown (logical) | The KB leaves the goal open: two checked witnesses, assignments of the open atoms reached, give a model of the completion in which the goal holds and one in which it fails. A decided answer about the KB |
+| Answer | Undecided(blockers) | The module did not decide the goal; each blocker gives its site, path, formula, and what is missing (a proof, a mode, a termination argument, a construct, or witnesses). Nothing about the KB |
+| Operational | Candidate miss | One selected clause cannot discharge the goal; try remaining candidates |
+| Operational | Strategy exhausted | A plan finished without establishing the goal; not automatically complete failure or refutation. Undecided |
+| Operational | Opened | A run whose only blockers are open atoms (`Outcome.opened`); Unknown once both witnesses check, otherwise Undecided naming them |
+| Operational | Abandoned, interrupted | Gaps (an unsupported formula, a contract breach, floundering, a lambda-valued answer) or fuel (`Outcome.abandoned`, `Outcome.interrupted`): Undecided, never Unknown |
 
 A complete, unbounded P0 execution must return Success or Complete failure.
-A completed P1 decision returns Yes or No for its declared problem, never Unknown.
-An externally interrupted run may report Unknown without contradicting mathematical
-termination. A general proof-layer search may remain incomplete. Its exhausted
-strategy is not automatically complete failure, non-derivability in `Derives`,
-or semantic refutation.
+A completed P1 decision returns Yes, No, or the logical Unknown for its
+declared problem, never Undecided and never an operational result
+(`Plan.decision_decided` for P0). An externally interrupted run is
+Undecided without contradicting mathematical termination. A general
+proof-layer search may remain incomplete. Its exhausted strategy is not
+automatically complete failure, non-derivability in `Derives`, or semantic
+refutation.
 
 Complete failure excludes success of the P0 judgment via
 `GroundSearch.fails_not_succeeds`. To interpret it as semantic falsity, require
@@ -576,10 +584,10 @@ this ticket. `P`, `C`, `G` refer to the same program, context, and goal througho
 | `Machine.step_preserves_admission` | Every reachable obligation has an admitted capability/strategy | S07, S15 |
 | `Machine.progress` | An admitted nonterminal state has a next step, never a missing-capability state | S07, S15 |
 | `Admission.P1Admitted`, `DecisionContract` | Check procedure input restrictions, totality, soundness, completeness, and negative-result meaning | S07–S15 |
-| `Admission.P3Admitted`, `StrategyContract` | Check command modes, scopes, evidence reconstruction, and whole-plan termination; permit Unknown | S08–S15 |
+| `Admission.P3Admitted`, `StrategyContract` | Check command modes, scopes, evidence reconstruction, and whole-plan termination; permit Undecided | S08–S15 |
 | `Admission.p0_to_p1`, `p1_to_p2`, `Machine.embedding_preserves_run` | Nested admission and unchanged execution of embedded plans | S15 |
 | `Machine.run`, `run_total_of_p0`, `run_total_of_p1`, `run_total_of_p2` | One interpreter with termination theorems under each admission contract | S06–S07, S15 |
-| `Machine.run_decides_of_p1` | Sound and complete Yes/No decision for the specified problem; no completed Unknown result | S15–S16 (the P0 case: `Plan.answer_true`, `Plan.answer_false`, `checkProgram_decides`, S07) |
+| `Machine.run_decides_of_p1` | Sound and complete Yes/No (or logical Unknown) decision for the specified problem; no completed Undecided or operational result | S15–S16 (the P0 case: `Plan.answer_true`, `Plan.answer_false`, `checkProgram_decides`, S07) |
 | `Machine.run_correct_of_p0` | Returned certificate corresponds to the original P, C, G; use consistency to obtain completeness for these certificate judgments | S07 |
 | `Machine.success_toDerives` | Instantiate/compose the existing ground or general reconstruction lemmas | S06, S16 |
 | `Admission.ready_no_missing_capability` | Progress plus preservation for an entire run under its declared input contracts | S15 |
@@ -657,6 +665,7 @@ cannot establish Ready. Proof checking and proof discovery are distinct tasks.
 | `VariableSearch`, `ScopedSearch` | Instances, answers, freshness, `LocalInstance.toDerives`, `answers_toDerives` | Exhaustive-instance covers are evidence, not a general enumeration algorithm; raw scoped failure is inadequate |
 | `CertifiedRefutation` | `Refutes.sound`, `failureAdequate`, `Refutes.toDerives` | Semantic certificates are not automatically proofs in unchanged `Derives` |
 | Evidence-first NAF (S10) | `Derives.defaultNegIntro` without a closed operand, `refutation_adequate`, `refutationChecker_sound`, `complete?_reserved`, `refuter_sound`, `nafByRefutation_sound`, `Strategy.withRefutation_checked`, `witnessSearch_defeats` ([details](machine-negation.md)) | No termination of the refutation search; injectivity, the occurs check, and induction are not searched; the export theorem for whole runs (S15/S16); the completion is a model hypothesis |
+| Answers (S22) | `Answer`, `Answer.combine` with `combine_sound`, `combine_undecided`, `combine_unknown`; `Response.opened` and `Outcome.opened` apart from the gaps; `Open.check_model` and `Open.realizes_guards` (a checked witness has a model of the completion realizing the admission signature); gaps and blockers with their context and provenance; `Setup.answer_sound`, `Setup.answer_unknown`; `Admission.answer_needsEvidence`, `Admission.answer_marked`, `Plan.decision_decided`, `Plan.decision_sound`; `Induction.answer_needsEvidence` ([details](answers.md)) | Witnesses for ground acyclic programs and queries without assumptions (S24 extends them); candidate assignments, not a search over them; routing an input to its route (S15) |
 | `InductiveDomains`, `UniversalIntroduction` | `Universal.toTerm`, `forallAll_satisfies_iff`, `Derives.forallAll_intro`; generalized by S03 | An admitted quantifier strategy |
 | `MembershipClauses` | Constructor-membership clauses generated from domain definitions, valid under `Realizes` and deriving every generated member and its guard | Elaborated KBs must include them (through `Elaboration.signatureKb`); values outside generated data stay underivable |
 | `CounterexampleSearch`, `CertifiedScopedSearch` | Finite covers/induction evidence and guarded semantic success | Domain certificates do not generally reconstruct KB-only `Derives` |
@@ -698,7 +707,7 @@ a P0 rejection alone does not determine the combined P0/P1/P2/P3 admission resul
 | R16 | Scope tests `forall x exists y y=x` versus `exists y forall x y=x` | Later matching permits the first witness dependency and forbids the second's escape |
 | R17 | P0-admitted input embedded through P1 into P3 | Same machine run and success/failure evidence; no interpreter switch |
 | R18 | P3 induction strategy on infinite Nat with admitted base/step plans | Ready without finite-domain enumeration; the strategy's subgoal control must terminate |
-| R19 | P3 finishes a finite proof attempt for a logical negation without contradiction | Strategy exhausted/Unknown, not NAF success |
+| R19 | P3 finishes a finite proof attempt for a logical negation without contradiction | Strategy exhausted (Undecided), not NAF success |
 | R20 | A plan can select an undeclared dictionary evaluator at runtime | NeedsEvidence in P1, P2, and P3; a predicate name alone does not prove capability |
 | R21 | Finite positive cyclic program with complete grounding and a certified saturation contract | P1 decision despite P0 cycle rejection; use the least-relation semantic contract |
 | R22 | Decision requested for a goal with only an incomplete induction strategy | NeedsEvidence; do not silently return a P3 plan |

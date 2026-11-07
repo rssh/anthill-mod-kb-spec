@@ -36,9 +36,9 @@ Modules are grouped under `AnthillModKbSpec/`:
 | `Models/` | Concrete Boolean, constructor-key, induction, and ordering model witnesses |
 | `Deriving/` | Generation of constructor-domain presentations from Lean inductive data |
 | `Resolution/` | Shared matching, search certificates, admission signatures, and reconstruction proofs |
-| `Resolution/P0/` | Ground success/failure certificates and completed-model semantics, ranks, the P0 command set, total P0 runs, and the P0 admission checker |
-| `Resolution/P1/` | Supplied proof trees as `Term`, their checker and reconstruction, proof imports, checked exports of machine runs, the logical nodes of S09 and S10 commands, and evidence-first NAF |
-| `Resolution/P3/` | Proof strategies that may return Unknown: structural induction principles and the admitted induction path |
+| `Resolution/P0/` | Ground success/failure certificates and completed-model semantics, ranks, the P0 command set, total P0 runs, the P0 admission checker, and witnesses for open atoms in ground programs |
+| `Resolution/P1/` | Supplied proof trees as `Term`, their checker and reconstruction, proof imports, checked exports of machine runs, the logical nodes of S09 and S10 commands, evidence-first NAF, and the module's answers over the completion |
+| `Resolution/P3/` | Proof strategies that may end Undecided: structural induction principles, the admitted induction path, and its answers |
 | `Archive/` | Opt-in historical approaches |
 
 `import AnthillModKbSpec.Foundation` loads the generic logic independently of
@@ -75,6 +75,7 @@ class is in the foundation; its generation metaprogram is imported separately.
 | Evidence-first NAF by refutation in the Clark completion: NAF on rigid parameters, open predicates marked by a reserved symbol, the refutation search with only-if uses and equation joins, positive witnesses first, checked evidence indexed by the snapshot | [Completion](AnthillModKbSpec/Foundation/Completion.lean), [Machine/Refutation](AnthillModKbSpec/Resolution/Machine/Refutation.lean), [P1/Refutation](AnthillModKbSpec/Resolution/P1/Refutation.lean), [P1/Negation](AnthillModKbSpec/Resolution/P1/Negation.lean), [design and guarantees](docs/machine-negation.md), [traces](Tests/Resolution/Negation.lean) |
 | `ho_apply` conversion and whole-formula head matching: concrete indirect goals normalized (`ho_goal`), candidates applying a predicate by `ho_apply` matched against a direct goal's indirect view and converted, also under implications, rigid predicates never assigned, lambda-valued answers classified as gaps, a clause selected by its whole head (induction principles), conversion nodes checked by S08 | [Conversion](AnthillModKbSpec/Resolution/Machine/Conversion.lean), [LeftStrategy](AnthillModKbSpec/Resolution/Machine/LeftStrategy.lean), [P1/Derived](AnthillModKbSpec/Resolution/P1/Derived.lean), [design and guarantees](docs/machine-conversion.md), [traces](Tests/Resolution/Conversion.lean) |
 | Admitted induction: the structural principle of every declared domain, one case per constructor, lowered with `P` at `.predicate 1` and proved valid, static admission reporting what the cases cannot run in the query's context and the clauses they may select, the principle selected once by its whole head, `∀x:Nat. reachable(x)` reconstructed and true in the induction model, the exported tree checked by S08 | [P3/Principle](AnthillModKbSpec/Resolution/P3/Principle.lean), [P3/Induction](AnthillModKbSpec/Resolution/P3/Induction.lean), [design and guarantees](docs/machine-induction.md), [traces](Tests/Resolution/P3/Induction.lean) |
+| Answers Yes, No, Unknown, and Undecided(blockers): the logical Unknown of open predicates kept apart from the machine's gaps and from operational outcomes, two checked witnesses as models of the completion, admission requests as blockers before anything runs, the combination rule | [Answer](AnthillModKbSpec/Resolution/Answer.lean), [OpenAtoms](AnthillModKbSpec/Resolution/Machine/OpenAtoms.lean), [P0/Open](AnthillModKbSpec/Resolution/P0/Open.lean), [P1/Answer](AnthillModKbSpec/Resolution/P1/Answer.lean), [KeyModel](AnthillModKbSpec/Models/KeyModel.lean), [design and guarantees](docs/answers.md), [traces](Tests/Resolution/Answer.lean) |
 | Lawful Nat and Bool order dictionaries | [OrderDictionaries](AnthillModKbSpec/Models/OrderDictionaries.lean) |
 | Conditional operation equations and replacement | [Equation rule note](docs/conditional-equations.md), [examples](Tests/Foundation/EquationRules.lean) |
 | Soundness with an equation oracle | [EquationOracle](AnthillModKbSpec/Foundation/EquationOracle.lean), [theorem and examples](docs/equation-oracle.md) |
@@ -87,7 +88,10 @@ a consistency witness for the example KBs.
 The result covers certified NAF, not arbitrary unsuccessful search: S07's
 ground certificates, and S10's refutations in the Clark completion, which also
 cover operands with rigid parameters. A predicate is kept open by a clause
-`p(x̄) :- UNKNOWN` with a reserved symbol. Explicit negation remains future work.
+`p(x̄) :- UNKNOWN` with a reserved symbol; a goal it leaves open is answered
+Unknown only with two checked witnesses, models of the completion in which it
+holds and fails ([answers](docs/answers.md)). Explicit negation remains future
+work.
 
 Dictionary operation calls have [syntax and a semantic contract](docs/operation-dictionaries.md):
 explicit callable references, uniform application, and predicate/operation roles

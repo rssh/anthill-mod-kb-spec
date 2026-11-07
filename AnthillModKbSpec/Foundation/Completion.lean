@@ -338,6 +338,17 @@ def complete? [DecidableEq Literal] [DecidableEq Symbol] [DecidableEq Variable] 
   | some index => .error index
   | none => .ok (completion clauses (Signature.of marker hoApplySymbol free clauses formulas))
 
+/-- An accepted completion is the program's completion for its own signature. -/
+theorem complete?_ok [DecidableEq Literal] [DecidableEq Symbol] [DecidableEq Variable] [FreshNames Variable]
+    {marker : Symbol → Bool} {hoApplySymbol : Symbol} {free : Symbol → Bool}
+    {clauses : List (HornClause Variable Literal Symbol)} {formulas : List (Term Variable Literal Symbol)}
+    {result : Completed Variable Literal Symbol} (completes : complete? marker hoApplySymbol free clauses formulas = .ok result) :
+    result = completion clauses (Signature.of marker hoApplySymbol free clauses formulas) := by
+  unfold complete? at completes
+  split at completes
+  · cases completes
+  · cases completes; rfl
+
 /-- The completion closes no marker and not `ho_apply`. -/
 theorem Signature.of_open [DecidableEq Literal] [DecidableEq Symbol] {marker : Symbol → Bool} {hoApplySymbol : Symbol}
     {free : Symbol → Bool} {clauses : List (HornClause Variable Literal Symbol)}

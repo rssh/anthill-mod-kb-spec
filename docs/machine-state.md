@@ -172,9 +172,15 @@ freshening every template name is the strategy's responsibility.
 | `proved t` | top entry `woken id ob next` | record `(id, ob, t)` as a deferred proof, focus `next` |
 | `proved t` | top entry `negation ob _ n` | `failed`; the choice points through the first barrier are discarded; an unsupported gap if a goal delayed since the entry was pushed |
 | `failed` | a choice point with alternatives | restore its store, continuations, and deferred proofs, try the next alternative; a barrier is tried only if no gap was recorded and no goal delayed since it was set, otherwise it is dropped with an unsupported gap |
-| `failed` | no choice point | finished: `exhausted` if there are no gaps, otherwise `unknown gaps` |
+| `focus ob` | strategy answers `opened` | `failed`, an `opened` entry for `ob` with the gaps: an open atom, not a missing capability (S22) |
+| `failed` | no choice point | finished: `exhausted` if there are no gaps, `opened` if every gap is an open atom, otherwise `abandoned gaps` |
 
 `run` takes a step budget; running out of it is `interrupted`.
+
+Every gap records its obligation, with its scope, and its provenance
+(`trailOf`, S22): the frames from the root down, each with its rule, the
+clause it selected, and the premise position, and each NAF whose operand was
+being searched. A goal still delayed when its branch ends has none.
 
 ## Guarantees
 
@@ -270,7 +276,8 @@ reads only the signature naming.
 | --- | --- |
 | `success proof resume` | A complete, coherent tree for the root obligation (delayed goals' proofs filled in, their records kept as provenance), the final store with no goal still delayed, and a state from which search resumes for further answers |
 | `exhausted` | Every alternative of this strategy was tried, and no path was abandoned. Not complete failure (P0 needs `GroundSearch.Fails`, S07), non-derivability, or refutation |
-| `unknown gaps` | Some path was abandoned for lack of capability or a contract breach, or floundered with goals still delayed. No evidence either way |
+| `opened gaps` | Every path ended in a miss or at an open atom, and these entries met one (S22). Not an answer: the logical Unknown needs checked witnesses ([answers](answers.md)) |
+| `abandoned gaps` | Some path was abandoned for lack of capability or a contract breach, or floundered with goals still delayed (open atoms may be among the gaps). No evidence either way; called `unknown` before S22 |
 | `interrupted state` | The step budget ran out |
 
 ## Named command contracts
@@ -317,7 +324,7 @@ outcome is checked by `#guard`.
 | `(p → p) ∧ p` | Exhausted: the first conjunct's assumption does not reach the second |
 | `q ∨ p` under `p ∨ q` | `disjElim` with cases proved under `p` and under `q` separately |
 | `p(X) ∧ q(X)` under `p(a), q(b)` | Incompatible shared answer: exhausted, no proof tree |
-| A strategy rebinding `X` | Refused by the store; recorded as a gap, outcome unknown |
+| A strategy rebinding `X` | Refused by the store; recorded as a gap, outcome abandoned |
 | `∃y. (p(y) → p(y))`, `X = X`, a strategy binding `X := X` | Success: self-binding is no change |
 | `∀x. ∃y. y = x` / `∃y. ∀x. y = x` | Success / exhausted by the dependency check |
 | `∀x. X = x` with answer `X` | Exhausted: a root answer cannot capture an opened rigid name |
@@ -325,11 +332,11 @@ outcome is checked by `#guard`.
 | `(∀x. ∃y. true) ∧ (∀z. true)`, a strategy binding `y := z` | Refused; success without the binding. A level number would accept it |
 | `p(1) → ∀x. p(x)` | Exhausted: the free name 1 is a declared parameter, so opening `∀x` does not reuse it |
 | `∀x. (p(x) → p(x))`, a strategy opening `∀x` with `x` itself | Success: a binder name of the obligation is a new name of the store |
-| `naf p`; `naf q ∨ p` under `p` | Unknown; success, then unknown on resume (the gap persists) |
+| `naf p`; `naf q ∨ p` under `p` | Abandoned; success, then abandoned on resume (the gap persists) |
 | `p ∧ naf q` under `p`, with a strategy producing a toy certificate | Success; the NAF node retains its certificate, read back from `ProofTree.closedWorld` |
 | Small budget | Interrupted |
-| A strategy binding a rigid name, or opening a name free in the obligation | Contract gap, outcome unknown |
-| A strategy whose premise goal or discharged assumption names an undeclared name | Contract gap on the expanded obligation, outcome unknown |
+| A strategy binding a rigid name, or opening a name free in the obligation | Contract gap, outcome abandoned |
+| A strategy whose premise goal or discharged assumption names an undeclared name | Contract gap on the expanded obligation, outcome abandoned |
 | An `existsElim` whose existential names its own eigenvariable | Contract gap: a rigid name opened for one premise is out of scope in its siblings |
 | `(∀x. true) ∧ q`, a strategy whose premise for `q` names the closed eigenvariable | Contract gap on `q`: the name is declared but out of scope |
 | `(∀x. ∃y. y = x) ∧ q`, a strategy whose premise for `q` names `y` | Contract gap on `q`: `y` depends on the closed `x` |
@@ -355,8 +362,8 @@ hold for every strategy and need no trace.
   strategy (`run_reconstructs`, [S06](machine-positive.md)).
 - The store has a slot for unresolved constraints and no solver; solver jobs
   and checked success evidence (S08) are not part of this state.
-- No termination, fairness, or completeness is claimed. `exhausted` and
-  `unknown` carry no negative evidence.
+- No termination, fairness, or completeness is claimed. `exhausted`,
+  `opened`, and `abandoned` carry no negative evidence.
 - Goal order is fixed by each candidate's premise order, except that woken
   goals run before the waking candidate's continuation
   ([delayed goals](machine-delay.md)).

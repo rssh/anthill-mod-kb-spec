@@ -19,3 +19,5 @@ import AnthillModKbSpec.Resolution.Machine.Negation
 import AnthillModKbSpec.Resolution.Machine.LeftRules
 import AnthillModKbSpec.Resolution.Machine.LeftStrategy
 import AnthillModKbSpec.Resolution.Machine.Refutation
+-- Open atoms reached through an open predicate's marked case (S22).
+import AnthillModKbSpec.Resolution.Machine.OpenAtoms

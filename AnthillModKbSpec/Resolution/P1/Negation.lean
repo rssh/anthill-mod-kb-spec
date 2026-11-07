@@ -1,6 +1,7 @@
 import AnthillModKbSpec.Resolution.P1.Refutation
 import AnthillModKbSpec.Resolution.P1.Export
 import AnthillModKbSpec.Resolution.Machine.Refutation
+import AnthillModKbSpec.Resolution.Machine.OpenAtoms
 
 /-! # Evidence-first NAF by refutation (S10)
 
@@ -114,12 +115,14 @@ theorem mem_refuteOr
   · exact .inl member
 
 /-- Evidence-first NAF: the base strategy's candidates, then, for a goal whose
-free names are all rigid, or while the branch is closing (`Store.close`), a
-NAF node whose refutation checks; otherwise a delay on the names the NAF waits
-for. While closing no name will be bound, so the names it waited for are
-refuted generically, for every value. A waiting name is flexible, so a goal
-whose names are all rigid waits for none. -/
-def Strategy.withRefutation (check : ProofContext Variable Literal Symbol → Formula Variable Literal Symbol →
+free names are all rigid, or while the branch is closing (`Store.close`), an
+open operand (`opens`, S22) is reported `opened` with no refutation search,
+and any other gets a NAF node whose refutation checks; otherwise a delay on the
+names the NAF waits for. While closing no name will be bound, so the names it
+waited for are refuted generically, for every value. A waiting name is
+flexible, so a goal whose names are all rigid waits for none. -/
+def Strategy.withRefutation (opens : Formula Variable Literal Symbol → Bool)
+    (check : ProofContext Variable Literal Symbol → Formula Variable Literal Symbol →
       Term Variable Literal Symbol → Bool)
     (refute : ProofContext Variable Literal Symbol → Formula Variable Literal Symbol → Option (Term Variable Literal Symbol))
     (base : Strategy Variable Literal Symbol (Term Variable Literal Symbol)) :
@@ -128,7 +131,8 @@ def Strategy.withRefutation (check : ProofContext Variable Literal Symbol → Fo
   match store.resolve obligation.goal, response.alternatives with
   | .defaultNeg operand, [] =>
       let reads := obligation.context.map store.resolve
-      if store.closing || store.allRigid (operand :: reads) then refuteOr check refute reads operand response
+      if store.closing || store.allRigid (operand :: reads) then
+        if opens operand then .opened else refuteOr check refute reads operand response
       else
         match store.waitingNames (operand :: reads) with
         | [] => response
@@ -139,12 +143,12 @@ omit [DecidableEq Symbol] [DecidableEq Literal] in
 /-- What evidence-first NAF offers: the base's candidates, or a NAF node for a
 goal read as `naf G` that is stable, with evidence that checks for the context
 and operand as read. -/
-theorem mem_withRefutation
+theorem mem_withRefutation {opens : Formula Variable Literal Symbol → Bool}
     {check : ProofContext Variable Literal Symbol → Formula Variable Literal Symbol → Term Variable Literal Symbol → Bool}
     {refute : ProofContext Variable Literal Symbol → Formula Variable Literal Symbol → Option (Term Variable Literal Symbol)}
     {base : Strategy Variable Literal Symbol (Term Variable Literal Symbol)} {obligation : Obligation Variable Literal Symbol}
     {store : Store Variable Literal Symbol} {expansion : Expansion Variable Literal Symbol (Term Variable Literal Symbol)}
-    (member : expansion ∈ (Strategy.withRefutation check refute base obligation store).alternatives) :
+    (member : expansion ∈ (Strategy.withRefutation opens check refute base obligation store).alternatives) :
     expansion ∈ (base obligation store).alternatives ∨
       ∃ operand evidence, store.resolve obligation.goal = .defaultNeg operand ∧
         (store.closing || store.allRigid (operand :: obligation.context.map store.resolve)) = true ∧
@@ -156,6 +160,8 @@ theorem mem_withRefutation
   · rename_i _ _ operand readGoal _
     split at member
     · rename_i stable
+      split at member
+      · simp [Response.alternatives] at member
       rcases mem_refuteOr member with inBase | ⟨evidence, rfl, checked⟩
       · exact .inl inBase
       · exact .inr ⟨operand, evidence, readGoal, stable, rfl, checked⟩
@@ -168,12 +174,12 @@ omit [DecidableEq Symbol] [DecidableEq Literal] in
 /-- Evidence-first NAF is sound when its base is and its check yields evidence
 of the NAF provider, for the context and operand as read. -/
 theorem Strategy.withRefutation_sound {hoApplySymbol : Symbol} {kb : LogicalKb Variable Literal Symbol}
-    {naf : NafFailure Variable Literal Symbol}
+    {naf : NafFailure Variable Literal Symbol} {opens : Formula Variable Literal Symbol → Bool}
     {check : ProofContext Variable Literal Symbol → Formula Variable Literal Symbol → Term Variable Literal Symbol → Bool}
     {refute : ProofContext Variable Literal Symbol → Formula Variable Literal Symbol → Option (Term Variable Literal Symbol)}
     {base : Strategy Variable Literal Symbol (Term Variable Literal Symbol)} (baseSound : Strategy.Sound hoApplySymbol kb naf base)
     (checkSound : ∀ context operand evidence, check context operand evidence = true → naf hoApplySymbol kb context operand) :
-    Strategy.Sound hoApplySymbol kb naf (Strategy.withRefutation check refute base) := by
+    Strategy.Sound hoApplySymbol kb naf (Strategy.withRefutation opens check refute base) := by
   intro obligation store valid declared expansion member
   rcases mem_withRefutation member with inBase | ⟨operand, evidence, readGoal, stable, rfl, checked⟩
   · exact baseSound obligation store valid declared expansion inBase
@@ -183,18 +189,52 @@ theorem Strategy.withRefutation_sound {hoApplySymbol : Symbol} {kb : LogicalKb V
   simp only [ReadDerives, goalRead, contextRead]
   exact .defaultNegIntro (checkSound _ _ _ checked)
 
+/-- Open goals (S22): a goal that reads as a marker atom, and that the base
+has no candidate for, is reported `opened`. An open atom has no clauses and
+no completion, so no proof or refutation search could decide it. -/
+def Strategy.withOpenGoals {Certificate : Type} (marker : Symbol → Bool)
+    (base : Strategy Variable Literal Symbol Certificate) : Strategy Variable Literal Symbol Certificate :=
+  fun obligation store =>
+    let response := base obligation store
+    match store.resolve obligation.goal, response.alternatives with
+    | .app symbol _, [] => if marker symbol then .opened else response
+    | _, _ => response
+
+omit [DecidableEq Symbol] [DecidableEq Literal] in
+theorem mem_withOpenGoals {Certificate : Type} {marker : Symbol → Bool}
+    {base : Strategy Variable Literal Symbol Certificate} {obligation : Obligation Variable Literal Symbol}
+    {store : Store Variable Literal Symbol} {expansion : Expansion Variable Literal Symbol Certificate}
+    (member : expansion ∈ (Strategy.withOpenGoals marker base obligation store).alternatives) :
+    expansion ∈ (base obligation store).alternatives := by
+  unfold Strategy.withOpenGoals at member
+  dsimp only at member
+  split at member
+  · split at member
+    · simp [Response.alternatives] at member
+    · exact member
+  · exact member
+
+omit [DecidableEq Symbol] [DecidableEq Literal] in
+/-- Reporting open goals offers nothing new, so it keeps the base's soundness. -/
+theorem Strategy.withOpenGoals_sound {Certificate : Type} {hoApplySymbol : Symbol} {kb : LogicalKb Variable Literal Symbol}
+    {naf : NafFailure Variable Literal Symbol} {marker : Symbol → Bool}
+    {base : Strategy Variable Literal Symbol Certificate} (baseSound : Strategy.Sound hoApplySymbol kb naf base) :
+    Strategy.Sound hoApplySymbol kb naf (Strategy.withOpenGoals marker base) :=
+  fun obligation store valid declared expansion member =>
+    baseSound obligation store valid declared expansion (mem_withOpenGoals member)
+
 omit [DecidableEq Symbol] [DecidableEq Literal] in
 /-- Every NAF node evidence-first NAF offers carries evidence that checks for
 the context and operand as read, and they read the same in every later store:
 the exported node, read through the final store, passes the same check. -/
-theorem Strategy.withRefutation_checked
+theorem Strategy.withRefutation_checked {opens : Formula Variable Literal Symbol → Bool}
     {check : ProofContext Variable Literal Symbol → Formula Variable Literal Symbol → Term Variable Literal Symbol → Bool}
     {refute : ProofContext Variable Literal Symbol → Formula Variable Literal Symbol → Option (Term Variable Literal Symbol)}
     {base : Strategy Variable Literal Symbol (Term Variable Literal Symbol)} {obligation : Obligation Variable Literal Symbol}
     {store later : Store Variable Literal Symbol} {operand : Formula Variable Literal Symbol}
     {evidence : Term Variable Literal Symbol} (valid : store.Scoped) (readGoal : store.resolve obligation.goal = .defaultNeg operand)
     (fresh : ∀ expansion ∈ (base obligation store).alternatives, expansion.rule.id ≠ .defaultNegIntro)
-    (member : Expansion.negation evidence ∈ (Strategy.withRefutation check refute base obligation store).alternatives)
+    (member : Expansion.negation evidence ∈ (Strategy.withRefutation opens check refute base obligation store).alternatives)
     (laterScoped : later.Scoped) (refines : store.Refines later) :
     later.resolve obligation.goal = .defaultNeg operand ∧
       check (obligation.context.map later.resolve) operand evidence = true := by
@@ -353,8 +393,8 @@ variable {Variable Literal Symbol : Type} [DecidableEq Variable] [DecidableEq Sy
   [FreshNames Variable]
 
 /-- A run from `goal` under `context`, its free names rigid, within `fuel`
-steps, exported as a supplied proof. A run that is exhausted, unknown or
-interrupted exports nothing. -/
+steps, exported as a supplied proof. A run that is exhausted, opened,
+abandoned, or interrupted exports nothing. -/
 def runExport (vocab : Vocabulary Symbol) (strategy : Strategy Variable Literal Symbol Unit) (fuel : Nat)
     (context : ProofContext Variable Literal Symbol) (goal : Formula Variable Literal Symbol) :
     Option (Term Variable Literal Symbol) :=
@@ -407,29 +447,35 @@ theorem witnessSearch_defeats {vocab : Vocabulary Symbol} {snapshot : Snapshot V
 /-- Evidence-first NAF over the left strategy on a completed program: a NAF
 goal the left strategy cannot close is refuted in the same program, and the
 refutation is checked against it. The completed clauses and the refutation
-search are built once, not per refutation. -/
+search are built once, not per refutation. With `marker` (S22), a goal that
+reads as a marker atom, or a NAF whose operand reaches an open atom through
+the program's clauses (`openAtomsOf`), is reported `opened`, and no
+refutation is searched for it; the default marks nothing. -/
 def nafByRefutation (vocab : Vocabulary Symbol) (hoApplySymbol : Symbol)
     (completion : Completion.Completed Variable Literal Symbol) (guard : Symbol → Bool)
-    (select : Selection Variable Literal Symbol) (fuel : Nat) :
+    (select : Selection Variable Literal Symbol) (fuel : Nat) (marker : Symbol → Bool := fun _ => false) :
     Strategy Variable Literal Symbol (Term Variable Literal Symbol) :=
   let clauses := completion.clauses
   let search := refuter hoApplySymbol completion guard
-  Strategy.withRefutation (refutationCheck vocab ⟨hoApplySymbol, clauses⟩).check (refute vocab search fuel)
-    (left hoApplySymbol (Program.ofClauses clauses guard) select)
+  Strategy.withOpenGoals marker
+    (Strategy.withRefutation (fun operand => !(openAtomsOf marker completion.free completion.program operand).isEmpty)
+      (refutationCheck vocab ⟨hoApplySymbol, clauses⟩).check (refute vocab search fuel)
+      (left hoApplySymbol (Program.ofClauses clauses guard) select))
 
 /-- Evidence-first NAF is sound for the completed program with refutation
 evidence, so in every model of it with complement NAF (`refutation_adequate`). -/
 theorem nafByRefutation_sound (vocab : Vocabulary Symbol) (hoApplySymbol : Symbol)
     (completion : Completion.Completed Variable Literal Symbol) (guard : Symbol → Bool)
-    (select : Selection Variable Literal Symbol) (fuel : Nat) :
+    (select : Selection Variable Literal Symbol) (fuel : Nat) (marker : Symbol → Bool) :
     Strategy.Sound hoApplySymbol (Snapshot.kb ⟨hoApplySymbol, completion.clauses⟩)
       (refutation hoApplySymbol (Snapshot.kb ⟨hoApplySymbol, completion.clauses⟩))
-      (nafByRefutation vocab hoApplySymbol completion guard select fuel) := by
+      (nafByRefutation vocab hoApplySymbol completion guard select fuel marker) := by
   have base := left_sound (Certificate := Term Variable Literal Symbol) (hoApplySymbol := hoApplySymbol)
     (naf := refutation hoApplySymbol (Snapshot.kb ⟨hoApplySymbol, completion.clauses⟩))
     (Program.ofClauses completion.clauses guard) select
   rw [Program.ofClauses_kb] at base
-  exact Strategy.withRefutation_sound base (refutationCheck vocab ⟨hoApplySymbol, completion.clauses⟩).sound
+  exact Strategy.withOpenGoals_sound
+    (Strategy.withRefutation_sound base (refutationCheck vocab ⟨hoApplySymbol, completion.clauses⟩).sound)
 
 end P1
 

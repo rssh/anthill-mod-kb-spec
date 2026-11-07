@@ -146,7 +146,8 @@ concluding a call by `ho_apply`, and `positive` never selects a compound head
 for an atomic goal. The theorem does not cover those opened goals: a clause a
 case selects may ask a focus again, a nested induction, which the selection
 answers by the principle. The run is bounded by its fuel: an
-interrupted run is Unknown, never failure. Induction search is P3. Failure of
+interrupted run is Undecided, never failure ([answers](answers.md)); S12's
+needs are Undecided blockers before anything runs (`Induction.answer`). Induction search is P3. Failure of
 a case for this predicate does not refute the universal, and a decision
 request for the universal is not answered by this plan: P0 asks evidence for
 it (`Plan.not_p0`).
@@ -228,7 +229,7 @@ not carry the principle.
 - **Termination is by fuel.** The plan applies the principle once per focus,
   and its cases' clauses need no extension, but no structural decrease
   of the subgoal search is proved: the run is bounded by its fuel, and an
-  interrupted run is Unknown. A checked termination argument for P3
+  interrupted run is Undecided. A checked termination argument for P3
   strategies is S15's.
 - **One principle per domain.** Each declared domain gets its structural
   principle for a unary predicate, `∀x:D. p(x)`. Simultaneous induction over
@@ -249,5 +250,5 @@ not carry the principle.
   the plan's selection chooses no left rule, so a non-atomic assumption is
   reported too. A guard is `waitingGuard` only when no other goal of its
   clause mentions its name; one that another goal leaves unbound still
-  flounders at run time, and the run is Unknown. Every denial is checked,
+  flounders at run time, and the run is abandoned: Undecided. Every denial is checked,
   since any `false` subgoal may select it.

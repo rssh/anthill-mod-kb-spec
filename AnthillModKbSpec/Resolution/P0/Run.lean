@@ -21,7 +21,8 @@ command set (`Ground.strategy`). For every admitted input:
 
 So a run finishes within `measure` steps (`run_total`), success carries
 `GroundSearch.Succeeds` and exhaustion `GroundSearch.Fails` for the original
-program, context, and goal (`run_correct`), and no run is ever `unknown`. -/
+program, context, and goal (`run_correct`), and no run is ever `opened` or
+`abandoned`. -/
 
 variable {Variable Literal Symbol : Type} [DecidableEq Variable] [DecidableEq Literal] [DecidableEq Symbol]
   [FreshNames Variable] {hoApplySymbol : Symbol}
@@ -1185,7 +1186,7 @@ theorem Ground.init_inv (snapshot : Snapshot) : Inv ground (ground.init snapshot
 
 /-- What a finishing step of a P0 run returns: a success whose tree proves the
 root with valid certificates, or exhaustion with a complete-failure
-certificate. Never `unknown`. -/
+certificate. Never `opened` or `abandoned`. -/
 theorem step_finished {state : State Variable Literal Symbol (Certificate Variable Literal Symbol) Snapshot}
     {outcome : Outcome Variable Literal Symbol (Certificate Variable Literal Symbol) Snapshot} (inv : Inv ground state)
     (stepped : step ground.strategy state = .finished outcome) :
@@ -1267,7 +1268,7 @@ theorem runToEnd_finished (state : State Variable Literal Symbol (Certificate Va
 
 /-- Along a P0 run from an invariant state: success proves the root goal with
 valid certificates, exhaustion refutes it with a complete-failure certificate,
-the run is never `unknown`, and it finishes within the measure. -/
+the run is never `opened` or `abandoned`, and it finishes within the measure. -/
 theorem run_outcome : ∀ (fuel : Nat) (state : State Variable Literal Symbol (Certificate Variable Literal Symbol) Snapshot),
     Inv ground state →
       (∀ proof resume, run ground.strategy fuel state = .success proof resume →
@@ -1275,23 +1276,24 @@ theorem run_outcome : ∀ (fuel : Nat) (state : State Variable Literal Symbol (C
           Succeeds ground.program ground.context ground.goal ∧ TreeOk ground proof.tree ∧
           proof.store = Store.empty ∧ proof.tree.Coherent) ∧
       (run ground.strategy fuel state = .exhausted → Fails ground.program ground.context ground.goal) ∧
-      (∀ gaps, run ground.strategy fuel state ≠ .unknown gaps) ∧
+      (∀ gaps, run ground.strategy fuel state ≠ .abandoned gaps) ∧
+      (∀ obligations, run ground.strategy fuel state ≠ .opened obligations) ∧
       (measure ground state < fuel → ∀ stopped, run ground.strategy fuel state ≠ .interrupted stopped)
   | 0, state, _ => ⟨(fun _ _ ran => by cases ran), (fun ran => by cases ran), (fun _ ran => by cases ran),
-      (fun small => absurd small (Nat.not_lt_zero _))⟩
+      (fun _ ran => by cases ran), (fun small => absurd small (Nat.not_lt_zero _))⟩
   | fuel + 1, state, inv => by
       unfold run
       split
       · rename_i next stepped
         obtain ⟨nextInv, smaller⟩ := step_inv inv stepped
-        obtain ⟨success, exhausted, unknown, total⟩ := run_outcome fuel next nextInv
-        exact ⟨success, exhausted, unknown, fun small => total (by omega)⟩
+        obtain ⟨success, exhausted, abandoned, opened, total⟩ := run_outcome fuel next nextInv
+        exact ⟨success, exhausted, abandoned, opened, fun small => total (by omega)⟩
       · rename_i outcome stepped
         rcases step_finished ground inv stepped with ⟨proof, resume, rfl, facts⟩ | ⟨rfl, failed⟩
         · exact ⟨(fun _ _ same => by cases same; exact facts), (fun same => by cases same),
-            (fun _ same => by cases same), (fun _ _ same => by cases same)⟩
+            (fun _ same => by cases same), (fun _ same => by cases same), (fun _ _ same => by cases same)⟩
         · exact ⟨(fun _ _ same => by cases same), (fun _ => failed), (fun _ same => by cases same),
-            (fun _ _ same => by cases same)⟩
+            (fun _ same => by cases same), (fun _ _ same => by cases same)⟩
 
 /-- Termination: a P0 run from its query finishes within its measure, with a
 success or exhaustion. Bounded fuel below the measure may interrupt it; an
@@ -1301,18 +1303,19 @@ theorem run_total (snapshot : Snapshot) :
       (∃ proof resume, run ground.strategy fuel (ground.init snapshot) = .success proof resume) ∨
         run ground.strategy fuel (ground.init snapshot) = .exhausted := by
   refine ⟨measure ground (ground.init snapshot) + 1, fun fuel enough => ?_⟩
-  obtain ⟨_, _, unknown, total⟩ := run_outcome ground fuel (ground.init snapshot) (ground.init_inv snapshot)
+  obtain ⟨_, _, abandoned, opened, total⟩ := run_outcome ground fuel (ground.init snapshot) (ground.init_inv snapshot)
   cases ran : run ground.strategy fuel (ground.init snapshot) with
   | success proof resume => exact .inl ⟨proof, resume, rfl⟩
   | exhausted => exact .inr rfl
-  | unknown gaps => exact absurd ran (unknown gaps)
+  | opened obligations => exact absurd ran (opened obligations)
+  | abandoned gaps => exact absurd ran (abandoned gaps)
   | interrupted stopped => exact absurd ran (total (by omega) stopped)
 
 /-- Correctness: a successful P0 run proves the original query with a success
 certificate, its tree's NAF nodes hold valid certificates for the exact program
 and context, and it reconstructs `Derives` with the ground failure provider of
 that program and context. An exhausted run has a complete-failure certificate.
-No run is `unknown`, whatever the fuel. -/
+No run is `opened` or `abandoned`, whatever the fuel. -/
 theorem run_correct (snapshot : Snapshot) (fuel : Nat) :
     (∀ proof resume, run ground.strategy fuel (ground.init snapshot) = .success proof resume →
       proof.root = ⟨ground.scope, ground.goal⟩ ∧ proof.tree.obligation = ⟨ground.scope, ground.goal⟩ ∧
@@ -1322,9 +1325,11 @@ theorem run_correct (snapshot : Snapshot) (fuel : Nat) :
         (failureEvidence ground.program ground.context) ∧
       Built ground proof.tree ∧ proof.store = Store.empty ∧ proof.tree.Coherent) ∧
     (run ground.strategy fuel (ground.init snapshot) = .exhausted → Fails ground.program ground.context ground.goal) ∧
-    ∀ gaps, run ground.strategy fuel (ground.init snapshot) ≠ .unknown gaps := by
-  obtain ⟨success, exhausted, unknown, _⟩ := run_outcome ground fuel (ground.init snapshot) (ground.init_inv snapshot)
-  refine ⟨fun proof resume ran => ?_, exhausted, unknown⟩
+    (∀ gaps, run ground.strategy fuel (ground.init snapshot) ≠ .abandoned gaps) ∧
+    ∀ obligations, run ground.strategy fuel (ground.init snapshot) ≠ .opened obligations := by
+  obtain ⟨success, exhausted, abandoned, opened, _⟩ :=
+    run_outcome ground fuel (ground.init snapshot) (ground.init_inv snapshot)
+  refine ⟨fun proof resume ran => ?_, exhausted, abandoned, opened⟩
   obtain ⟨root, proves, proof, treeOk, emptied, coherent⟩ := success proof resume ran
   exact ⟨root, proves, proof, treeOk.2.1, succeeds_toDerives proof, treeOk.2.2, emptied, coherent⟩
 

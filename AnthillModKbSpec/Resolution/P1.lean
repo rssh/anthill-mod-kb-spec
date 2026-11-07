@@ -7,3 +7,6 @@ import AnthillModKbSpec.Resolution.P1.Decision
 import AnthillModKbSpec.Resolution.P1.Export
 import AnthillModKbSpec.Resolution.P1.Import
 import AnthillModKbSpec.Resolution.P1.Negation
+-- The module's answers over the completion: Yes, No, Unknown with checked witnesses,
+-- and Undecided with blockers (S22).
+import AnthillModKbSpec.Resolution.P1.Answer

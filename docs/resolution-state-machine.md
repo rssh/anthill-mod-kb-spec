@@ -5,7 +5,7 @@ Status: design discussion, not an implemented resolver or a completeness theorem
 The [S01 Lean admission contract](lean-admission-contract.md) defines P0, P1, P2, and P3
 admission rules for this same syntax and state machine. P1 extends P0 with certified
 decision procedures; P2 admits budgeted tabled evaluation that may end Undecided;
-P3 admits broader proof strategies with Unknown permitted (see
+P3 admits broader proof strategies that may end Undecided (see
 [fast evaluation](fast-decision-routes.md) for P2).
 
 Current implementation scope: Lean formalization in this repository, reusing
@@ -244,8 +244,8 @@ negation in an arbitrary model. If a core returns Boolean truth using NAF, its
 closure/completion interpretation and adequacy theorem are part of the contract.
 
 S01 defines finite ground acyclic resolution as P0, certified decidable extensions
-as P1, budgeted tabled evaluation as P2, and scoped proof strategies permitting
-Unknown as P3; see the [admission contract](lean-admission-contract.md)
+as P1, budgeted tabled evaluation as P2, and scoped proof strategies that may
+end Undecided as P3; see the [admission contract](lean-admission-contract.md)
 for their requirements and shared execution semantics. Tabled backtracking over
 a safe Prolog-like fragment, which subsumes finite saturation and stratum
 evaluation, is specified in [fast evaluation](fast-decision-routes.md).

@@ -205,17 +205,17 @@ The input stays outside P0 (`diagnose_not_ready`).
 | `p(a)` under `ho_apply(p, a)`; under `ho_apply(q, a)` | `converted` assumption, exported as `hoApplyElim(assumption)`; exhausted |
 | `ho_apply(q, x) :- r(x)`, `r(a)`, goal `q(a)` / `p(a)` | The converted clause node; exhausted |
 | `q(a)`, `ho_apply(P, x) :- q(x)`, goal `r(a)` | `P := r` by the view; the node records the view; with the clauses reversed the run is interrupted (no termination claim) |
-| Answer name `X` in `ho_apply(X, a)` under `q(a)`; the fact `q(a)` instead | `X := q`, converted by introduction; unknown (a predicate choice among clauses is a gap) |
+| Answer name `X` in `ho_apply(X, a)` under `q(a)`; the fact `q(a)` instead | `X := q`, converted by introduction; abandoned (a predicate choice among clauses is a gap) |
 | `∀P. ho_apply(P, a)` under `q(a)`; `q(a)` under a rigid `ho_apply(P, a)` | Exhausted both: rigid predicates are never assigned |
 | `∀P. ho_apply(P, a)` with the fact `q(b)`; `ho_apply(r(b), a)` with `q(a)` | Exhausted: no introduction for a rigid or compound predicate, so no gap |
 | A flexible clause head for a goal applying a rigid name | The S05 match binds the clause name to the rigid name |
 | `compareAtom` on direct, indirect, reference, rigid, mismatched-arity (both sides), compound, falsity, and concrete cases; `compare` on implications and binders | `direct`, `elim`, `intro` ×2, `apart`, `lambda` ×2, `apart` ×4; `elim`, `intro`, `apart`, `direct`, `apart` |
-| A flexible fact for `p(a, b)`; a concrete `ho_apply(q, a)` for it; a flexible head for `false` | Unknown (lambda gap); exhausted; exhausted |
-| `ho_apply(X, a)` under `q(a, b)` or with that fact; local rules `∀P. s → ho_apply(P, a)` and `∀P. s → (r → ho_apply(P, a))` for `p(a, b)` | Unknown: lambda gaps on the goal's side and at any nesting depth |
+| A flexible fact for `p(a, b)`; a concrete `ho_apply(q, a)` for it; a flexible head for `false` | Abandoned (lambda gap); exhausted; exhausted |
+| `ho_apply(X, a)` under `q(a, b)` or with that fact; local rules `∀P. s → ho_apply(P, a)` and `∀P. s → (r → ho_apply(P, a))` for `p(a, b)` | Abandoned: lambda gaps on the goal's side and at any nesting depth |
 | The matcher on `ho_apply(p, a)` against `p(a)` | Still `unsupported` |
 | The induction focus `isNat(a) → reachable(a)` with `headMatch`, on a program with the generated signature clauses and guard symbols | `converted` clause node with `x := a`, `P := reachable`; the guard by the generated fact `isPred1(reachable)`, a signature clause; base by `ho_goal`; the step opened at a fresh name, its hypothesis converted; the focus finished once; the export accepted |
 | The same focus without the choice; the universal `∀x. isNat(x) → reachable(x)` with it | Exhausted; success |
-| A guard of another domain; `r2` registered at arity 2 only; `zero`; `reachable(a, b)` | Exhausted ×3; unknown (lambda gap) |
+| A guard of another domain; `r2` registered at arity 2 only; `zero`; `reachable(a, b)` | Exhausted ×3; abandoned (lambda gap) |
 | A conjunctive head for a conjunctive goal, by `headMatch`; a quantified head for the same universal | Matched as a whole, without conversion; accepted; matched |
 | `headProject` of `ho_apply(P, x)` from `ho_apply(P, x) ∧ q(x)` for `p(a)`; of `p(x)` for `ho_apply(X, a)` | Converted by elimination; converted by introduction, `X := p`; both accepted |
 | `headMatch` of `s → q(a)` for `s → ho_apply(X, a)` and for `s → ho_apply(q, a)` | `X := q`; converted by introduction under the implication; both accepted |

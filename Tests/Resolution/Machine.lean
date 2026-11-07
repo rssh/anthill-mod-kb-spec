@@ -247,7 +247,7 @@ def rebind : Strategy Nat Nat Sym Absent := fun obligation _ =>
   | _ => .unsupported
 
 def rebound := run rebind 50 (query [X] [] (.conj (atom .p [.var X]) (atom .q [.var X])))
-#guard rebound.kind = .unknown
+#guard rebound.kind = .abandoned
 
 -- Binding a name to itself is no change, not an occurs-check failure.
 def selfIdentity := solve (query [] [] (.existsVar 11 (.imp (atom .p [.var 11]) (atom .p [.var 11]))))
@@ -317,26 +317,26 @@ def capture := solve (query [] [] (.imp (atom .p [.var 1]) (.forallVar 10 (atom 
 
 -- An unsupported focus is a gap, not failure: the outcome is unknown.
 def unsupported := solve (query [] [] (.defaultNeg (k .p)))
-#guard unsupported.kind = .unknown
+#guard unsupported.kind = .abandoned
 
 -- A gap on one alternative does not block success on another, and it is still
 -- reported once the remaining alternatives are exhausted.
 def gapThenSuccess := solve (query [] [k .p] (.disj (.defaultNeg (k .q)) (k .p)))
 #guard gapThenSuccess.kind = .success
 #guard rulesOf gapThenSuccess = some [.disjRight, .assumption]
-#guard (resume gapThenSuccess).kind = .unknown
+#guard (resume gapThenSuccess).kind = .abandoned
 
 -- Running out of budget is an interruption.
 #guard (solve (query [] [k .p, k .q] (.conj (k .p) (k .q))) 3).kind = .interrupted
 
 -- Binding a rigid parameter breaks the contract and is recorded as a gap.
 def bindRigid : Strategy Nat Nat Sym Absent := fun _ _ => .candidates [.assumption [(7, k .a)]]
-#guard (run bindRigid 10 (query [] [] (atom .p [.var 7]))).kind = .unknown
+#guard (run bindRigid 10 (query [] [] (atom .p [.var 7]))).kind = .abandoned
 
 -- Opening a name already free in the obligation breaks the contract: every free
 -- name of an obligation is declared, and new names must be new to the store.
 def staleName : Strategy Nat Nat Sym Absent := fun _ _ => .candidates [.existsIntro 0 (atom .p [.var 7]) 7]
-#guard (run staleName 10 (query [] [] (.existsVar 0 (atom .p [.var 7])))).kind = .unknown
+#guard (run staleName 10 (query [] [] (.existsVar 0 (atom .p [.var 7])))).kind = .abandoned
 
 -- A new name may equal a binder name of the obligation: opening ∀10 with 10
 -- itself is accepted, and binders impose nothing.
@@ -353,7 +353,7 @@ def undeclaredGoal : Strategy Nat Nat Sym Absent := fun obligation store =>
   | .conj _ _ => .candidates [.conjIntro (atom .p [.var 9]) (k .q)]
   | _ => logical obligation store
 #guard match run undeclaredGoal 50 (query [] [k .q] (.conj (k .p) (k .q))) with
-  | .unknown [⟨.contract, obligation⟩] => same obligation.goal (.conj (k .p) (k .q))
+  | .abandoned [⟨.contract, obligation, _⟩] => same obligation.goal (.conj (k .p) (k .q))
   | _ => false
 
 def undeclaredAssumption : Strategy Nat Nat Sym Absent := fun obligation store =>
@@ -361,7 +361,7 @@ def undeclaredAssumption : Strategy Nat Nat Sym Absent := fun obligation store =
   | .imp _ conclusion => .candidates [.impIntro (atom .p [.var 9]) conclusion]
   | _ => logical obligation store
 #guard match run undeclaredAssumption 50 (query [] [] (.imp (k .p) (k .p))) with
-  | .unknown [⟨.contract, obligation⟩] => same obligation.goal (.imp (k .p) (k .p))
+  | .abandoned [⟨.contract, obligation, _⟩] => same obligation.goal (.imp (k .p) (k .p))
   | _ => false
 
 -- A premise may mention a rigid name only within its own scope. After ∀x. true
@@ -373,7 +373,7 @@ def staleRigid : Strategy Nat Nat Sym Absent := fun obligation store =>
   | .app .q [], some (stale, _) => .candidates [.disjLeft (atom .p [.var stale])]
   | _, _ => logical obligation store
 #guard match run staleRigid 50 (query [] [] (.conj (.forallVar 10 .truth) (k .q))) with
-  | .unknown [⟨.contract, obligation⟩] => same obligation.goal (k .q)
+  | .abandoned [⟨.contract, obligation, _⟩] => same obligation.goal (k .q)
   | _ => false
 
 -- Nor through a flexible name created in the closed scope: inside ∀x the
@@ -387,7 +387,7 @@ def staleWitness : Strategy Nat Nat Sym Absent := fun obligation store =>
   | _, _ => logical obligation store
 #guard match run staleWitness 50
     (query [] [] (.conj (.forallVar 10 (.existsVar 11 (.equal (.var 11) (.var 10)))) (k .q))) with
-  | .unknown [⟨.contract, obligation⟩] => same obligation.goal (k .q)
+  | .abandoned [⟨.contract, obligation, _⟩] => same obligation.goal (k .q)
   | _ => false
 
 -- A premise opens only rigid names the candidate declares as new: a commit
@@ -404,7 +404,7 @@ def siblingRigid : Strategy Nat Nat Sym Absent := fun obligation store =>
   | .app .q [] => .candidates [.existsElim 0 (atom .p [.var 0, .var 7]) 7 obligation.goal]
   | _ => logical obligation store
 #guard match run siblingRigid 50 (query [] [] (k .q)) with
-  | .unknown [⟨.contract, obligation⟩] => same obligation.goal (k .q)
+  | .abandoned [⟨.contract, obligation, _⟩] => same obligation.goal (k .q)
   | _ => false
 
 /-! ### Closed-world evidence is retained -/

@@ -36,3 +36,9 @@ Acceptance:
 Validation: lake build and focused Lean tests/examples appropriate to the changed definitions and proofs.
 Design references: docs/fast-decision-routes.md, docs/machine-state.md, docs/machine-delay.md, docs/machine-negation.md.
 
+## Changes
+
+### 2026-11-07T16:32:59Z — feedback — user
+
+From S22 (2026-11-07, decided with the user): S22 checks Unknown witnesses, and builds their models, only for ground acyclic programs with P0 bodies, open markers, and denials, for queries without assumptions (Open.check, Open.check_model in Resolution/P0/Open.lean, on the constructor-key model of Models/KeyModel.lean). S24 extends the witness check to its tabled fragment: non-ground clauses, positive cycles (least and greatest fixpoints as the two witnesses), loops through NAF, and contexts. Outside the covered class, an opened run is Undecided naming the open atoms (Setup.answer in Resolution/P1/Answer.lean). Doing this in S24 rather than S22 is only a sequencing choice: nothing is built on top before the whole current language is.
+

@@ -3,3 +3,5 @@
 -- shared machine.
 import AnthillModKbSpec.Resolution.P3.Principle
 import AnthillModKbSpec.Resolution.P3.Induction
+-- The induction path's answers: needs as blockers before anything runs (S22).
+import AnthillModKbSpec.Resolution.P3.Answer

@@ -222,7 +222,7 @@ The run invariant `P0.Inv` has three parts besides `State.Valid`:
 | Every transition keeps the invariant and decreases the measure | `step_inv` |
 | A ranked ground goal has a success or a failure certificate | `GroundSearch.decided` |
 | A run from the plan's query finishes within its measure, with success or exhaustion | `P0.run_total`, `Machine.run_total_of_p0` |
-| Success proves the original goal: a success certificate, valid certificates in every NAF node, and `Derives` with the exact ground failure provider. Exhaustion gives a complete-failure certificate. No run is `unknown` | `P0.run_correct`, `Machine.run_correct_of_p0` |
+| Success proves the original goal: a success certificate, valid certificates in every NAF node, and `Derives` with the exact ground failure provider. Exhaustion gives a complete-failure certificate. No run is `opened` or `abandoned` | `P0.run_correct`, `Machine.run_correct_of_p0` |
 | In a model completed for the program and context with complement NAF, success makes the goal true and exhaustion false | `P0.run_semantic` |
 | Every state a plan's run reaches records no gap and gets candidates or ground NAF: never a missing capability | `ready_no_missing_capability` |
 | Every node of a successful run's tree is a P0 rule application, the final store is empty, and the tree is coherent; its export is checked by S08 | `P0.run_correct` (`Built`), [`Plan.exportProof_checked`](proof-checking.md#exporting-machine-proofs) |
@@ -314,11 +314,11 @@ formulas do not, since lowering takes only the naming
 | A forged signature clause | `invalid (signatureClause 0)` |
 | `w :- isNat(succ(zero))` without the generated clauses; with them | `invalid (missingSignatureClause 0)`; Ready |
 | `withNegation` over `positive`: `naf q` under an assumed `false` or `naf q`, with the fact `q` | Success: exact candidates come first |
-| `∃X. (p(X) → naf p(a))` | Unknown: the NAF is not ground, a gap rather than an exhaustion |
-| `∀X. naf p(X)` with `p(a)`; `∀X. (p(X) → naf q(a))` with `q(a) :- p(c)`; `naf p(X)`, X a query parameter | Unknown: a rigid name in the operand or an assumption is not ground |
-| `r(X) ∧ naf q(X)` with `r(a)`, X an answer name or `∃X`; with `q(a)` too; `naf q(X) ∧ r(X)` | Success; exhausted; unknown, since X is unbound at the NAF |
-| `naf q` with `q :- isNat(Y), r(Y)`, `r(zero)`, `isNat(zero)`, isNat a guard | Unknown: the guard delayed inside the operand, so the NAF is a gap although q is proved |
-| The same with a failing `s` after `r(Y)`; without the guard | Unknown although q is exhausted; decided (success) without the delay |
+| `∃X. (p(X) → naf p(a))` | Abandoned: the NAF is not ground, a gap rather than an exhaustion |
+| `∀X. naf p(X)` with `p(a)`; `∀X. (p(X) → naf q(a))` with `q(a) :- p(c)`; `naf p(X)`, X a query parameter | Abandoned: a rigid name in the operand or an assumption is not ground |
+| `r(X) ∧ naf q(X)` with `r(a)`, X an answer name or `∃X`; with `q(a)` too; `naf q(X) ∧ r(X)` | Success; exhausted; abandoned, since X is unbound at the NAF |
+| `naf q` with `q :- isNat(Y), r(Y)`, `r(zero)`, `isNat(zero)`, isNat a guard | Abandoned: the guard delayed inside the operand, so the NAF is a gap although q is proved |
+| The same with a failing `s` after `r(Y)`; without the guard | Abandoned although q is exhausted; decided (success) without the delay |
 
 ## Limitations
 

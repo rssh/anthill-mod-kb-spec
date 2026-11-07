@@ -182,7 +182,7 @@ def flexibleGoal := solve [] (query [0] [atom .q [k .a]] (applyP (x 0) [k .a]))
 #guard exportedTags flexibleGoal = some [.hoApplyIntro, .assumption]
 -- A direct clause is never matched against a flexible predicate: choosing among
 -- the program's predicates needs an admitted candidate set, so it is a gap.
-#guard (solve [fact (atom .q [k .a])] (query [0] [] (applyP (x 0) [k .a]))).kind = .unknown
+#guard (solve [fact (atom .q [k .a])] (query [0] [] (applyP (x 0) [k .a]))).kind = .abandoned
 
 /-! ### Rigid predicates are never assigned -/
 
@@ -223,7 +223,7 @@ def binds : Nat → Bool := (· == 1)
 #guard compare .ha binds binds (.forallVar 7 (atom .p [x 7])) (.existsVar 7 (atom .p [x 7])) = .apart
 
 -- In a run, a lambda comparison is a gap: unknown, never exhausted.
-#guard (solve [fact (applyP (x 1) [k .a])] (query [] [] (atom .p [k .a, k .b]))).kind = .unknown
+#guard (solve [fact (applyP (x 1) [k .a])] (query [] [] (atom .p [k .a, k .b]))).kind = .abandoned
 -- A concrete reference of another arity is a plain miss.
 #guard (solve [fact (applyP (k .q) [k .a])] (query [] [] (atom .p [k .a, k .b]))).kind = .exhausted
 -- A flexible head never concludes falsity: contradiction search stays exhaustive.
@@ -234,13 +234,13 @@ def binds : Nat → Bool := (· == 1)
 #guard (solve [fact (atom .q [k .a])] (query [] [] (applyP (atom .r [k .b]) [k .a]))).kind = .exhausted
 -- A flexible goal predicate against a call of another arity: a lambda gap, as in
 -- the reverse direction.
-#guard (solve [] (query [0] [atom .q [k .a, k .b]] (applyP (x 0) [k .a]))).kind = .unknown
-#guard (solve [fact (atom .q [k .a, k .b])] (query [0] [] (applyP (x 0) [k .a]))).kind = .unknown
+#guard (solve [] (query [0] [atom .q [k .a, k .b]] (applyP (x 0) [k .a]))).kind = .abandoned
+#guard (solve [fact (atom .q [k .a, k .b])] (query [0] [] (applyP (x 0) [k .a]))).kind = .abandoned
 -- The same gap however deep the local rule's conclusion is nested.
 #guard (run (positive .ha (plain [])) 2000 (query [] [.forallVar 1 (.imp (k .s) (applyP (x 1) [k .a]))]
-  (atom .p [k .a, k .b]))).kind = .unknown
+  (atom .p [k .a, k .b]))).kind = .abandoned
 #guard (run (positive .ha (plain [])) 2000 (query [] [.forallVar 1 (.imp (k .s) (.imp (k .r) (applyP (x 1) [k .a])))]
-  (atom .p [k .a, k .b]))).kind = .unknown
+  (atom .p [k .a, k .b]))).kind = .abandoned
 
 -- The matcher itself is unchanged: ho_apply against a direct call is unsupported.
 #guard match (Store.empty : Store Nat Nat Sym).unify ⟨[], []⟩ .ha (applyP (k .p) [k .a]) (atom .p [k .a]) with
@@ -377,7 +377,7 @@ def reachableFact : Clause := Elaboration.predicateFact registered.naming ⟨.re
 #guard (solveKb (query [] [] (.imp (isNat (x 9)) (atom .zero [x 9])))).kind = .exhausted
 -- Arity mismatch: only a lambda answer could make the unary head conclude
 -- reachable(a, b): unsupported, a gap.
-#guard (solveKb (query [] [] (.imp (isNat (x 9)) (atom .reachable [x 9, k .b])))).kind = .unknown
+#guard (solveKb (query [] [] (.imp (isNat (x 9)) (atom .reachable [x 9, k .b])))).kind = .abandoned
 
 -- Other compound heads are matched as whole formulas, without conversion.
 def conjClause : Clause := rule (.conj (atom .p [x 1]) (atom .q [x 1])) [atom .r [x 1]]

@@ -45,7 +45,7 @@ def answerIs (outcome : Run) (name : Nat) (expected : T) : Bool :=
   | none => false
 
 def floundered : Run → Bool
-  | .unknown gaps => gaps.any (·.reason == .floundered)
+  | .abandoned gaps => gaps.any (·.reason == .floundered)
   | _ => false
 
 mutual
@@ -232,7 +232,7 @@ def call (argument : T) : T := .dictionaryCall (k .c) [] .s [argument]
 -- A curried rule whose final conclusion fits the goal is a gap: this slice
 -- eliminates one implication.
 #guard (solve (plain []) (query [] [.forallVar 1 (.imp (atom .q [.var 1]) (.imp (atom .r [.var 1]) (atom .p [.var 1]))),
-  atom .q [k .c], atom .r [k .c]] (atom .p [k .c]))).kind = .unknown
+  atom .q [k .c], atom .r [k .c]] (atom .p [k .c]))).kind = .abandoned
 
 -- The rule's own instance with a parameter equal to its inner binder name: an
 -- exact step whose premise reading would rename that binder is not offered, so
@@ -244,9 +244,9 @@ def call (argument : T) : T := .dictionaryCall (k .c) [] .s [argument]
 -- is a gap, not a miss: a rule concluding a universal, a conjunctive
 -- assumption, a rule whose conclusion is its own binder.
 #guard (solve (plain []) (query [] [.forallVar 1 (.imp (atom .q [.var 1]) (.forallVar 2 (atom .p [.var 1, .var 2]))),
-  atom .q [k .a]] (atom .p [k .a, k .b]))).kind = .unknown
-#guard (solve (plain []) (query [] [.conj (k .p) (k .q)] (k .p))).kind = .unknown
-#guard (solve (plain []) (query [] [.forallVar 1 (.var 1)] (atom .p [k .a]))).kind = .unknown
+  atom .q [k .a]] (atom .p [k .a, k .b]))).kind = .abandoned
+#guard (solve (plain []) (query [] [.conj (k .p) (k .q)] (k .p))).kind = .abandoned
+#guard (solve (plain []) (query [] [.forallVar 1 (.var 1)] (atom .p [k .a]))).kind = .abandoned
 -- An assumed false proves any goal (ex falso).
 #guard rulesOf (solve (plain []) (query [] [.falsity] (atom .p [k .a]))) = some [.falsityElim, .assumption]
 #guard rulesOf (solve (plain []) (query [] [.falsity] (.conj (k .p) (k .q)))) = some [.falsityElim, .assumption]
@@ -262,8 +262,8 @@ def hiddenHead : Program Nat Nat Sym := plain [fact (atom .s [atom .p [k .c]])]
   some [.conjIntro, .clause, .truth, .impElim, .forallElim, .assumption, .assumption]
 def hidden (value : T) : Program Nat Nat Sym := plain [fact (atom .r [value])]
 def hiddenQuery : State Nat Nat Sym Unit Nat := query [0] [.var 0, atom .q [k .c]] (.conj (atom .r [.var 0]) (atom .p [k .c]))
-#guard (solve (hidden (.forallVar 1 (.imp (atom .q [.var 1]) (atom .p [.var 1])))) hiddenQuery).kind = .unknown
-#guard (solve (hidden (.conj (atom .p [k .c]) (atom .q [k .c]))) hiddenQuery).kind = .unknown
+#guard (solve (hidden (.forallVar 1 (.imp (atom .q [.var 1]) (atom .p [.var 1])))) hiddenQuery).kind = .abandoned
+#guard (solve (hidden (.conj (atom .p [k .c]) (atom .q [k .c]))) hiddenQuery).kind = .abandoned
 #guard rulesOf (solve (hidden (atom .p [k .c])) hiddenQuery) = some [.conjIntro, .clause, .truth, .assumption]
 #guard (resume (hidden (atom .p [k .c])) (solve (hidden (atom .p [k .c])) hiddenQuery)).kind = .exhausted
 
@@ -433,7 +433,7 @@ def loopFirst := solve loopProgram (query [] [] (k .p))
 -- unknown, never exhausted.
 def withCall : Program Nat Nat Sym := plain [fact (atom .p [k .a]), fact (atom .p [call (k .b)])]
 #guard (solve withCall (query [] [] (atom .p [k .a]))).kind = .success
-#guard (resume withCall (solve withCall (query [] [] (atom .p [k .a])))).kind = .unknown
+#guard (resume withCall (solve withCall (query [] [] (atom .p [k .a])))).kind = .abandoned
 
 -- ho_apply against a direct application is converted (S11): a ho_apply goal,
 -- once its predicate is bound, is normalized to the direct goal (ho_goal), and
@@ -451,7 +451,7 @@ def flexibleHead : Program Nat Nat Sym := plain [fact (atom .p [k .a]), fact (.h
 -- An alpha-variant match is an unsupported capability: a gap, not failure. A
 -- plain clash is a miss.
 #guard (solve (plain [fact (atom .p [.forallVar 1 (atom .q [.var 1])])]) (query [] []
-  (atom .p [.forallVar 2 (atom .q [.var 2])]))).kind = .unknown
+  (atom .p [.forallVar 2 (atom .q [.var 2])]))).kind = .abandoned
 #guard (solve (plain [fact (atom .p [k .b])]) (query [] [] (atom .p [k .a]))).kind = .exhausted
 
 -- Falsity is an ordinary goal: an assumed false, a local rule concluding false
@@ -467,7 +467,7 @@ def denial : Program Nat Nat Sym :=
 #guard (solve (plain []) (query [] [] .falsity)).kind = .exhausted
 
 -- NAF is outside this slice: a gap.
-#guard (solve (plain []) (query [] [] (.defaultNeg (k .p)))).kind = .unknown
+#guard (solve (plain []) (query [] [] (.defaultNeg (k .p)))).kind = .abandoned
 
 /-! ### Reconstruction -/
 

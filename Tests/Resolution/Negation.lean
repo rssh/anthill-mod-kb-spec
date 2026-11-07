@@ -143,10 +143,11 @@ def invalidAt (clauses : List Clause) : Option Nat :=
 
 abbrev Run := Outcome Nat Nat Sym T Unit
 
-/-- The evidence-first NAF strategy over the completion of `clauses`. -/
+/-- The evidence-first NAF strategy over the completion of `clauses`, with
+`unknown` the open marker. -/
 def strategy (clauses : List Clause) (formulas : List T := []) (select : Selection Nat Nat Sym := fun _ _ _ _ => []) :
     Strategy Nat Nat Sym T :=
-  nafByRefutation vocab .ha (completionOf clauses formulas) (fun _ => false) select 200
+  nafByRefutation vocab .ha (completionOf clauses formulas) (fun _ => false) select 200 (· == .unknown)
 
 def runOf (clauses : List Clause) (formulas : List T) (flexibles : List Nat) (context : List T) (goal : T) : Run :=
   run (strategy clauses formulas) 2000 (State.init () flexibles context goal)
@@ -176,7 +177,7 @@ def rootRule (outcome : Run) : Option RuleId :=
 #guard (runOf [] [atom .p [x 0]] [] [naf (atom .p [x 5])] (naf (atom .p [x 5]))).kind = .success
 -- A fact p(one) defeats the universal negative: p(a) is not refuted for a
 -- rigid a, since a may be one.
-#guard (runOf pOne [] [] [] (.forallVar 1 (naf (atom .p [x 1])))).kind = .unknown
+#guard (runOf pOne [] [] [] (.forallVar 1 (naf (atom .p [x 1])))).kind = .abandoned
 -- ... but naf p(two) is refuted by the clash of two with one.
 #guard checkedRun pOne [atom .p [k .two]] [] (naf (atom .p [k .two])) = some .accept
 
@@ -186,7 +187,7 @@ def rootRule (outcome : Run) : Option RuleId :=
 -- never refuted, and a tree through a closing clause for p does not check.
 def compound : List Clause := [.definite (.conj (atom .p [k .one]) (atom .q [k .one])) []]
 #guard (signatureOf compound).predicates.isEmpty
-#guard (runOf compound [] [] [] (naf (atom .p [k .one]))).kind = .unknown
+#guard (runOf compound [] [] [] (naf (atom .p [k .one]))).kind = .abandoned
 #guard verdict compound [] [] (naf (atom .p [k .one])) (nafNode (atom .p [k .one]) (refuteNoP (k .one))) = .reject
 -- A ho_apply head names the predicate it concludes: p is left open. A head
 -- applying a predicate variable may conclude any predicate: none is closed.
@@ -197,11 +198,11 @@ def compound : List Clause := [.definite (.conj (atom .p [k .one]) (atom .q [k .
 #guard (signatureOf [.definite (x 9) [], fact (atom .p [k .one])]).predicates.isEmpty
 #guard (signatureOf [.definite (.conj (x 9) (atom .q [k .one])) [], fact (atom .p [k .one])]).predicates.isEmpty
 #guard (runOf [.definite (x 9) [], fact (atom .p [k .one])] [naf (atom .p [k .two])] [] []
-  (naf (atom .p [k .two]))).kind = .unknown
+  (naf (atom .p [k .two]))).kind = .abandoned
 -- ho_apply itself is never closed: ho_apply(p, one) holds by p(one).
 def applied : T := atom .ha [k .p, k .one]
 #guard !((signatureOf pOne [applied]).predicates.any (·.1 == .ha))
-#guard (runOf pOne [applied] [] [] (naf applied)).kind = .unknown
+#guard (runOf pOne [applied] [] [] (naf applied)).kind = .abandoned
 -- plus is a defined operation, not a declared constructor: plus(zero) = zero
 -- adds no clash for it. Declared free, it would: the completion then
 -- contradicts the equation and refutes anything.
@@ -242,7 +243,7 @@ def nafX : T := naf (atom .p [x 3])
 #guard checkedAnswer [] [atom .p [x 0]] [3] [] nafX = some .accept
 #guard (answerOf [] [atom .p [x 0]] [3] nafX 3).map (identical (x 3)) = some true
 -- With p(one) the generic refutation fails, X may be one: a gap.
-#guard (runOf pOne [] [3] [] nafX).kind = .unknown
+#guard (runOf pOne [] [3] [] nafX).kind = .abandoned
 -- Delay first: in naf p(X) ∧ r(X) with r(two), r binds X to two, the NAF wakes
 -- and refutes p(two). Refuting at once, generically, would have failed.
 def nafThenR : T := .conj nafX (atom .r [x 3])
@@ -250,9 +251,26 @@ def rTwo : List Clause := pOne ++ [fact (atom .r [k .two])]
 #guard checkedAnswer rTwo [] [3] [] nafThenR = some .accept
 #guard (answerOf rTwo [] [3] nafThenR 3).map (identical (k .two)) = some true
 -- With r(one) the woken NAF reads naf p(one): a gap.
-#guard (runOf (pOne ++ [fact (atom .r [k .one])]) [] [3] [] nafThenR).kind = .unknown
--- An open predicate: q :- unknown is never refuted.
-#guard (runOf openQ [] [] [] (naf (atom .q [x 5]))).kind = .unknown
+#guard (runOf (pOne ++ [fact (atom .r [k .one])]) [] [3] [] nafThenR).kind = .abandoned
+-- An open predicate: naf q(5) meets q's marked case `q(X) :- unknown`. It is
+-- reported opened, not abandoned as a gap, and no refutation is searched (S22).
+#guard (runOf openQ [] [] [] (naf (atom .q [x 5]))).kind = .opened
+#guard match runOf openQ [] [] [] (naf (atom .q [x 5])) with
+  | .opened [gap] => identical gap.obligation.goal (naf (atom .q [x 5]))
+  | _ => false
+-- The open atom it meets is the marker atom.
+#guard identicalArgs (openAtomsOf (· == Sym.unknown) (fun _ _ => true) openQ (naf (atom .q [x 5]))) [k .unknown]
+-- The marker itself as a goal is open too; a clause body reaching it as well.
+#guard (runOf openQ [] [] [] (atom .q [k .one])).kind = .opened
+-- Without the marker, the same NAF is a gap, as before S22.
+#guard (run (nafByRefutation vocab .ha (completionOf openQ) (fun _ => false) (fun _ _ _ _ => []) 200) 2000
+  (State.init () [] [] (naf (atom .q [x 5])))).kind = .abandoned
+-- A head that cannot match the operand covers nothing: q(one) :- unknown says
+-- nothing about q(two), which is refuted by the clash of two and one.
+#guard (openAtomsOf (· == Sym.unknown) (fun _ _ => true) [.definite (atom .q [k .one]) [k .unknown]]
+  (atom .q [k .two])).isEmpty
+#guard (runOf [.definite (atom .q [k .one]) [k .unknown]] [atom .q [k .two]] [] [] (naf (atom .q [k .two]))).kind
+  = .success
 
 /-! ### Guarded universal negatives and positive witnesses first -/
 
@@ -279,7 +297,7 @@ def witnessRun (clauses : List Clause) (goal : T) : Run :=
 -- goal is only a gap: the rigid x may be one.
 def overOne : List Clause := pOne ++ [fact (atom .r [k .one])]
 #guard (witnessRun overOne guarded).kind = .exhausted
-#guard (runOf overOne [] [] [] guarded).kind = .unknown
+#guard (runOf overOne [] [] [] guarded).kind = .abandoned
 -- The same for the unguarded ∀x. naf p(x).
 #guard (witnessRun pOne (.forallVar 1 (naf (atom .p [x 1])))).kind = .exhausted
 -- No witness over r = {two}: the negative is opened and refuted as before.
@@ -312,7 +330,7 @@ def nafSuccOne : T := naf (atom .p [atom .succ [k .one]])
 def pSuccOne : List Clause := [fact (atom .p [atom .succ [k .one]])]
 def succTwo : T := atom .succ [k .two]
 def nafSuccTwo : T := naf (atom .p [succTwo])
-#guard (runOf pSuccOne [nafSuccTwo] [] [] nafSuccTwo).kind = .unknown
+#guard (runOf pSuccOne [nafSuccTwo] [] [] nafSuccTwo).kind = .abandoned
 -- ... but a supplied refutation using the injectivity clause checks.
 def injSucc : Clause := (injective Sym.succ 1).headD (fact (k .p))
 def injNames : Clause → List Nat
@@ -335,7 +353,7 @@ def refuteByInjection : P :=
 -- A refutation that needs induction, p(succ(X)) :- p(X) with no base case,
 -- unfolds without end: the bounded run finds none, and the NAF is a gap.
 def pRec : List Clause := [.definite (atom .p [atom .succ [x 0]]) [atom .p [x 0]]]
-#guard (runOf pRec [] [] [] nafP5).kind = .unknown
+#guard (runOf pRec [] [] [] nafP5).kind = .abandoned
 
 -- Unrelated disjunctions are split only when no other step is left: with five
 -- assumed q(i) ∨ r(i), false :- p(x) still refutes p(5) at once.
@@ -382,7 +400,7 @@ def registered (symbols : List Sym) : List Clause := symbols.map fun symbol => f
 def nafQ : T := naf (atom .registry [k .q])
 #guard checkIn (snapshotOf (registered [.p]) [nafQ]) [] nafQ (exported (registered [.p]) [nafQ] [] nafQ) = some .accept
 #guard checkIn (snapshotOf (registered [.p, .q]) [nafQ]) [] nafQ (exported (registered [.p]) [nafQ] [] nafQ) = some .reject
-#guard (runOf (registered [.p, .q]) [nafQ] [] [] nafQ).kind = .unknown
+#guard (runOf (registered [.p, .q]) [nafQ] [] [] nafQ).kind = .abandoned
 -- Adding a domain member: the guarded refutation over r = {two} is rejected
 -- over r = {two, zero}, whose completion of r has another case; a new run
 -- refutes again, since zero is not one either.

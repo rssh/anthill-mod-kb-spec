@@ -7,3 +7,5 @@ import AnthillModKbSpec.Resolution.P0.Witness
 import AnthillModKbSpec.Resolution.P0.Strategy
 import AnthillModKbSpec.Resolution.P0.Run
 import AnthillModKbSpec.Resolution.P0.Admission
+-- Witnesses for open atoms in ground programs and their models (S22).
+import AnthillModKbSpec.Resolution.P0.Open

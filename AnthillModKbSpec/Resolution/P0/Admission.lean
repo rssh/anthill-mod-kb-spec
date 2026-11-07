@@ -1311,8 +1311,8 @@ def Plan.answer (plan : Plan Domain Variable Literal Symbol hoApplySymbol) : Boo
   match P0.runToEnd plan.ground (plan.ground.init plan.input) (plan.ground.init_inv plan.input) with
   | .success _ _ => true
   | .exhausted => false
-  -- A run to the finish is never unknown or interrupted (`P0.runToEnd_finished`).
-  | .unknown _ | .interrupted _ => false
+  -- A run to the finish is never opened, abandoned, or interrupted (`P0.runToEnd_finished`).
+  | .opened _ | .abandoned _ | .interrupted _ => false
 
 /-- The answer is `true` with a success certificate or `false` with a
 complete-failure certificate. -/
@@ -1439,7 +1439,7 @@ variable {Domain Variable Literal Symbol : Type} [DecidableEq Variable] [Decidab
   {plan : Plan Domain Variable Literal Symbol hoApplySymbol}
 
 /-- `Machine.run_total_of_p0`: the run of a Ready plan finishes within a bound,
-with a success or an exhaustion; it is never `unknown`. Running it with less
+with a success or an exhaustion; it is never `opened` or `abandoned`. Running it with less
 fuel may interrupt it, which is no result about the goal. -/
 theorem run_total_of_p0 (plan : Plan Domain Variable Literal Symbol hoApplySymbol) :
     ∃ bound, ∀ fuel, bound ≤ fuel →
@@ -1452,7 +1452,7 @@ program and the input's context; the tree's NAF nodes hold valid certificates
 for exactly that program and context; the goal is derivable with the ground
 failure provider of that program and context; and every node is a rule
 application of the run (`P0.Built`), which S08's export checks. Exhaustion
-gives a complete-failure certificate. No run is `unknown`. -/
+gives a complete-failure certificate. No run is `opened` or `abandoned`. -/
 theorem run_correct_of_p0 (ready : check hoApplySymbol input = .ready plan) (fuel : Nat) :
     (∀ proof resume, plan.run fuel = .success proof resume →
       proof.snapshot = input ∧ Succeeds plan.ground.program plan.ground.context input.goal ∧
@@ -1461,11 +1461,11 @@ theorem run_correct_of_p0 (ready : check hoApplySymbol input = .ready plan) (fue
         (failureEvidence plan.ground.program plan.ground.context) ∧
       P0.Built plan.ground proof.tree) ∧
     (plan.run fuel = .exhausted → Fails plan.ground.program plan.ground.context input.goal) ∧
-    ∀ gaps, plan.run fuel ≠ .unknown gaps := by
+    (∀ gaps, plan.run fuel ≠ .abandoned gaps) ∧ ∀ obligations, plan.run fuel ≠ .opened obligations := by
   have admitted := check_ready_sound ready
-  obtain ⟨success, exhausted, unknown⟩ := P0.run_correct plan.ground plan.input fuel
+  obtain ⟨success, exhausted, abandoned, opened⟩ := P0.run_correct plan.ground plan.input fuel
   rw [admitted.admits.goal] at success exhausted
-  refine ⟨fun proof resume ran => ?_, exhausted, unknown⟩
+  refine ⟨fun proof resume ran => ?_, exhausted, abandoned, opened⟩
   obtain ⟨_, _, proved, valid, derives, built, _⟩ := success proof resume ran
   refine ⟨?_, proved, valid, admitted.admits.context ▸ derives, built⟩
   have snapshotEq : proof.snapshot = plan.input := by

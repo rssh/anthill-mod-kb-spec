@@ -127,6 +127,10 @@ def needsOf : Induction.Result Domain String Unit Symbol .hoApply → List Strin
   | _ => false
 -- A predicate outside the unary range: zero is no registered reference.
 #guard needsOf (admitted (universal .zero)) = ["registration"]
+-- As an answer (S22), the blocker names the predicate to register.
+#guard match Induction.answer .hoApply (input (universal .zero)) 2000 with
+  | .ok (.undecided [⟨.site .goal, [], .app .zero [], .construct .registration⟩]) => true
+  | _ => false
 -- A goal that is not a lowered guarded universal over a declared domain.
 #guard needsOf (admitted (.forallVar "x" (.imp (isNat (.var "x")) (reachable (.var "x"))))) = ["shape"]
 #guard needsOf (admitted (reachable zero)) = ["shape"]
@@ -146,6 +150,11 @@ def negated : HornClause String Unit Symbol := .definite (reachable (succ (.var 
   [.defaultNeg (even (.var "x")), reachable (.var "x")]
 #guard needsOf (admitted (universal .reachable) [reachableZero, negated, principleClause]) =
   ["clause AnthillModKbSpec.Admission.Site.body 1 0 [] negation"]
+-- As an answer (S22): an Undecided blocker at the same site and path, before
+-- anything runs.
+#guard match Induction.answer .hoApply (input (universal .reachable) [reachableZero, negated, principleClause]) 2000 with
+  | .ok (.undecided [⟨.site (.body 1 0), [], _, .construct .negation⟩]) => true
+  | _ => false
 -- A KB clause concluding the guard P_1: the principle's premises ask it, so it
 -- is a dependency, though no clause body mentions it.
 def guardDefinition : HornClause String Unit Symbol := .definite (.app (.isPred 1) [.app .even []])
@@ -585,5 +594,59 @@ def withDall : List Clause := [.definite (atom .reachable [k .zero]) [], dallSte
 -- `reachable` no Bool cases.
 #guard (outcomeOf (universal .list .defined)).map (·.kind) = some .exhausted
 #guard (outcomeOf (universal .bool .reachable)).map (·.kind) = some .exhausted
+
+/-! ### Answers (S22) -/
+
+open Answers in
+def blockersOf : Except Admission.Diagnostic (Admission.P0Answer Dom Nat Nat Sym) → List (Blocker Nat Nat Sym)
+  | .ok (.undecided blockers) => blockers
+  | _ => []
+
+-- P0 does not admit the guarded universal over Nat: Undecided before anything
+-- runs: its first blocker is the goal, lacking a proof; the others are the
+-- program's clauses P0 cannot run (templates lack a mode, principles are
+-- compound heads).
+#guard match blockersOf (Admission.answer (fun _ => false) .ha (input (universal .nat .reachable))) with
+  | ⟨.site .goal, [], _, .proof⟩ :: _ => true
+  | _ => false
+-- Yes once a checked proof is supplied: the exported induction proof, accepted
+-- by S08.
+#guard match encoded (universal .nat .reachable) with
+  | some term =>
+      match (Answers.Answer.undecided (blockersOf (Admission.answer (fun _ => false) .ha (input (universal .nat .reachable)))) :
+          Answers.Answer T Unit Unit (Answers.Blocker Nat Nat Sym)).supplyProof
+          (fun term => decide (P1.checkProof vocab checker [] [] (universal .nat .reachable) term = .accept)) term with
+      | .yes _ => true
+      | _ => false
+  | none => false
+-- A tampered proof is not accepted: still Undecided.
+#guard match encoded (universal .nat .reachable) with
+  | some (.app symbol (_ :: rest)) =>
+      match (Answers.Answer.undecided [] : Answers.Answer T Unit Unit Unit).supplyProof
+          (fun term => decide (P1.checkProof vocab checker [] [] (universal .nat .reachable) term = .accept))
+          (.app symbol (.truth :: rest)) with
+      | .undecided _ => true
+      | _ => false
+  | _ => false
+
+def inductionKind (goal : T) (clauses : List Clause := kbClauses) (fuel : Nat := 2000) : String :=
+  match Induction.answer .ha (input goal clauses) fuel with
+  | .ok (.yes _) => "yes"
+  | .ok (.undecided blockers) => s!"undecided {blockers.length}"
+  | .ok _ => "other"
+  | .error _ => "invalid"
+
+-- The induction path proves the universal: Yes.
+#guard inductionKind (universal .nat .reachable) = "yes"
+-- Without its principle, Undecided before anything runs: the goal lacks a proof.
+#guard match Induction.answer .ha (input (universal .nat .reachable) (kbClauses.filter (· ≠ principleOf .nat))) 2000 with
+  | .ok (.undecided [⟨.site .goal, [], _, .proof⟩]) => true
+  | _ => false
+-- Interrupted by its fuel: Undecided, lacking a termination argument.
+#guard match Induction.answer .ha (input (universal .nat .reachable)) 3 with
+  | .ok (.undecided [⟨.reached _ [], [], _, .termination⟩]) => true
+  | _ => false
+-- A property that fails a case is not proved: Undecided, never No or Unknown.
+#guard inductionKind (universal .list .defined) = "undecided 1"
 
 end InductionEncodedTests

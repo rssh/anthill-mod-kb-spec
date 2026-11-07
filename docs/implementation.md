@@ -13,8 +13,8 @@ proof-search actions that are not yet classified as core operations.
 The [implementation roadmap](resolution-implementation-plan.md) tracks the ordered
 work as dependency-linked `anthill-todo` tickets under the `resolution-machine` tag.
 The [S01 contract](lean-admission-contract.md) defines P0, decidable extensions P1,
-budgeted tabled evaluation P2, and proof strategies P3 (which may return
-Unknown), using one syntax and state machine. It specifies result meanings and the Lean definitions and proofs to implement.
+budgeted tabled evaluation P2, and proof strategies P3 (which may end
+Undecided), using one syntax and state machine. It specifies result meanings and the Lean definitions and proofs to implement.
 
 The [S02 admission signature](admission-signature.md) implements typeless data and predicate
 reference ranges over the existing carrier, with checked arity declarations,
@@ -28,7 +28,7 @@ clauses, so lowered formulas do not depend on the predicate registry.
 obligations, AND frames and OR choice points with rollback, an answer store whose
 flexible names carry scope dependencies, proof trees recording rule parameters
 for later export, and outcomes that keep success separate from exhaustion and
-unknown results. [S05 matching](machine-matching.md) adds instantiation with
+abandoned or interrupted runs. [S05 matching](machine-matching.md) adds instantiation with
 alpha-renaming, clause freshening that keeps captured parameters, reading of
 pending goals through committed answers, and a matcher that separates a
 mismatch from a capability the profile does not admit. S19 makes

@@ -50,6 +50,7 @@ inductive Response (Variable Literal Symbol Certificate : Type) where
   | incomplete (alternatives : List (Expansion Variable Literal Symbol Certificate))
   | delay (names : List Variable)
   | negate (certificate : Certificate)
+  | opened
 
 /-- The node a NAF barrier builds once its operand's search is exhausted: no
 premises, the certificate of the operand's complete failure. -/
@@ -60,7 +61,7 @@ def Expansion.negation (certificate : Certificate) : Expansion Variable Literal 
 and for `negate` the node its barrier builds after the operand is exhausted. -/
 def Response.alternatives : Response Variable Literal Symbol Certificate → List (Expansion Variable Literal Symbol Certificate)
   | .candidates alternatives | .incomplete alternatives => alternatives
-  | .unsupported | .delay _ => []
+  | .unsupported | .delay _ | .opened => []
   | .negate certificate => [Expansion.negation certificate]
 
 /-- A strategy reads the focused obligation and the shared store and proposes
@@ -91,12 +92,33 @@ inductive GapReason where
   branch would have succeeded, or a goal running while the branch closed
   needed a binding. -/
   | floundered
+  /-- The obligation meets an open atom (`Response.opened`, S22). Not a missing
+  capability: the KB leaves the obligation open. It is recorded with the gaps,
+  so it blocks exhaustion and NAF barriers, and the outcome reports it apart. -/
+  | opened
   deriving DecidableEq, Repr
 
-/-- A path abandoned without evidence either way. -/
+/-- One step of an obligation's provenance: a frame on the way from the root,
+by its rule, the clause it selects if it is a clause node, and the position of
+the premise being proved; or a NAF whose operand is being searched
+(`defaultNegIntro`, premise 0). -/
+structure Origin (Variable Literal Symbol : Type) where
+  rule : RuleId
+  clause : Option (HornClause Variable Literal Symbol)
+  premise : Nat
+
+/-- A path abandoned without evidence either way, or an obligation that met an
+open atom (`GapReason.opened`). The obligation keeps its scope; `trail` is
+where it arose, from the root down (`trailOf`). A goal still delayed when its
+branch ends has an empty trail: it was suspended away from its frames. -/
 structure Gap (Variable Literal Symbol : Type) where
   reason : GapReason
   obligation : Obligation Variable Literal Symbol
+  trail : List (Origin Variable Literal Symbol)
+
+/-- The obligation met an open atom; it was not abandoned for a missing
+capability. -/
+def Gap.isOpened (gap : Gap Variable Literal Symbol) : Bool := gap.reason == .opened
 
 /-- The machine's current focus: an obligation to expand, a subproof to return
 to the innermost continuation, or failure of the current path. -/
@@ -116,6 +138,23 @@ inductive Continuation (Variable Literal Symbol Certificate : Type) where
   | frame (frame : Frame Variable Literal Symbol Certificate)
   | woken (id : Nat) (obligation : Obligation Variable Literal Symbol) (next : Focus Variable Literal Symbol Certificate)
   | negation (obligation operand : Obligation Variable Literal Symbol) (holes : Nat)
+
+/-- The clause a rule application selects, under any `ho_apply` conversion. -/
+def RuleApp.clause? : RuleApp Variable Literal Symbol Certificate → Option (HornClause Variable Literal Symbol)
+  | .clause selected _ | .goalClause selected _ => some selected
+  | .converted _ inner => inner.clause?
+  | _ => none
+
+/-- A continuation's step of provenance: a frame's rule, clause, and current
+premise; a NAF entry's operand. A woken entry adds none. -/
+def Continuation.origin? : Continuation Variable Literal Symbol Certificate → Option (Origin Variable Literal Symbol)
+  | .frame entry => some ⟨entry.rule.id, entry.rule.clause?, entry.before.length⟩
+  | .negation _ _ _ => some ⟨.defaultNegIntro, none, 0⟩
+  | .woken _ _ _ => none
+
+/-- The provenance of the focus under these continuations, from the root down. -/
+def trailOf (frames : List (Continuation Variable Literal Symbol Certificate)) : List (Origin Variable Literal Symbol) :=
+  (frames.filterMap Continuation.origin?).reverse
 
 /-- What a NAF barrier records when it is set: the number of gaps recorded and
 the suspension counter. -/
@@ -158,22 +197,30 @@ structure State (Variable Literal Symbol Certificate Snapshot : Type) where
 search resumes for further answers. `exhausted` means every alternative of this
 strategy was tried with no gap: it is not complete failure (S07 needs a
 `GroundSearch.Fails` certificate for that), non-derivability, or refutation.
-`unknown` and `interrupted` give no evidence either way; a floundered branch
-makes the outcome `unknown` unless another branch succeeds. -/
+`opened` means every path ended in a miss or at an open atom, and at least one
+met an open atom: the entries of the obligations that met one are listed,
+with their scopes and provenance. It is not an
+answer: the logical Unknown needs checked witnesses (S22). `abandoned` and
+`interrupted` are operational and give no evidence either way: some path was
+abandoned for a missing capability, a contract breach, or floundering (the
+gaps, open atoms among them), or the fuel ran out. A floundered branch makes
+the outcome `abandoned` unless another branch succeeds. -/
 inductive Outcome (Variable Literal Symbol Certificate Snapshot : Type) where
   | success (proof : CompletedProof Variable Literal Symbol Certificate Snapshot) (resume : State Variable Literal Symbol Certificate Snapshot)
   | exhausted
-  | unknown (gaps : List (Gap Variable Literal Symbol))
+  | opened (gaps : List (Gap Variable Literal Symbol))
+  | abandoned (gaps : List (Gap Variable Literal Symbol))
   | interrupted (state : State Variable Literal Symbol Certificate Snapshot)
 
 inductive OutcomeKind where
-  | success | exhausted | unknown | interrupted
+  | success | exhausted | opened | abandoned | interrupted
   deriving DecidableEq, Repr
 
 def Outcome.kind : Outcome Variable Literal Symbol Certificate Snapshot → OutcomeKind
   | .success _ _ => .success
   | .exhausted => .exhausted
-  | .unknown _ => .unknown
+  | .opened _ => .opened
+  | .abandoned _ => .abandoned
   | .interrupted _ => .interrupted
 
 def Outcome.proof? : Outcome Variable Literal Symbol Certificate Snapshot → Option (CompletedProof Variable Literal Symbol Certificate Snapshot)
@@ -691,8 +738,8 @@ def State.enter (state : State Variable Literal Symbol Certificate Snapshot) (ob
   let saved := { state with choices := state.save obligation rest }
   match state.store.commit obligation expansion.flexibles expansion.rigids expansion.premises expansion.bindings with
   | .rejected => { saved with focus := .failed }
-  | .violated => { saved with focus := .failed, gaps := ⟨.contract, obligation⟩ :: state.gaps }
-  | .refused => { saved with focus := .failed, gaps := ⟨.floundered, obligation⟩ :: state.gaps }
+  | .violated => { saved with focus := .failed, gaps := ⟨.contract, obligation, trailOf state.frames⟩ :: state.gaps }
+  | .refused => { saved with focus := .failed, gaps := ⟨.floundered, obligation, trailOf state.frames⟩ :: state.gaps }
   | .committed store woken =>
       let next := Continuation.schedule woken (expansion.start obligation state.frames)
       { saved with store := store, focus := next.1, frames := next.2 }
@@ -718,9 +765,10 @@ def step (strategy : Strategy Variable Literal Symbol Certificate) (state : Stat
       | .candidates [] => .running { state with focus := .failed }
       | .candidates (expansion :: rest) => .running (state.enter obligation expansion rest)
       | .unsupported | .incomplete [] =>
-          .running { state with focus := .failed, gaps := ⟨.unsupported, obligation⟩ :: state.gaps }
+          .running { state with focus := .failed, gaps := ⟨.unsupported, obligation, trailOf state.frames⟩ :: state.gaps }
       | .incomplete (expansion :: rest) =>
-          .running ({ state with gaps := ⟨.unsupported, obligation⟩ :: state.gaps }.enter obligation expansion rest)
+          .running ({ state with gaps := ⟨.unsupported, obligation, trailOf state.frames⟩ :: state.gaps }.enter
+            obligation expansion rest)
       | .delay names =>
           if state.store.delayable names then
             .running
@@ -728,7 +776,7 @@ def step (strategy : Strategy Variable Literal Symbol Certificate) (state : Stat
                 store := state.store.suspend ⟨state.nextHole, obligation, names⟩
                 focus := .proved (.deferred state.nextHole obligation)
                 nextHole := state.nextHole + 1 }
-          else .running { state with focus := .failed, gaps := ⟨.contract, obligation⟩ :: state.gaps }
+          else .running { state with focus := .failed, gaps := ⟨.contract, obligation, trailOf state.frames⟩ :: state.gaps }
       | .negate certificate =>
           match obligation.goal with
           | .defaultNeg operand =>
@@ -739,8 +787,9 @@ def step (strategy : Strategy Variable Literal Symbol Certificate) (state : Stat
                     frames := .negation obligation ⟨obligation.scope, operand⟩ state.nextHole :: state.frames
                     choices := ⟨obligation, [Expansion.negation certificate], state.store, state.frames, state.deferred,
                       some ⟨state.gaps.length, state.nextHole⟩⟩ :: state.choices }
-              else .running { state with focus := .failed, gaps := ⟨.contract, obligation⟩ :: state.gaps }
-          | _ => .running { state with focus := .failed, gaps := ⟨.contract, obligation⟩ :: state.gaps }
+              else .running { state with focus := .failed, gaps := ⟨.contract, obligation, trailOf state.frames⟩ :: state.gaps }
+          | _ => .running { state with focus := .failed, gaps := ⟨.contract, obligation, trailOf state.frames⟩ :: state.gaps }
+      | .opened => .running { state with focus := .failed, gaps := ⟨.opened, obligation, trailOf state.frames⟩ :: state.gaps }
   | .proved tree =>
       match state.frames with
       | [] =>
@@ -755,7 +804,7 @@ def step (strategy : Strategy Variable Literal Symbol Certificate) (state : Stat
                 .running
                   { state with
                     focus := .failed
-                    gaps := (pending :: more).map (fun obligation => ⟨.floundered, obligation⟩) ++ state.gaps }
+                    gaps := (pending :: more).map (fun obligation => ⟨.floundered, obligation, []⟩) ++ state.gaps }
               else
                 let next := Continuation.schedule state.store.wakeups (.proved tree, [])
                 .running { state with store := state.store.close, focus := next.1, frames := next.2 }
@@ -771,10 +820,13 @@ def step (strategy : Strategy Variable Literal Symbol Certificate) (state : Stat
               frames := frames
               focus := .failed
               choices := cutNegation state.choices
-              gaps := if state.nextHole == holes then state.gaps else ⟨.unsupported, obligation⟩ :: state.gaps }
+              gaps := if state.nextHole == holes then state.gaps else ⟨.unsupported, obligation, trailOf frames⟩ :: state.gaps }
   | .failed =>
       match state.choices with
-      | [] => .finished (if state.gaps.isEmpty then .exhausted else .unknown state.gaps)
+      | [] =>
+          .finished
+            (if state.gaps.isEmpty then .exhausted
+            else if state.gaps.all Gap.isOpened then .opened state.gaps else .abandoned state.gaps)
       | point :: choices =>
           match point.alternatives with
           | [] => .running { state with choices := choices }
@@ -786,7 +838,8 @@ def step (strategy : Strategy Variable Literal Symbol Certificate) (state : Stat
                       frames := point.frames
                       deferred := point.deferred
                       choices := choices }.enter point.obligation expansion rest)
-              else .running { state with choices := choices, gaps := ⟨.unsupported, point.obligation⟩ :: state.gaps }
+              else .running
+                { state with choices := choices, gaps := ⟨.unsupported, point.obligation, trailOf point.frames⟩ :: state.gaps }
 
 /-- The states a run passes through: each one the next running state of the last. -/
 inductive Reaches (strategy : Strategy Variable Literal Symbol Certificate) :
@@ -1358,6 +1411,7 @@ theorem step_valid (strategy : Strategy Variable Literal Symbol Certificate)
           · exact valid.choices point member
         · cases stepped; exact ⟨⟨branch.fail, valid.choices⟩, rfl⟩
       · cases stepped; exact ⟨⟨branch.fail, valid.choices⟩, rfl⟩
+    · cases stepped; exact ⟨⟨branch.fail, valid.choices⟩, rfl⟩
   · rename_i tree focusEq
     rw [focusEq] at branch
     split at stepped
@@ -1477,7 +1531,8 @@ theorem step_success (strategy : Strategy Variable Literal Symbol Certificate)
     · cases stepped
     · cases stepped
   · split at stepped
-    · split at stepped <;> cases stepped
+    · repeat' split at stepped
+      all_goals cases stepped
     · split at stepped <;> (try split at stepped) <;> cases stepped
 
 /-- A completed run proves the original query under the original scope with a
@@ -1568,7 +1623,8 @@ theorem step_delay_invalid (strategy : Strategy Variable Literal Symbol Certific
     {state : State Variable Literal Symbol Certificate Snapshot} {obligation : Obligation Variable Literal Symbol}
     {names : List Variable} (focused : state.focus = .solve obligation)
     (delays : strategy obligation state.store = .delay names) (invalid : state.store.delayable names = false) :
-    step strategy state = .running { state with focus := .failed, gaps := ⟨.contract, obligation⟩ :: state.gaps } := by
+    step strategy state = .running
+      { state with focus := .failed, gaps := ⟨.contract, obligation, trailOf state.frames⟩ :: state.gaps } := by
   simp [step, focused, delays, invalid]
 
 /-- A woken goal's proof is recorded under its suspension id and the focus it
@@ -1608,7 +1664,7 @@ theorem step_flounder (strategy : Strategy Variable Literal Symbol Certificate)
     step strategy state = .running
       { state with
         focus := .failed
-        gaps := state.store.residual.map (fun obligation => ⟨.floundered, obligation⟩) ++ state.gaps } := by
+        gaps := state.store.residual.map (fun obligation => ⟨.floundered, obligation, []⟩) ++ state.gaps } := by
   obtain ⟨pending, more, residualEq⟩ := List.exists_cons_of_ne_nil residual
   simp [step, focused, framesEq, residualEq, closing]
 
@@ -1670,7 +1726,7 @@ theorem step_abandon (strategy : Strategy Variable Literal Symbol Certificate)
     (focused : state.focus = .failed) (choicesEq : state.choices = point :: choices)
     (alternatives : point.alternatives = expansion :: rest) (closed : point.open state.gaps state.nextHole = false) :
     step strategy state = .running
-      { state with choices := choices, gaps := ⟨.unsupported, point.obligation⟩ :: state.gaps } := by
+      { state with choices := choices, gaps := ⟨.unsupported, point.obligation, trailOf point.frames⟩ :: state.gaps } := by
   simp [step, focused, choicesEq, alternatives, closed]
 
 theorem State.enter_snapshot (state : State Variable Literal Symbol Certificate Snapshot)
@@ -1719,8 +1775,9 @@ theorem step_gaps (strategy : Strategy Variable Literal Symbol Certificate)
     · cases stepped
       rename_i obligation _ _ expansion rest _
       obtain ⟨added, addedEq⟩ :=
-        State.enter_gaps { state with gaps := ⟨.unsupported, obligation⟩ :: state.gaps } obligation expansion rest
-      exact ⟨added ++ [⟨.unsupported, obligation⟩], by rw [addedEq]; simp⟩
+        State.enter_gaps { state with gaps := ⟨.unsupported, obligation, trailOf state.frames⟩ :: state.gaps }
+          obligation expansion rest
+      exact ⟨added ++ [⟨.unsupported, obligation, trailOf state.frames⟩], by rw [addedEq]; simp⟩
     · split at stepped
       · cases stepped; exact ⟨[], rfl⟩
       · cases stepped; exact ⟨[_], rfl⟩
@@ -1729,6 +1786,7 @@ theorem step_gaps (strategy : Strategy Variable Literal Symbol Certificate)
         · cases stepped; exact ⟨[], rfl⟩
         · cases stepped; exact ⟨[_], rfl⟩
       · cases stepped; exact ⟨[_], rfl⟩
+    · cases stepped; exact ⟨[_], rfl⟩
   · split at stepped
     · split at stepped
       · cases stepped
@@ -1779,11 +1837,12 @@ theorem run_exhausted (strategy : Strategy Variable Literal Symbol Certificate) 
           · split at stepped
             · rename_i empty
               exact List.isEmpty_iff.mp empty
-            · cases stepped
+            · split at stepped <;> cases stepped
           · split at stepped <;> (try split at stepped) <;> cases stepped
 
 /-- Floundering is never exhaustion: once a branch floundered, or any path was
-abandoned, the run ends in another success, in `unknown`, or interrupted. -/
+abandoned, the run ends in another success, `opened`, `abandoned`, or
+interrupted. -/
 theorem run_not_exhausted (strategy : Strategy Variable Literal Symbol Certificate) (fuel : Nat)
     {state : State Variable Literal Symbol Certificate Snapshot} (gapped : state.gaps ≠ []) :
     run strategy fuel state ≠ .exhausted :=

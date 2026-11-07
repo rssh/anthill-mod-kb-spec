@@ -152,7 +152,7 @@ def settled (outcome : Run) : Bool :=
   | none => false
 
 def gapReasons : Run → List GapReason
-  | .unknown gaps => gaps.map (·.reason)
+  | .abandoned gaps => gaps.map (·.reason)
   | _ => []
 
 /-! ### Wake on binding -/
@@ -279,7 +279,7 @@ def callerScope := solve (query [X] [atom .p [k .a]]
 -- Still delayed at the end, also after closing: unknown with a floundered gap,
 -- never success or exhaustion.
 def flounder := solve (query [X] [] (atom .r [.var X]))
-#guard flounder.kind = .unknown
+#guard flounder.kind = .abandoned
 #guard gapReasons flounder = [.floundered]
 
 -- A floundered branch does not block another branch's success, and its gap is
@@ -292,7 +292,7 @@ def splitting : Strategy Nat Nat Sym Unit := fun obligation store =>
 def flounderThenSuccess := solve (query [X] [atom .p [k .a], atom .r [k .a]]
   (.disj (atom .r [.var X]) (.conj (atom .r [.var X]) (atom .p [.var X])))) splitting
 #guard flounderThenSuccess.kind = .success
-#guard (resume flounderThenSuccess splitting).kind = .unknown
+#guard (resume flounderThenSuccess splitting).kind = .abandoned
 
 -- Closing: a goal still delayed when the branch is proved runs once more,
 -- knowing no binding will come. A driver that closes r(X) then, for every X,
@@ -316,7 +316,7 @@ def closingBinder (value : Nat → T) : Strategy Nat Nat Sym Unit := fun obligat
           else .delay [name]
       | none => delaying obligation store
   | _ => delaying obligation store
-#guard (solve (query [X] [] (atom .r [.var X])) (closingBinder fun _ => k .a)).kind = .unknown
+#guard (solve (query [X] [] (atom .r [.var X])) (closingBinder fun _ => k .a)).kind = .abandoned
 #guard gapReasons (solve (query [X] [] (atom .r [.var X])) (closingBinder fun _ => k .a)) = [.floundered]
 -- A real miss while closing stays a miss: binding X := p(X) fails the occurs
 -- check before the closing refusal is reached, and the run is exhausted.
@@ -338,7 +338,7 @@ def closingNegation : Strategy Nat Nat Sym Unit := fun obligation store =>
   | .app .q [arg] => .candidates [{ rule := .extension .q [arg] none, flexibles := [9], bindings := [(9, arg)] }]
   | _ => .unsupported
 #guard (solve (query [] [] (.defaultNeg (atom .q [k .a]))) closingNegation).kind = .exhausted
-#guard (solve (query [X] [] (atom .r [.var X])) closingNegation).kind = .unknown
+#guard (solve (query [X] [] (atom .r [.var X])) closingNegation).kind = .abandoned
 -- Delayed again while closing, a goal flounders: the branch closes once.
 #guard gapReasons (solve (query [X] [] (.conj (atom .r [.var X]) (atom .r [.var X])))) = [.floundered, .floundered]
 
@@ -347,7 +347,7 @@ def closingNegation : Strategy Nat Nat Sym Unit := fun obligation store =>
 def constrained : State Nat Nat Sym Unit Nat :=
   let state := query [X] [] .truth
   { state with store := { state.store with constraints := [⟨state.root, [X]⟩] } }
-#guard (solve constrained).kind = .unknown
+#guard (solve constrained).kind = .abandoned
 #guard gapReasons (solve constrained) = [.floundered]
 
 -- No goal binds X: the branch fails and the suspension is discarded with it.
@@ -386,7 +386,7 @@ def restricted := solve (query [] [] (.forallVar 10 (.imp (atom .r [.var 10])
 -- contract gap on the delayed obligation.
 def contractGap (outcome : Run) (goal : T) : Bool :=
   match outcome with
-  | .unknown [⟨.contract, obligation⟩] => same obligation.goal goal
+  | .abandoned [⟨.contract, obligation, _⟩] => same obligation.goal goal
   | _ => false
 
 #guard contractGap (solve (query [X] [] (atom .r [.var X])) (fun _ _ => .delay [])) (atom .r [.var X])

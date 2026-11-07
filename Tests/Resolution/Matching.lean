@@ -391,7 +391,7 @@ def storeFreshOnly : Strategy Nat Nat Sym Unit := fun obligation store =>
   match store.resolve obligation.goal with
   | .existsVar x body => .candidates [.existsIntro x body store.freshFor]
   | _ => driver [] obligation store
-#guard (run storeFreshOnly 100 keepBindersQuery).kind = .unknown
+#guard (run storeFreshOnly 100 keepBindersQuery).kind = .abandoned
 #guard (solve [] keepBindersQuery).kind = .success
 
 -- The nested traces again, with the read inner binder chosen on purpose: the
@@ -419,7 +419,7 @@ def headOnly : Strategy Nat Nat Sym Unit := fun obligation store =>
 
 def unfreshened := run headOnly 50 (query [0] [atom .s [k .a, k .b]] (atom .r [.var 0]))
 #guard match unfreshened with
-  | .unknown [⟨.contract, obligation⟩] => same obligation.goal (atom .r [.var 0])
+  | .abandoned [⟨.contract, obligation, _⟩] => same obligation.goal (atom .r [.var 0])
   | _ => false
 def freshenedAll := solve [(atom .r [.var 50], [atom .s [.var 50, .var 60]])]
   (query [0] [atom .s [k .a, k .b]] (atom .r [.var 0]))
@@ -430,7 +430,7 @@ def freshenedAll := solve [(atom .r [.var 50], [atom .s [.var 50, .var 60]])]
 
 -- Alpha-variant data needs a capability the profile lacks: a gap, not failure.
 #guard (solve [] (query [] [atom .p [.forallVar 1 (atom .q [.var 1])]]
-  (atom .p [.forallVar 2 (atom .q [.var 2])]))).kind = .unknown
+  (atom .p [.forallVar 2 (atom .q [.var 2])]))).kind = .abandoned
 -- A plain clash is a miss.
 #guard (solve [] (query [] [atom .p [k .b]] (atom .p [k .a]))).kind = .exhausted
 

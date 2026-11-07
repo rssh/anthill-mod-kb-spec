@@ -431,6 +431,7 @@ theorem step_sound (strategy : Strategy Variable Literal Symbol Certificate)
             · exact sound.choices point member
         · cases stepped; exact ⟨branch.fail, sound.choices⟩
       · cases stepped; exact ⟨branch.fail, sound.choices⟩
+    · cases stepped; exact ⟨branch.fail, sound.choices⟩
   · rename_i tree focusEq
     rw [focusEq] at branch
     split at stepped

@@ -165,9 +165,9 @@ Backtracking to a choice point saved before closing restores a store that is
 not closing.
 
 Floundering abandons the branch without evidence. Its gaps survive backtracking,
-so the run ends in another success or in `unknown`, never in `exhausted`
+so the run ends in another success or in `abandoned`, never in `exhausted`
 (`run_not_exhausted`). A floundered goal is never NAF evidence: it carries no
-certificate, and `unknown` carries no evidence either way.
+certificate, and `abandoned` carries no evidence either way.
 
 ### Proof evidence: fill at the end
 
@@ -267,14 +267,14 @@ the same way. Each is a `#guard` in
 | A callee `c(X)` (a test-driver clause; S06 supplies clause selection) whose body delays `r(X)`, then the caller's `p(X)` | `c`'s frame completes with `r(X)` suspended; the caller's `p(X)` binds `X := a` and wakes `r(a)` after the callee returned |
 | `(r(a) → r(X)) ∧ p(X)` under `p(a)` | `r(X)` delays under the local assumption `r(a)`; after the implication is discharged, `p(X)` wakes it and `r(a)` holds by that assumption |
 | `(r(a) → r(X)) ∧ p(X) ∧ r(a)` under `p(a)` | Exhausted: the woken goal used `r(a)`, but the caller's last goal cannot |
-| `r(X)` alone | Closes, delays again, and flounders: unknown with a `floundered` gap |
+| `r(X)` alone | Closes, delays again, and flounders: abandoned with a `floundered` gap |
 | `r(X)` alone, with a driver that answers `r(X)` without a binding while closing | Success with `X` unbound; the closing proof is recorded under id 0 |
-| The same with a driver that binds `X := a` while closing | Unknown with a `floundered` gap: the binding is refused |
-| `r(X)` needing, while closing, the same-run `naf q(a)` where `q(a)` holds by binding a fresh name | Unknown: the refusal keeps the NAF barrier closed (`naf q(a)` alone is exhausted) |
+| The same with a driver that binds `X := a` while closing | Abandoned with a `floundered` gap: the binding is refused |
+| `r(X)` needing, while closing, the same-run `naf q(a)` where `q(a)` holds by binding a fresh name | Abandoned: the refusal keeps the NAF barrier closed (`naf q(a)` alone is exhausted) |
 | A driver binding `X := p(X)` while closing | Exhausted: the occurs check fails before the refusal, a real miss |
 | `r(X) ∧ r(X)` | The branch closes once: two `floundered` gaps |
-| `r(X) ∨ (r(X) ∧ p(X))` under `p(a), r(a)` | The first branch flounders; the second succeeds; resuming is unknown |
-| A store holding an unresolved constraint, goal `true` | Flounders: unknown with a `floundered` gap |
+| `r(X) ∨ (r(X) ∧ p(X))` under `p(a), r(a)` | The first branch flounders; the second succeeds; resuming is abandoned |
+| A store holding an unresolved constraint, goal `true` | Flounders: abandoned with a `floundered` gap |
 | `r(X) ∧ p(X)` with no `p` | Exhausted: the suspension is discarded with its branch |
 | `naf r(X) ∧ p(X)` under `p(a)` | `naf r(X)` delays; `p(X)` wakes it and its NAF node keeps the certificate in the deferred proof, which the success step fills in: the completed tree retains the certificate |
 | `∀x. (r(x) → ∃y. (r(y) ∧ y = x))` | Success: `y` keeps its dependency set after binding, and restrictions never flounder |

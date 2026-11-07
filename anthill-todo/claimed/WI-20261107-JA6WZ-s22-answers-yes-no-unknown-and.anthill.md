@@ -3,9 +3,9 @@
 - id: WI-20261107-JA6WZ-s22-answers-yes-no-unknown-and
 - created: 2026-11-07T12:22:11Z
 
-- status: Open
-- status_agent: user
-- status_at: 2026-11-07T12:22:11Z
+- status: Claimed
+- status_agent: claude
+- status_at: 2026-11-07T15:42:15Z
 
 - acceptance: lake build
 
