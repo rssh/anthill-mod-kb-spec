@@ -49,3 +49,7 @@ For the program-level check: split Admission.Input into a program/snapshot part 
 
 For the program-level check, keep a reusable admission: today checkProgram discards the plan of the empty query, so every query re-runs the whole check (requests over all KB clauses, topoRank, cycle search). A program-level artifact (consistency, KB classes, rank witness) from which each query's plan is built, checking only that query's classes and guard facts, would avoid it.
 
+### 2026-11-07T11:21:09Z — feedback — user
+
+NAF in induction cases (from S12, 2026-11-07): S12's Induction.check reports NAF in the query's context or in a clause the cases may select as a negation need (CaseGap .negation), because Plan.run is the left strategy alone. Run the plan's selection under S10's nafByRefutation (completion + vocabulary), so such NAF is admitted rather than reported, with soundness through S10's NAF provider, and include that provider in the P2 export theorem.
+

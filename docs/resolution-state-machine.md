@@ -865,6 +865,16 @@ selecting induction on its own subgoals can diverge. Core admission therefore
 needs an admitted induction strategy with its subgoal contracts, or an explicit
 proof-layer application; admitting the head match alone is insufficient.
 
+S12 implements the whole-formula form of this trace ([induction](machine-induction.md)).
+The principle `(G_D(x) → ho_apply(P, x)) :- …` is the structural principle
+of a declared domain, one case per constructor, proved valid from the domain's
+exact realization. Before anything runs, its admission reports every formula
+of the query's context or of a clause the cases may select that the cases
+cannot run: NAF, a formula variable as a goal, a guard no goal can bind, and
+P0's other requests. The plan selects the principle once, at the focus
+`G_D(a) → p(a)`, and none of its premises is such a focus. The atomic
+clause above is reported, since positive search would select it on every call.
+
 #### Existing proof support
 
 `MillerCertificates.UnaryMatch` checks the symbol-valued unary head match against

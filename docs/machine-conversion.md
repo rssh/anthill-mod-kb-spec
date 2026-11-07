@@ -143,8 +143,8 @@ and the focus `isNat(a) → reachable(a)`, with `a` rigid:
 Nothing selects the principle automatically. Under `positive`, an implication
 goal has only its introduction rule, and a compound head never matches an
 atomic goal: the same focus is exhausted. When to choose which principle is a
-search policy. S12 owns an admitted induction strategy with its termination
-argument.
+search policy. The admitted induction plan, which applies the principle once
+at its focus, is S12's ([induction](machine-induction.md)).
 
 ## Proof trees
 
@@ -226,8 +226,8 @@ The input stays outside P0 (`diagnose_not_ready`).
 
 - **No termination or completeness.** A flexible head concludes every call of
   its arity, its own body's included, and a selection may choose a principle
-  again on its subgoals. Admitted induction with its termination argument is
-  S12's. `exhausted` stays relative to the strategy.
+  again on its subgoals. Admitted induction is S12's
+  ([induction](machine-induction.md)). `exhausted` stays relative to the strategy.
 - **No general higher-order unification.** Predicate names are bound only to
   what structural matching finds: a reference, or a name. Lambda-valued answers
   for calls are classified and reported as gaps. A flexible goal predicate is

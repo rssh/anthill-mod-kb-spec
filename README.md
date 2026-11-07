@@ -38,13 +38,15 @@ Modules are grouped under `AnthillModKbSpec/`:
 | `Resolution/` | Shared matching, search certificates, admission signatures, and reconstruction proofs |
 | `Resolution/P0/` | Ground success/failure certificates and completed-model semantics, ranks, the P0 command set, total P0 runs, and the P0 admission checker |
 | `Resolution/P1/` | Supplied proof trees as `Term`, their checker and reconstruction, proof imports, checked exports of machine runs, the logical nodes of S09 and S10 commands, and evidence-first NAF |
+| `Resolution/P2/` | Proof strategies that may return Unknown: structural induction principles and the admitted induction path |
 | `Archive/` | Opt-in historical approaches |
 
 `import AnthillModKbSpec.Foundation` loads the generic logic independently of
 resolution. `AnthillModKbSpec.Models` adds concrete witnesses, and
 `AnthillModKbSpec.Resolution.P0` loads the ground layer with P0 evaluation on
 the shared machine and the P0 admission checker; `AnthillModKbSpec.Resolution.P1`
-adds proof checking on top of it. The primary
+adds proof checking on top of it, and `AnthillModKbSpec.Resolution.P2` the
+admitted induction path. The primary
 `import AnthillModKbSpec` still loads all current modules. Declaration namespaces
 such as `Semantics.Model` and `GroundSearch` are unchanged.
 
@@ -72,6 +74,7 @@ class is in the foundation; its generation metaprogram is imported separately.
 | Left rules and compound clause heads: selected conjunction, disjunction, existential, universal, and implication assumptions with their continuations, compound heads, the left strategy, constructions in S08 logical nodes, proof-layer diagnostics beside P0 | [LeftRules](AnthillModKbSpec/Resolution/Machine/LeftRules.lean), [LeftStrategy](AnthillModKbSpec/Resolution/Machine/LeftStrategy.lean), [P1/Derived](AnthillModKbSpec/Resolution/P1/Derived.lean), [ProofLayer](AnthillModKbSpec/Resolution/ProofLayer.lean), [design and guarantees](docs/machine-left.md), [traces](Tests/Resolution/LeftRules.lean) |
 | Evidence-first NAF by refutation in the Clark completion: NAF on rigid parameters, open predicates marked by a reserved symbol, the refutation search with only-if uses and equation joins, positive witnesses first, checked evidence indexed by the snapshot | [Completion](AnthillModKbSpec/Foundation/Completion.lean), [Machine/Refutation](AnthillModKbSpec/Resolution/Machine/Refutation.lean), [P1/Refutation](AnthillModKbSpec/Resolution/P1/Refutation.lean), [P1/Negation](AnthillModKbSpec/Resolution/P1/Negation.lean), [design and guarantees](docs/machine-negation.md), [traces](Tests/Resolution/Negation.lean) |
 | `ho_apply` conversion and whole-formula head matching: concrete indirect goals normalized (`ho_goal`), candidates applying a predicate by `ho_apply` matched against a direct goal's indirect view and converted, also under implications, rigid predicates never assigned, lambda-valued answers classified as gaps, a clause selected by its whole head (induction principles), conversion nodes checked by S08 | [Conversion](AnthillModKbSpec/Resolution/Machine/Conversion.lean), [LeftStrategy](AnthillModKbSpec/Resolution/Machine/LeftStrategy.lean), [P1/Derived](AnthillModKbSpec/Resolution/P1/Derived.lean), [design and guarantees](docs/machine-conversion.md), [traces](Tests/Resolution/Conversion.lean) |
+| Admitted induction: the structural principle of every declared domain, one case per constructor, lowered with `P` at `.predicate 1` and proved valid, static admission reporting what the cases cannot run in the query's context and the clauses they may select, the principle selected once by its whole head, `∀x:Nat. reachable(x)` reconstructed and true in the induction model, the exported tree checked by S08 | [P2/Principle](AnthillModKbSpec/Resolution/P2/Principle.lean), [P2/Induction](AnthillModKbSpec/Resolution/P2/Induction.lean), [design and guarantees](docs/machine-induction.md), [traces](Tests/Resolution/P2/Induction.lean) |
 | Lawful Nat and Bool order dictionaries | [OrderDictionaries](AnthillModKbSpec/Models/OrderDictionaries.lean) |
 | Conditional operation equations and replacement | [Equation rule note](docs/conditional-equations.md), [examples](Tests/Foundation/EquationRules.lean) |
 | Soundness with an equation oracle | [EquationOracle](AnthillModKbSpec/Foundation/EquationOracle.lean), [theorem and examples](docs/equation-oracle.md) |
@@ -110,7 +113,7 @@ dictionary calls, is covered by the soundness theorem.
 Lean 4.35.0 is managed by Lake/Elan.
 
 Tests mirror the source layers in `Tests/Foundation/`, `Tests/Models/`,
-`Tests/Deriving/`, and `Tests/Resolution/` (including `P0/` and `P1/`). Historical tests
+`Tests/Deriving/`, and `Tests/Resolution/` (including `P0/`, `P1/`, and `P2/`). Historical tests
 remain under `Tests/Archive/`. The current-test CI job recursively discovers
 tests while excluding the archive, which has its own job.
 
