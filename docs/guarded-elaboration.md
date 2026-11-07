@@ -146,7 +146,7 @@ a predicate variable must instead return its declared `.predicate n`.
 `clausePredicateRanged` checks this, treating free clause variables as bound by
 `rangeOf`. For example, `elaborateClause?` rejects the induction rule when its
 `P` keeps the data default, since the guard `D_all(P)` would keep the rule from
-ever firing. Repeated free names repeat the same guard.
+ever firing. A free name gets one guard however often it occurs.
 
 The resulting clause keeps the KB's ordinary implicit universal closure.
 `clause_satisfies` proves its per-environment meaning: if all free variables

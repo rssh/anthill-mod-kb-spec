@@ -12,7 +12,7 @@ Traces are in [Tests/Resolution/LeftRules.lean](../Tests/Resolution/LeftRules.le
 | --- | --- |
 | [Machine/Evidence](../AnthillModKbSpec/Resolution/Machine/Evidence.lean) | `Derived`, the S09 commands with their parameters, and the machine rule `RuleApp.derived` |
 | [Machine/LeftRules](../AnthillModKbSpec/Resolution/Machine/LeftRules.lean) | The command candidates (`Expansion.conjUse`, …) and their completion contracts read through the answers (`*_soundUnder`), the cut `Derives.cut`, conjuncts of a nested conjunction (`Term.component?`) |
-| [Machine/LeftStrategy](../AnthillModKbSpec/Resolution/Machine/LeftStrategy.lean) | Choices and selections, the `left` strategy, `left_sound`, `left_reconstructs` |
+| [Machine/LeftStrategy](../AnthillModKbSpec/Resolution/Machine/LeftStrategy.lean) | Choices and selections, the `left` strategy, `left_sound`, `left_reconstructs`; `leftCommitted`, which offers only the chosen commands where the selection chooses any (S12) |
 | [P1/Derived](../AnthillModKbSpec/Resolution/P1/Derived.lean) | The logical nodes of each command (`Unfold.*`), their validity given valid premise trees (`Unfold.*_proves`), and `exportDerived` |
 | [ProofLayer](../AnthillModKbSpec/Resolution/ProofLayer.lean) | Proof-layer capabilities beside P0 admission: `Request.proofLayer`, `diagnose`, `diagnose_not_ready` |
 
@@ -191,6 +191,7 @@ only through operational admission (`admitImports`, S08).
 | Every chosen command is sound, whatever the selection | `Choice.attempt_sound` |
 | The left strategy is sound for its program's KB, whatever the NAF provider | `left_sound` |
 | A successful run reconstructs `Derives` for its answer instance | `left_reconstructs` |
+| The same for the left strategy committed to its selection | `leftCommitted_sound`, `leftCommitted_reconstructs` |
 | Each construction is valid given valid premise trees under the command's contexts | `Unfold.cut_proves`, `conjUse_proves`, `disjCases_proves`, `existsOpen_proves`, `forallUse_proves`, `impUse_proves`, `headUse_proves`, `headProject_proves`, `headDenial_proves` |
 | Exported eliminations are valid steps through any store | `leadingSteps_instances`, `leadingSteps_last` |
 | A proof-layer capability is reported only for an input P0 does not admit | `diagnose_requests`, `diagnose_not_ready` |

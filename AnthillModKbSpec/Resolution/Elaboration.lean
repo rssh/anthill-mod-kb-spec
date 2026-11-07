@@ -629,13 +629,13 @@ theorem context_fresh (naming : Naming Domain Symbol) (ranges : Ranges Domain)
         simp only [elaborateArgs, List.forall_mem_cons, freeVars, ih]
   exact aux context 0
 
-/-- Explicit binder metadata for each free clause variable. Repetitions in the
-free-variable list are harmless: they repeat the same guard. `rangeOf` is
-trusted here; `clausePredicateRanged` rejects a predicate template variable
-that `rangeOf` leaves at a data range, so it gets its P_n guard, never D_all. -/
+/-- Explicit binder metadata for each free clause variable, one guard per
+name however often it occurs. `rangeOf` is trusted here;
+`clausePredicateRanged` rejects a predicate template variable that `rangeOf`
+leaves at a data range, so it gets its P_n guard, never D_all. -/
 def clauseGuards (naming : Naming Domain Symbol) (rangeOf : Variable → Range Domain)
     (clause : HornClause Variable Literal Symbol) : List (Term Variable Literal Symbol) :=
-  clause.toFormula.freeVars.map (fun name => rangeGuard naming (rangeOf name) (.var name))
+  clause.toFormula.freeVars.eraseDups.map (fun name => rangeGuard naming (rangeOf name) (.var name))
 
 /-- Head uses child 0, body formulas use children 1 onward. Guards share the
 implicit universal closure of the original clause; head/body instances must use
@@ -680,7 +680,7 @@ theorem clauseGuards_satisfies (snapshot : SignatureSnapshot Domain Symbol)
     model.Satisfies environment (.conjunction (clauseGuards snapshot.naming rangeOf clause)) ↔
       ∀ name ∈ clause.toFormula.freeVars, (rangeOf name).Contains snapshot model (environment name) := by
   rw [Model.satisfies_conjunction]
-  simp only [clauseGuards, List.mem_map]
+  simp only [clauseGuards, List.mem_map, List.mem_eraseDups]
   constructor
   · intro all name member
     simpa only [Model.eval] using (rangeGuard_satisfies snapshot model valid environment (rangeOf name) (.var name)).mp

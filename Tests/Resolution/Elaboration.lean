@@ -460,10 +460,9 @@ theorem dataExistsDerived : Derives Symbol.hoApply signature []
 def guardedSucc : HornClause String Unit Symbol := elaborateClause snapshot.naming dataRanges dataOf reachableSucc
 
 theorem guardedSucc_eq : guardedSucc = .definite (reachable (succ (.var "x")))
-    [rangeGuard snapshot.naming (.data [.nat]) (.var "x"), rangeGuard snapshot.naming (.data [.nat]) (.var "x"),
-      reachable (.var "x")] := by
+    [rangeGuard snapshot.naming (.data [.nat]) (.var "x"), reachable (.var "x")] := by
   simp [guardedSucc, elaborateClause, clauseGuards, reachableSucc, HornClause.toFormula, Term.conjunction,
-    Term.freeVars, elaborate, elaborateArgs, reachable, succ, dataOf]
+    Term.freeVars, elaborate, elaborateArgs, reachable, succ, dataOf, List.eraseDups_cons]
 
 def guardedKb : K := insert guardedSucc (insert reachableZero signature)
 
@@ -472,14 +471,14 @@ theorem guardedRule : Derives Symbol.hoApply guardedKb [] (reachable (succ zero)
   have base : Derives Symbol.hoApply guardedKb [] (reachable zero) :=
     .clause (σ := Term.var) (Or.inr (Or.inl rfl)) (Substitutes.identity _) .truth .truth
   have member : HornClause.definite (reachable (succ (.var "x")))
-      [rangeGuard snapshot.naming (.data [.nat]) (.var "x"), rangeGuard snapshot.naming (.data [.nat]) (.var "x"),
-        reachable (.var "x")] ∈ guardedKb := Or.inl guardedSucc_eq.symm
+      [rangeGuard snapshot.naming (.data [.nat]) (.var "x"), reachable (.var "x")] ∈ guardedKb :=
+    Or.inl guardedSucc_eq.symm
   have guardInstance := rangeGuard_substitutes snapshot.naming (.data [.nat]) (.singleVar "x" zero)
   have argument : Substitutes (Substitution.single "x" zero) (reachable (.var "x")) (reachable zero) :=
     .app (.cons (.singleVar "x" zero) .nil)
   exact .clause member (.app (.cons (.app (.cons (.singleVar "x" zero) .nil)) .nil))
-    (SubstitutesList.conjunction (.cons guardInstance (.cons guardInstance (.cons argument .nil))))
-    (.conjIntro guard (.conjIntro guard (.conjIntro base .truth)))
+    (SubstitutesList.conjunction (.cons guardInstance (.cons argument .nil)))
+    (.conjIntro guard (.conjIntro base .truth))
 
 -- All semantic and structural bridges must remain kernel-checked.
 open Lean Meta in

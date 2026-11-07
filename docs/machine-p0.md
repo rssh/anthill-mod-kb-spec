@@ -140,7 +140,8 @@ rule:
 
 | Capability | Requested for |
 | --- | --- |
-| `groundInstance` | A variable where P0 needs ground data, a ground atom, or a goal |
+| `groundInstance` | A variable where P0 needs ground data: an answer name or a clause template in an atom's arguments |
+| `formulaVariable` | A formula variable as a goal, an assumption, or a head, where P0 needs a ground atom |
 | `acyclicStrategy` | A KB clause on a dependency cycle, positive or through NAF |
 | `scopedProof` | An implication, quantifier, or disjunction goal or assumption, or another non-atomic assumption |
 | `equality` | An equality goal, head, or assumption |

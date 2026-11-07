@@ -76,9 +76,12 @@ theorem Input.base_ask (input : Input Domain Variable Literal Symbol) :
 /-- The capability a formula outside P0 needs. Each names a route of a later
 profile; none is a negative answer about the formula. -/
 inductive Capability where
-  /-- A variable where P0 needs ground data or a ground atom: an answer name,
-  a clause template, or a formula variable. -/
+  /-- A variable where P0 needs ground data: an answer name or a clause
+  template inside an atom's arguments. -/
   | groundInstance
+  /-- A formula variable as a goal, an assumption, or a head, where P0 needs a
+  ground atom. -/
+  | formulaVariable
   /-- A KB clause on a dependency cycle, positive or through NAF. -/
   | acyclicStrategy
   /-- An implication, quantifier, or disjunction goal, or a non-atomic
@@ -164,7 +167,7 @@ def goalRequests (site : Site) : List Nat → Term Variable Literal Symbol → L
   | _, .truth | _, .falsity => []
   | path, .conj left right => goalRequests site (path ++ [0]) left ++ goalRequests site (path ++ [1]) right
   | path, .defaultNeg body => goalRequests site (path ++ [0]) body
-  | path, .var name => [⟨site, path, .var name, .groundInstance⟩]
+  | path, .var name => [⟨site, path, .var name, .formulaVariable⟩]
   | path, .equal left right => [⟨site, path, .equal left right, .equality⟩]
   | path, .dictionaryCall dictionary selectors operation args =>
       [⟨site, path, .dictionaryCall dictionary selectors operation args, .dictionaryLaw⟩]
@@ -176,7 +179,7 @@ def assumptionRequests (index : Nat) : Term Variable Literal Symbol → List (Re
   | .app symbol args =>
       if symbol = hoApplySymbol then [⟨.assumption index, [], .app symbol args, .hoApplyConversion⟩]
       else argsRequests hoApplySymbol (.assumption index) [] 0 args
-  | .var name => [⟨.assumption index, [], .var name, .groundInstance⟩]
+  | .var name => [⟨.assumption index, [], .var name, .formulaVariable⟩]
   | .equal left right => [⟨.assumption index, [], .equal left right, .equality⟩]
   | .dictionaryCall dictionary selectors operation args =>
       [⟨.assumption index, [], .dictionaryCall dictionary selectors operation args, .dictionaryLaw⟩]
@@ -193,7 +196,7 @@ def headRequests (guard : Symbol → Bool) (index : Nat) : Term Variable Literal
       if symbol = hoApplySymbol then [⟨.head index, [], .app symbol args, .hoApplyConversion⟩]
       else (if guard symbol then [⟨.head index, [], .app symbol args, .guardDefinition⟩] else []) ++
         argsRequests hoApplySymbol (.head index) [] 0 args
-  | .var name => [⟨.head index, [], .var name, .groundInstance⟩]
+  | .var name => [⟨.head index, [], .var name, .formulaVariable⟩]
   | .equal left right => [⟨.head index, [], .equal left right, .equality⟩]
   | .dictionaryCall dictionary selectors operation args =>
       [⟨.head index, [], .dictionaryCall dictionary selectors operation args, .dictionaryLaw⟩]

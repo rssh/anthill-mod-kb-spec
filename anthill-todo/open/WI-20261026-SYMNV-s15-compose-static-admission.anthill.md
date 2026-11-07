@@ -54,3 +54,7 @@ For the program-level check, keep a reusable admission: today checkProgram disca
 
 NAF in induction cases (from S12, 2026-11-07): S12's Induction.check reports NAF in the query's context or in a clause the cases may select as a negation need (CaseGap .negation), because Plan.run is the left strategy alone. Run the plan's selection under S10's nafByRefutation (completion + vocabulary), so such NAF is admitted rather than reported, with soundness through S10's NAF provider, and include that provider in the P2 export theorem.
 
+### 2026-11-07T13:03:20Z — feedback — user
+
+Correction to the 2026-11-07 NAF note: only NAF as a goal in a clause the S12 cases may select is a negation need (CaseGap .negation). NAF assumed in the query's context is a hypothesis, reported as P0's scopedProof request, and is not a route for nafByRefutation.
+

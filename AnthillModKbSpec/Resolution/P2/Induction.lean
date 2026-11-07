@@ -11,27 +11,32 @@ declared inductive domain `D`, by its structural principle (`P2/Principle`).
   (`target?`);
 - `p` is registered at arity 1, so the principle's guard `P_1(p)` has its
   generated fact;
-- the program carries the principle for `D`'s listed rules as a clause, lowering
-  its source gives exactly that clause, and the signature's generated clauses,
-  which discharge its guard, are carried;
+- the program carries the principle for `D`'s listed rules as a clause, found
+  with its names whatever names the generator chose (`carried?`); for
+  admissible names, lowering its source gives exactly that clause
+  (`lower_principle`);
 - neither the query's context nor a clause a case may select holds a formula
-  the cases cannot run (`contextGaps`, `casesGaps`): NAF, which the plan's run
-  has no route for; a formula variable as a goal; a range guard on a name no
-  other goal of its clause mentions; and P0's other requests, apart from ground
-  instances and range guards. The clauses are those concluding a symbol
-  reachable from what the premises ask, `p` and the guard `P_1`, and every head
-  applying a predicate by `ho_apply` (`dependencies`), so an atomic induction
-  clause, which positive search would select again on every call, is reported.
-  Each gap is a `Need`, reported before anything runs.
+  the cases cannot run (`contextGaps`, `casesGaps`): NAF as a goal, which the
+  plan's run has no route for; a range guard on a name no other goal of its
+  clause mentions; and P0's other requests, apart from ground instances of
+  data and range guards. The clauses are those concluding a symbol reachable
+  from what the premises ask, `p` and the guard `P_1`, every head applying a
+  predicate by `ho_apply` or that is a formula variable, and every denial
+  (`dependencies`), so an atomic induction clause, which positive search would
+  select again on every call, is reported. Each gap is a `Need`, reported
+  before anything runs.
 
-The plan's strategy is one run of the left strategy on the program. Its
-selection chooses the principle by its whole head (`headMatch`) exactly at a
-focus `G_D(e) → p(e)` (`Plan.selection_focus`). The principle's premises are
-never such a focus, nor are their instances (`Plan.body_unfocused`), and
-`positive` never selects a compound head for an atomic goal, so the principle
-cannot be selected again on its own subgoals. The run is bounded by its fuel:
-an interrupted run is Unknown, never failure. Induction search is P2: failure
-of a case for this predicate does not refute the universal.
+The plan's strategy is one run of the left strategy committed to the plan's
+selection (`leftCommitted`): where it chooses commands, they are the only ones
+offered. It chooses the principle by its whole head (`headMatch`) exactly at a
+focus `G_D(e) → p(e)` (`Plan.selection_focus`), not raced against the
+implication's introduction, and splits a guard assumption at a guard goal on
+its term (`guardSplits`), as a case's field guards need. The principle's
+premises are never such a focus, nor are their instances
+(`Plan.body_unfocused`), and `positive` never selects a compound head for an
+atomic goal. The run is bounded by its fuel: an interrupted run is Unknown,
+never failure. Induction search is P2: failure of a case for this predicate
+does not refute the universal.
 
 A successful run reconstructs `Derives` for the guarded universal
 (`Plan.reconstructs`), and the universal is true in every model realizing the
@@ -108,15 +113,13 @@ end Goals
 
 /-- What a case's search lacks at a formula. -/
 inductive Missing where
-  /-- A capability P0 names, other than a ground instance: an extension the
-  case search lacks. -/
+  /-- A capability P0 names, other than a ground instance of data: an extension
+  the case search lacks. -/
   | capability (capability : Admission.Capability)
-  /-- NAF: the plan's run has no NAF route. -/
+  /-- NAF as a goal: the plan's run has no NAF route. -/
   | negation
-  /-- A formula variable as a goal: it waits on its binding and flounders. -/
-  | goalVariable
-  /-- A range guard on a name its clause's head does not bind: it waits on the
-  name and flounders. -/
+  /-- A range guard on a name no other goal of its clause mentions: positive
+  search delays it until a goal binds the name, and none can. -/
   | waitingGuard
   deriving DecidableEq, Repr
 
@@ -133,12 +136,12 @@ inductive Need (Variable Literal Symbol : Type) where
   | shape
   /-- The predicate is not registered at arity 1: the principle's guard has no generated fact. -/
   | registration (predicate : Symbol)
-  /-- The program does not carry the lowered principle, or lowering its source
-  does not give it. -/
+  /-- The program carries no principle for the domain: no clause whose names,
+  read off it, generate it. -/
   | principle
-  /-- The principle's names are not admissible: a case's fields not distinct or
-  naming the predicate, the target naming the predicate, or a constructor that
-  is `ho_apply`. -/
+  /-- The carried principle's names are not admissible: a case's fields not
+  distinct or naming the predicate, the target naming the predicate, or a
+  constructor that is `ho_apply`. -/
   | names
   /-- The query's context holds a formula the cases cannot use. -/
   | context (gap : CaseGap Variable Literal Symbol)
@@ -157,26 +160,30 @@ def goalSymbols : Term Variable Literal Symbol → List Symbol
   | .defaultNeg body | .forallVar _ body | .existsVar _ body => goalSymbols body
   | _ => []
 
-/-- The symbol a clause concludes, for an atomic head. -/
-def headSymbol? : HornClause Variable Literal Symbol → Option Symbol
-  | .definite (.app symbol _) _ => some symbol
-  | _ => none
-
 /-- The KB clauses a case may select, the principle excepted: those concluding
-a symbol reachable through clause bodies from what the principle's premises ask
-(`p` and the guard `P_1`), and every clause whose head applies a predicate by
-`ho_apply`, which meets any call through its indirect view (S11). -/
+a symbol reachable through clause bodies from what the principle's premises
+ask (`p` and the guard `P_1`) or a denial's body asks; every clause whose head
+applies a predicate by `ho_apply`, which meets any call through its indirect
+view (S11); every clause whose head is a formula variable, which may meet any
+goal; and every denial `⊥ :- body`, which serves any `false` subgoal, as ex
+falso under an assumed `false` asks. A compound head, the principle's among
+them, is never selected for an atomic goal. -/
 def dependencies (hoApplySymbol : Symbol) (clauses : List (Nat × HornClause Variable Literal Symbol))
     (asked : List Symbol) : List (Nat × HornClause Variable Literal Symbol) :=
   let edges := clauses.flatMap fun (_, clause) =>
-    match clause, headSymbol? clause with
-    | .definite _ body, some symbol => (body.flatMap goalSymbols).map (symbol, ·)
-    | _, _ => []
-  let reached := GroundSearch.reach edges (edges.length + 1) asked
+    match clause with
+    | .definite (.app symbol _) body => (body.flatMap goalSymbols).map (symbol, ·)
+    | _ => []
+  let denied := clauses.flatMap fun (_, clause) =>
+    match clause with
+    | .goal body => body.flatMap goalSymbols
+    | _ => []
+  let reached := GroundSearch.reach edges (edges.length + 1) (asked ++ denied)
   clauses.filter fun (_, clause) =>
-    match headSymbol? clause with
-    | some symbol => decide (symbol ∈ reached) || decide (symbol = hoApplySymbol)
-    | none => false
+    match clause with
+    | .definite (.app symbol _) _ => decide (symbol ∈ reached) || decide (symbol = hoApplySymbol)
+    | .definite (.var _) _ | .goal _ => true
+    | _ => false
 
 /-- The names a clause's goals other than its range guards mention: its head's
 and its other body goals'. A range guard waits until a goal binds its name
@@ -185,75 +192,129 @@ def bindable (program : Machine.Program Variable Literal Symbol) (head : Term Va
     (body : List (Term Variable Literal Symbol)) : List Variable :=
   head.freeVars ++ (body.filter fun goal => (guardSubject? program goal).isNone).flatMap Term.freeVars
 
-/-- The formulas of a body goal the case search cannot run: NAF, which the
-plan's run has no route for; a formula variable; and a range guard on a name
-outside `bound`. The rest is P0's to report. -/
+/-- The formulas of a body goal the case search cannot run, beyond P0's
+requests: NAF, which the plan's run has no route for, and a range guard on a
+name outside `bound`. -/
 def goalGaps (program : Machine.Program Variable Literal Symbol) (bound : List Variable) (site : Admission.Site) :
     List Nat → Term Variable Literal Symbol → List (CaseGap Variable Literal Symbol)
   | path, .conj left right =>
       goalGaps program bound site (path ++ [0]) left ++ goalGaps program bound site (path ++ [1]) right
   | path, .defaultNeg operand => [⟨site, path, .defaultNeg operand, .negation⟩]
-  | path, .var name => [⟨site, path, .var name, .goalVariable⟩]
   | path, goal =>
       match guardSubject? program goal with
       | some name => if name ∈ bound then [] else [⟨site, path, goal, .waitingGuard⟩]
       | none => []
 
-/-- P0's requests as gaps, except ground instances, which a P2 search does not
-need, and range guards, which positive search decides by their atoms (S06). -/
+/-- A range guard as lowering builds it, on any term: guard atoms `m(t)` in a
+disjunction ending in `false`. -/
+def guardForm (program : Machine.Program Variable Literal Symbol) : Term Variable Literal Symbol → Bool
+  | .disj (.app member [_]) rest =>
+      program.guard member &&
+        match rest with
+        | .falsity => true
+        | other => guardForm program other
+  | _ => false
+
+/-- P0's requests as gaps, except ground instances of data, which a P2 search
+does not need, and range guards: positive search decides a guard goal by its
+atoms (S06), and the plan's selection splits a guard assumption at a guard
+goal on the same term (`guardSplits`). -/
 def requestGaps (program : Machine.Program Variable Literal Symbol)
     (requests : List (Admission.Request Variable Literal Symbol)) : List (CaseGap Variable Literal Symbol) :=
   (requests.filter fun request => request.capability != .groundInstance &&
-      !(request.capability == .scopedProof && (guardSubject? program request.formula).isSome)).map
+      !(request.capability == .scopedProof && guardForm program request.formula)).map
     fun request => ⟨request.site, request.path, request.formula, .capability request.capability⟩
 
-/-- The gaps of one clause a case may select. -/
-def clauseGaps (hoApplySymbol : Symbol) (program : Machine.Program Variable Literal Symbol) (guard : Symbol → Bool)
-    (index : Nat) (clause : HornClause Variable Literal Symbol) : List (CaseGap Variable Literal Symbol) :=
-  requestGaps program (Admission.clauseRequests hoApplySymbol guard index clause) ++
-    match clause with
-    | .definite head body =>
-        body.zipIdx.flatMap fun (goal, position) =>
-          goalGaps program (bindable program head body) (.body index position) [] goal
-    | .goal body =>
-        body.zipIdx.flatMap fun (goal, position) =>
-          goalGaps program (bindable program .truth body) (.body index position) [] goal
+/-- The gaps of the body goals of KB clause `index`, with `bound` its bindable names. -/
+def bodyGaps (program : Machine.Program Variable Literal Symbol) (bound : List Variable) (index : Nat)
+    (body : List (Term Variable Literal Symbol)) : List (CaseGap Variable Literal Symbol) :=
+  body.zipIdx.flatMap fun (goal, position) => goalGaps program bound (.body index position) [] goal
 
-/-- The gaps of the query's context. -/
+/-- The gaps of one clause a case may select. A denial is run as a clause for
+`false`, so only its body is checked. -/
+def clauseGaps (hoApplySymbol : Symbol) (program : Machine.Program Variable Literal Symbol) (guard : Symbol → Bool)
+    (index : Nat) : HornClause Variable Literal Symbol → List (CaseGap Variable Literal Symbol)
+  | .definite head body =>
+      requestGaps program (Admission.clauseRequests hoApplySymbol guard index (.definite head body)) ++
+        bodyGaps program (bindable program head body) index body
+  | .goal body =>
+      requestGaps program (Admission.bodyRequests hoApplySymbol index 0 body) ++
+        bodyGaps program (bindable program .truth body) index body
+
+/-- The gaps of the query's context. A guard assumption is used through
+`guardSplits`; any other non-atomic assumption, NAF included, is P0's
+`scopedProof` request: the plan's selection chooses no other left rule. -/
 def contextGaps (hoApplySymbol : Symbol) (input : Admission.Input Domain Variable Literal Symbol) :
     List (CaseGap Variable Literal Symbol) :=
   requestGaps input.program (Admission.contextRequests hoApplySymbol 0 input.context)
 
-/-- The gaps of the clauses the cases may select, the principle excepted. -/
+/-- The gaps of the clauses the cases may select. -/
 def casesGaps (hoApplySymbol : Symbol) (input : Admission.Input Domain Variable Literal Symbol)
-    (target : Target Domain Variable Symbol) (clause : HornClause Variable Literal Symbol) :
-    List (CaseGap Variable Literal Symbol) :=
-  (dependencies hoApplySymbol (input.kbClauses.filter fun pair => !decide (pair.2 = clause))
-      [target.predicate, input.signature.naming.predicateSymbol 1]).flatMap fun pair =>
-    clauseGaps hoApplySymbol input.program input.guard pair.1 pair.2
+    (target : Target Domain Variable Symbol) : List (CaseGap Variable Literal Symbol) :=
+  (dependencies hoApplySymbol input.kbClauses [target.predicate, input.signature.naming.predicateSymbol 1]).flatMap
+    fun pair => clauseGaps hoApplySymbol input.program input.guard pair.1 pair.2
 
-/-- A Ready induction plan: the input, the target, the principle's names, the
-lowered principle the program carries, and what admission established: lowering
-the source gives it, the signature's generated clauses are carried, and
+/-- The leading guarded binders of a case, `∀y. (G(y) → …)`. -/
+def caseBinders : Term Variable Literal Symbol → List Variable
+  | .forallVar binder (.imp _ body) => binder :: caseBinders body
+  | _ => []
+
+/-- The names of a clause shaped as a principle: `P` and the target from its
+head `G(x) → ho_apply(P, x)`, the fields from its longest case's binders. -/
+def namesOf? (hoApplySymbol : Symbol) : HornClause Variable Literal Symbol → Option (Names Variable)
+  | .definite (.imp _ (.app symbol [.var predicate, .var target])) body =>
+      if symbol = hoApplySymbol then
+        let fields := body.foldl (fun longest premise =>
+          let binders := caseBinders premise
+          if longest.length < binders.length then binders else longest) []
+        some ⟨predicate, target, fun index => fields.getD index target⟩
+      else none
+  | _ => none
+
+/-- The principle the program carries for the target's domain, with its names:
+a clause whose names, read off it, generate exactly it. Any names the
+generator chose are found. -/
+def carried? [DecidableEq Domain] (hoApplySymbol : Symbol) (input : Admission.Input Domain Variable Literal Symbol)
+    (target : Target Domain Variable Symbol) : Option (HornClause Variable Literal Symbol × Names Variable) :=
+  input.program.clauses.findSome? fun entry =>
+    (namesOf? hoApplySymbol entry.clause).bind fun names =>
+      if entry.clause = principle hoApplySymbol input.signature.naming target.domain input.rules names then
+        some (entry.clause, names)
+      else none
+
+theorem carried?_spec [DecidableEq Domain] {hoApplySymbol : Symbol} {input : Admission.Input Domain Variable Literal Symbol}
+    {target : Target Domain Variable Symbol} {clause : HornClause Variable Literal Symbol} {names : Names Variable}
+    (found : carried? hoApplySymbol input target = some (clause, names)) :
+    clause = principle hoApplySymbol input.signature.naming target.domain input.rules names ∧
+      input.program.has clause = true := by
+  obtain ⟨entry, member, produced⟩ := List.exists_of_findSome?_eq_some found
+  obtain ⟨read, _, produced⟩ := Option.bind_eq_some_iff.mp produced
+  split at produced
+  · rename_i same
+    cases produced
+    exact ⟨same, List.any_eq_true.mpr ⟨entry, member, decide_eq_true rfl⟩⟩
+  · cases produced
+
+/-- A Ready induction plan: the input, the target, the principle the program
+carries with its names, and what admission established: the names are
+admissible, so lowering the source gives the principle (`Plan.lowered`), and
 neither the query's context nor a clause the cases may select has a gap. It
 says nothing about whether the goal holds. -/
 structure Plan (Domain Variable Literal Symbol : Type) [DecidableEq Domain] [DecidableEq Variable]
     [DecidableEq Literal] [DecidableEq Symbol] (hoApplySymbol : Symbol) where
   input : Admission.Input Domain Variable Literal Symbol
-  names : Names Variable
   target : Target Domain Variable Symbol
+  names : Names Variable
+  clause : HornClause Variable Literal Symbol
+  clause_eq : clause = principle hoApplySymbol input.signature.naming target.domain input.rules names
   admissible : Admissible hoApplySymbol (rulesOf input.rules target.domain) names
   goal_eq : input.goal = target.goal input.signature.naming
   registered : input.signature.Registered target.predicate 1
-  lowered : elaborateClause? hoApplySymbol input.signature.naming (ranges target.domain input.rules) (rangeOf names)
-    (source (Literal := Literal) hoApplySymbol input.signature.naming target.domain input.rules names) =
-    some (principle hoApplySymbol input.signature.naming target.domain input.rules names)
-  carried : input.program.has (principle hoApplySymbol input.signature.naming target.domain input.rules names) = true
+  carried : input.program.has clause = true
   consistent : input.forged = []
   generated : input.unlisted = []
   context_clear : contextGaps hoApplySymbol input = []
-  cases_clear : casesGaps hoApplySymbol input target
-    (principle hoApplySymbol input.signature.naming target.domain input.rules names) = []
+  cases_clear : casesGaps hoApplySymbol input target = []
 
 inductive Result (Domain Variable Literal Symbol : Type) [DecidableEq Domain] [DecidableEq Variable]
     [DecidableEq Literal] [DecidableEq Symbol] (hoApplySymbol : Symbol) where
@@ -263,9 +324,9 @@ inductive Result (Domain Variable Literal Symbol : Type) [DecidableEq Domain] [D
 
 /-- Admission of the induction path, before anything runs. The input's own
 declarations are checked first, as P0 checks them; every other shortfall is a
-`Need`. -/
-def check [DecidableEq Domain] (hoApplySymbol : Symbol) (input : Admission.Input Domain Variable Literal Symbol)
-    (names : Names Variable) : Result Domain Variable Literal Symbol hoApplySymbol :=
+`Need`. The principle and its names are found in the program. -/
+def check [DecidableEq Domain] (hoApplySymbol : Symbol) (input : Admission.Input Domain Variable Literal Symbol) :
+    Result Domain Variable Literal Symbol hoApplySymbol :=
   match consistent : input.forged with
   | position :: _ => .invalid (.signatureClause position)
   | [] =>
@@ -276,27 +337,27 @@ def check [DecidableEq Domain] (hoApplySymbol : Symbol) (input : Admission.Input
   match found : target? input.signature.naming input.signature.signature.data.domains input.goal with
   | none => .needsEvidence [.shape]
   | some target =>
-      let clause := principle hoApplySymbol input.signature.naming target.domain input.rules names
       let registered := input.signature.registered? target.predicate 1
-      let lowers := decide (elaborateClause? hoApplySymbol input.signature.naming (ranges target.domain input.rules)
-        (rangeOf names) (source hoApplySymbol input.signature.naming target.domain input.rules names) = some clause)
-      let carried := input.program.has clause
-      let admissible := admissible? hoApplySymbol (rulesOf input.rules target.domain) names
+      let registration : List (Need Variable Literal Symbol) :=
+        if registered then [] else [.registration target.predicate]
       let context := contextGaps hoApplySymbol input
-      let cases := casesGaps hoApplySymbol input target clause
-      if ok : registered = true ∧ lowers = true ∧ carried = true ∧ admissible = true ∧ context = [] ∧ cases = [] then
-        .ready ⟨input, names, target, admissible?_spec ok.2.2.2.1, (target?_spec found).1,
-          (SignatureSnapshot.registered?_eq_true _ _ _).mp ok.1, of_decide_eq_true ok.2.1, ok.2.2.1, consistent,
-          generated, ok.2.2.2.2.1, ok.2.2.2.2.2⟩
-      else
-        .needsEvidence ((if registered then [] else [.registration target.predicate]) ++
-          (if lowers && carried then [] else [.principle]) ++ (if admissible then [] else [.names]) ++
-          context.map .context ++ cases.map .clause)
+      let cases := casesGaps hoApplySymbol input target
+      match carrying : carried? hoApplySymbol input target with
+      | none => .needsEvidence (registration ++ [.principle] ++ context.map .context ++ cases.map .clause)
+      | some (clause, names) =>
+          let admissible := admissible? hoApplySymbol (rulesOf input.rules target.domain) names
+          if ok : registered = true ∧ admissible = true ∧ context = [] ∧ cases = [] then
+            .ready ⟨input, target, names, clause, (carried?_spec carrying).1, admissible?_spec ok.2.1,
+              (target?_spec found).1, (SignatureSnapshot.registered?_eq_true _ _ _).mp ok.1,
+              (carried?_spec carrying).2, consistent, generated, ok.2.2.1, ok.2.2.2⟩
+          else
+            .needsEvidence (registration ++ (if admissible then [] else [.names]) ++ context.map .context ++
+              cases.map .clause)
 
 /-- A Ready plan is for exactly the input checked. -/
 theorem check_input [DecidableEq Domain] {hoApplySymbol : Symbol} {input : Admission.Input Domain Variable Literal Symbol}
-    {names : Names Variable} {plan : Plan Domain Variable Literal Symbol hoApplySymbol}
-    (ready : check hoApplySymbol input names = .ready plan) : plan.input = input ∧ plan.names = names := by
+    {plan : Plan Domain Variable Literal Symbol hoApplySymbol} (ready : check hoApplySymbol input = .ready plan) :
+    plan.input = input := by
   unfold check at ready
   split at ready
   · cases ready
@@ -306,8 +367,46 @@ theorem check_input [DecidableEq Domain] {hoApplySymbol : Symbol} {input : Admis
   · cases ready
   dsimp only at ready
   split at ready
-  · cases ready; exact ⟨rfl, rfl⟩
   · cases ready
+  split at ready
+  · cases ready; rfl
+  · cases ready
+
+/-- A guard assumption to split at a guard goal on `subject`: one reading as
+`m(subject) ∨ rest`, `m` a guard symbol, neither side assumed yet. -/
+def splittable (program : Machine.Program Variable Literal Symbol) (subject : Term Variable Literal Symbol)
+    (context : List (Term Variable Literal Symbol × Term Variable Literal Symbol)) :
+    Term Variable Literal Symbol → Bool
+  | .disj (.app member [term]) rest =>
+      program.guard member && identical term subject &&
+        !(context.any fun (_, other) => identical other (.app member [term]) || identical other rest)
+  | _ => false
+
+/-- The guard assumptions to split at a guard goal on the same term. The split
+is invertible: one case adds `m(t)`, which closes the goal or its membership
+subgoals, and a `false` case closes by ex falso. A case assumes each field's
+guard as `m(y) ∨ false`, and a guard atom on a field needs it. -/
+def guardSplits (program : Machine.Program Variable Literal Symbol) (goal : Term Variable Literal Symbol)
+    (context : List (Term Variable Literal Symbol × Term Variable Literal Symbol)) :
+    List (Choice Variable Literal Symbol) :=
+  match goal with
+  | .app symbol [subject] =>
+      if program.guard symbol then
+        (context.filter fun (_, read) => splittable program subject context read).map
+          fun (assumption, _) => .disjCases assumption
+      else []
+  | _ => []
+
+theorem guardSplits_cases {program : Machine.Program Variable Literal Symbol} {goal : Term Variable Literal Symbol}
+    {context : List (Term Variable Literal Symbol × Term Variable Literal Symbol)} {choice : Choice Variable Literal Symbol}
+    (member : choice ∈ guardSplits program goal context) : ∃ assumption, choice = .disjCases assumption := by
+  unfold guardSplits at member
+  split at member
+  · split at member
+    · obtain ⟨⟨assumption, _⟩, _, rfl⟩ := List.mem_map.mp member
+      exact ⟨assumption, rfl⟩
+    · cases member
+  · cases member
 
 /-! ## The plan's strategy -/
 
@@ -315,29 +414,44 @@ namespace Plan
 
 variable [DecidableEq Domain] {hoApplySymbol : Symbol} (plan : Plan Domain Variable Literal Symbol hoApplySymbol)
 
-/-- The lowered principle the plan applies. -/
-def principle : HornClause Variable Literal Symbol :=
-  Induction.principle hoApplySymbol plan.input.signature.naming plan.target.domain plan.input.rules plan.names
+/-- The lowered principle the plan applies, as the program carries it. -/
+def principle : HornClause Variable Literal Symbol := plan.clause
 
-/-- Choose the principle by its whole head exactly at a focus `G_D(e) → p(e)`. -/
-def selection : Selection Variable Literal Symbol := fun _ _ goal _ =>
-  if focus? plan.input.signature.naming plan.target goal then [.headMatch plan.principle] else []
+/-- Lowering the source with `P` at `.predicate 1` gives the principle the plan
+applies: its names are admissible (`lower_principle`). -/
+theorem lowered :
+    elaborateClause? hoApplySymbol plan.input.signature.naming (ranges plan.target.domain plan.input.rules)
+      (rangeOf plan.names) (source (Literal := Literal) hoApplySymbol plan.input.signature.naming plan.target.domain
+        plan.input.rules plan.names) = some plan.principle := by
+  rw [Plan.principle, plan.clause_eq]
+  exact lower_principle _ _ _ _ _ plan.admissible
 
-/-- One run of the left strategy with the plan's selection, from the query. -/
+/-- Choose the principle by its whole head exactly at a focus `G_D(e) → p(e)`,
+and split a guard assumption at a guard goal on its term (`guardSplits`). -/
+def selection : Selection Variable Literal Symbol := fun _ _ goal context =>
+  if focus? plan.input.signature.naming plan.target goal then [.headMatch plan.principle]
+  else (guardSplits plan.input.program goal context).take 1
+
+/-- One run of the left strategy committed to the plan's selection, from the
+query: at a focus the principle is the one command, not raced against the
+implication's introduction. -/
 def run [FreshNames Variable] (fuel : Nat) : Outcome Variable Literal Symbol Unit Unit :=
-  Machine.run (left hoApplySymbol plan.input.program plan.selection) fuel
+  Machine.run (leftCommitted hoApplySymbol plan.input.program plan.selection) fuel
     (State.init () [] plan.input.context plan.input.goal)
 
+/-- The principle is chosen only at a focus. -/
 theorem selection_focus {obligation : Obligation Variable Literal Symbol} {store : Store Variable Literal Symbol}
     {goal : Term Variable Literal Symbol} {context : List (Term Variable Literal Symbol × Term Variable Literal Symbol)}
-    {choice : Choice Variable Literal Symbol} (chosen : choice ∈ plan.selection obligation store goal context) :
-    focus? plan.input.signature.naming plan.target goal = true ∧ choice = .headMatch plan.principle := by
+    {clause : HornClause Variable Literal Symbol}
+    (chosen : .headMatch clause ∈ plan.selection obligation store goal context) :
+    focus? plan.input.signature.naming plan.target goal = true ∧ clause = plan.principle := by
   unfold selection at chosen
   split at chosen
   · rename_i focused
-    simp only [List.mem_singleton] at chosen
+    simp only [List.mem_singleton, Choice.headMatch.injEq] at chosen
     exact ⟨focused, chosen⟩
-  · cases chosen
+  · obtain ⟨_, impossible⟩ := guardSplits_cases (List.mem_of_mem_take chosen)
+    cases impossible
 
 omit [DecidableEq Domain] in
 private theorem not_focus_of {naming : Naming Domain Symbol} {target : Target Domain Variable Symbol}
@@ -354,9 +468,11 @@ theorem body_unfocused [FreshNames Variable] {premise : Term Variable Literal Sy
     (inside : ∀ head body, plan.principle = .definite head body → premise ∈ body)
     (σ : Substitution Variable Literal Symbol) :
     focus? plan.input.signature.naming plan.target (premise.instantiate σ) = false := by
-  obtain ⟨head, body, same⟩ : ∃ head body, plan.principle = .definite head body := ⟨_, _, rfl⟩
+  obtain ⟨head, body, same⟩ : ∃ head body, plan.principle = .definite head body :=
+    ⟨_, _, by rw [Plan.principle, plan.clause_eq]; rfl⟩
   have member := inside head body same
-  simp only [Plan.principle, Induction.principle, HornClause.definite.injEq] at same
+  rw [Plan.principle, plan.clause_eq] at same
+  simp only [Induction.principle, HornClause.definite.injEq] at same
   obtain ⟨_, rfl⟩ := same
   apply not_focus_of
   intro premiseTerm conclusion equal
@@ -388,7 +504,7 @@ theorem reconstructs {fuel : Nat} {proof : CompletedProof Variable Literal Symbo
     (naf : NafFailure Variable Literal Symbol) :
     Derives hoApplySymbol plan.input.program.kb (plan.input.context.map proof.store.resolve)
       (plan.target.goal plan.input.signature.naming) naf := by
-  have derived := left_reconstructs (naf := naf) plan.input.program plan.selection fuel () [] plan.input.context
+  have derived := leftCommitted_reconstructs (naf := naf) plan.input.program plan.selection fuel () [] plan.input.context
     plan.input.goal ran
   rwa [plan.goal_eq, goal_closed] at derived
 
@@ -403,7 +519,7 @@ theorem models {Value : Type} {model : Model Literal Symbol Value hoApplySymbol}
     model.Models plan.input.program.kb := by
   intro clause member environment
   by_cases same : clause = plan.principle
-  · subst same
+  · rw [same, Plan.principle, plan.clause_eq]
     exact principle_valid plan.input.signature model realizes plan.input.complete plan.admissible environment
   · exact others clause member same environment
 

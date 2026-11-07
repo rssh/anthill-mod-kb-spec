@@ -95,7 +95,7 @@ def universal (predicate : Symbol) : T := Target.goal signature.naming ⟨"x", .
 
 def admitted (goal : T) (clauses : List (HornClause String Unit Symbol) := kbClauses) :
     Induction.Result Domain String Unit Symbol .hoApply :=
-  Induction.check .hoApply (input goal clauses) principleNames
+  Induction.check .hoApply (input goal clauses)
 
 def kindOf : Induction.Result Domain String Unit Symbol .hoApply → String
   | .ready _ => "ready"
@@ -104,7 +104,7 @@ def kindOf : Induction.Result Domain String Unit Symbol .hoApply → String
 
 def missingOf : Missing → String
   | .capability capability => s!"{repr capability}" | .negation => "negation"
-  | .goalVariable => "goalVariable" | .waitingGuard => "waitingGuard"
+  | .waitingGuard => "waitingGuard"
 
 def gapOf (gap : CaseGap String Unit Symbol) : String := s!"{repr gap.site} {gap.path} {missingOf gap.missing}"
 
@@ -152,11 +152,12 @@ def guardDefinition : HornClause String Unit Symbol := .definite (.app (.isPred 
   [.app (.isPred 1) [.app .even []]]
 #guard needsOf (admitted (universal .reachable) (kbClauses ++ [guardDefinition])) =
   ["clause AnthillModKbSpec.Admission.Site.head 3 [] AnthillModKbSpec.Admission.Capability.guardDefinition"]
--- A formula variable as a goal waits on its binding and flounders.
+-- A formula variable as a goal waits on its binding and flounders: P0's
+-- formulaVariable request.
 def variableGoal : HornClause String Unit Symbol := .definite (reachable (succ (.var "x")))
   [.var "q", reachable (.var "x")]
 #guard needsOf (admitted (universal .reachable) [reachableZero, variableGoal, principleClause]) =
-  ["clause AnthillModKbSpec.Admission.Site.body 1 0 [] goalVariable"]
+  ["clause AnthillModKbSpec.Admission.Site.body 1 0 [] AnthillModKbSpec.Admission.Capability.formulaVariable"]
 -- A range guard on a name no other goal of its clause mentions flounders; one
 -- on a name another body goal binds waits for it.
 def waiting : HornClause String Unit Symbol := .definite (reachable (succ (.var "x")))
@@ -167,12 +168,34 @@ def bound : HornClause String Unit Symbol := .definite (reachable (succ (.var "x
   [isNat (.var "z"), reachable (.var "z"), reachable (.var "x")]
 #guard kindOf (admitted (universal .reachable) [reachableZero, bound, principleClause]) = "ready"
 -- The query's context: a non-atomic assumption is reported.
-#guard needsOf (Induction.check .hoApply (input (universal .reachable) kbClauses [.disj (even zero) (reachable zero)])
-    principleNames) =
+#guard needsOf (Induction.check .hoApply (input (universal .reachable) kbClauses [.disj (even zero) (reachable zero)])) =
   ["context AnthillModKbSpec.Admission.Site.assumption 0 [] AnthillModKbSpec.Admission.Capability.scopedProof"]
 -- An unrelated clause outside the dependencies is not reported.
 def unrelated : HornClause String Unit Symbol := .definite (even (.var "x")) [.disj (even (.var "x")) (even zero)]
 #guard kindOf (admitted (universal .reachable) (kbClauses ++ [unrelated])) = "ready"
+-- A denial serves any `false` subgoal, so its body is checked; one with NAF is
+-- reported, one without is not.
+def negatedDenial : HornClause String Unit Symbol := .goal [.defaultNeg (even zero)]
+#guard needsOf (admitted (universal .reachable) [reachableZero, reachableSucc, negatedDenial, principleClause]) =
+  ["clause AnthillModKbSpec.Admission.Site.body 2 0 [] negation"]
+#guard kindOf (admitted (universal .reachable) [reachableZero, reachableSucc, .goal [even zero], principleClause]) =
+  "ready"
+-- A formula variable as an assumption or as a head: a head `q` may meet any goal.
+#guard needsOf (Induction.check .hoApply (input (universal .reachable) kbClauses [.var "q"])) =
+  ["context AnthillModKbSpec.Admission.Site.assumption 0 [] AnthillModKbSpec.Admission.Capability.formulaVariable"]
+#guard needsOf (admitted (universal .reachable) (kbClauses ++ [.definite (.var "q") [reachable zero]])) =
+  ["clause AnthillModKbSpec.Admission.Site.head 3 [] AnthillModKbSpec.Admission.Capability.formulaVariable"]
+-- NAF assumed in the query's context is a hypothesis, not a NAF goal: the plan
+-- chooses no left rule on it, so it is P0's scoped-proof request.
+#guard needsOf (Induction.check .hoApply (input (universal .reachable) kbClauses [.defaultNeg (even zero)])) =
+  ["context AnthillModKbSpec.Admission.Site.assumption 0 [] AnthillModKbSpec.Admission.Capability.scopedProof"]
+-- A guard assumption in the query's context is split at a guard goal on its term.
+#guard kindOf (Induction.check .hoApply (input (universal .reachable) kbClauses [.disj (isNat zero) .falsity])) =
+  "ready"
+-- The principle is found in the program whatever names the generator chose.
+def renamedPrinciple : HornClause String Unit Symbol :=
+  principle .hoApply signature.naming .nat rules ⟨"Q", "z", fun index => s!"w{index}"⟩
+#guard kindOf (admitted (universal .reachable) [reachableZero, reachableSucc, renamedPrinciple]) = "ready"
 
 /-! ### The run -/
 
@@ -182,12 +205,35 @@ def runOf (goal : T) (clauses : List (HornClause String Unit Symbol) := kbClause
   | .ready plan => some (plan.run fuel)
   | _ => none
 
+/-- The kind of the run of the admitted plan, or the admission result's kind. -/
+def runKind (clauses : List (HornClause String Unit Symbol)) : String :=
+  match admitted (universal .reachable) clauses with
+  | .ready plan => s!"{repr (plan.run 3000).kind}"
+  | other => kindOf other
+
 def inductionRun : Option (Outcome String Unit Symbol Unit Unit) := runOf (universal .reachable)
 def proofOf : Option (CompletedProof String Unit Symbol Unit Unit) := inductionRun.bind (·.proof?)
 
 #guard (inductionRun.map (·.kind)) = some .success
-#guard (proofOf.map (·.tree.rules)) = some [.forallIntro, .converted, .conjIntro, .clause, .truth, .conjIntro,
-  .clause, .truth, .conjIntro, .clause, .truth, .conjIntro, .truth, .conjIntro, .clause, .truth, .conjIntro, .truth,
+-- The plan commits to the principle at the focus: a valid looping clause for
+-- `reachable`, which the implication's introduction would reach first, is
+-- never tried there.
+def loop : HornClause String Unit Symbol := .definite (reachable (.var "z")) [reachable (.var "z")]
+#guard runKind (kbClauses ++ [loop]) = "AnthillModKbSpec.Machine.OutcomeKind.success"
+-- A step clause with an atomic guard on its variable: the case assumes the
+-- field's guard as isNat(n) ∨ false and splits it at the guard goal, before the
+-- generated clause isNat(v) :- isNat(v), which would loop.
+def atomicGuard : HornClause String Unit Symbol := .definite (reachable (succ (.var "x")))
+  [isNat (.var "x"), reachable (.var "x")]
+#guard runKind [reachableZero, atomicGuard, principleClause] = "AnthillModKbSpec.Machine.OutcomeKind.success"
+#guard (match admitted (universal .reachable) [reachableZero, atomicGuard, principleClause] with
+  | .ready plan => (plan.run 3000).proof?.map fun proof => proof.tree.rules.contains .disjCases
+  | _ => none) = some true
+-- Names the generator chose differently give the same run.
+#guard runKind [reachableZero, reachableSucc, renamedPrinciple] = "AnthillModKbSpec.Machine.OutcomeKind.success"
+-- One guard per free name: P_1(reachable) by its generated fact, truth for
+-- the target, then the base and the step.
+#guard (proofOf.map (·.tree.rules)) = some [.forallIntro, .converted, .conjIntro, .clause, .truth, .conjIntro, .truth,
   .conjIntro, .hoApplyIntro, .clause, .truth, .conjIntro, .forallIntro, .impIntro, .impIntro, .hoApplyIntro, .clause,
   .conjIntro, .converted, .truth, .truth]
 
@@ -264,6 +310,23 @@ def stepAt : Option Nat := (readNodes.zipIdx.filter fun
 #guard match hypothesisAt, stepAt with
   | some (first :: rest), some start => start < first && (first :: rest).all (· < readNodes.length - 1)
   | _, _ => false
+/-- A node of the run's tree whose context holds the step's hypothesis. -/
+def holdsHypothesis (proof : CompletedProof String Unit Symbol Unit Unit) (opened : String) :
+    ProofTree String Unit Symbol Unit → Bool
+  | .node _ obligation _ _ => obligation.context.any fun assumption =>
+      identical (proof.store.resolve assumption) (.hoApply .hoApply (.app .reachable []) [.var opened])
+  | .deferred _ _ => false
+-- By the tree's structure: every node holding the hypothesis is in the step's
+-- subtree, the one rooted at the step's universal introduction.
+#guard match proofOf, stepEigen with
+  | some proof, some opened =>
+      match (nodes proof.tree).find? (fun | .node (.forallIntro eigen) _ _ _ => eigen == opened | _ => false) with
+      | some subtree =>
+          let holding := fun (trees : List (ProofTree String Unit Symbol Unit)) =>
+            (trees.filter (holdsHypothesis proof opened)).length
+          holding (nodes subtree) > 0 && holding (nodes subtree) == holding (nodes proof.tree)
+      | none => false
+  | _, _ => false
 #guard (readNodes.getLast?.map fun (_, goal, context) => identical goal .truth && context.isEmpty) = some true
 #guard readNodes.any fun
   | (.clause clause _, goal, context) => decide (clause = reachableZero) && identical goal (reachable zero) && context.isEmpty
@@ -326,6 +389,11 @@ def withoutPrinciple : P1.Checker String Unit Symbol :=
 theorem admissible : Admissible .hoApply (rulesOf rules .nat) principleNames :=
   admissible?_spec (by decide)
 
+/-- Lowering the source gives the principle, for admissible names. -/
+example : Elaboration.elaborateClause? .hoApply signature.naming (ranges .nat rules) (rangeOf principleNames)
+    principleSource = some principleClause :=
+  lower_principle _ _ _ _ _ admissible
+
 /-- Every clause of the program is valid in the induction model: the principle
 by `principle_valid`, from the exact Nat realization, the reachable clauses by
 the model's own proofs, the generated clauses by the realization. -/
@@ -348,7 +416,7 @@ theorem universal_holds {plan : Induction.Plan Domain String Unit Symbol .hoAppl
     {proof : CompletedProof String Unit Symbol Unit Unit} {resume : State String Unit Symbol Unit Unit}
     (ran : plan.run fuel = .success proof resume) (environment : Environment String Value) :
     model.Satisfies environment (universal .reachable) := by
-  obtain ⟨sameInput, _⟩ := check_input ready
+  have sameInput := check_input ready
   let interpretation : InductiveSoundness.Interpretation family plan.input.program.kb Value .hoApply :=
     ⟨model, membershipSymbol, realizes, by rw [sameInput]; exact program_valid, complement⟩
   have derived := plan.reconstructs ran (CertifiedRefutation.failureEvidence model plan.input.program.kb)
@@ -434,21 +502,22 @@ def input (goal : T) (clauses : List Clause := kbClauses) : Admission.Input Dom 
   ⟨signature, names, rules, listed, complete, distinct, program clauses, fun _ => guardSymbol_iff, [], goal⟩
 def universal (domain : Dom) (predicate : Sym) : T := Target.goal signature.naming ⟨9, domain, predicate⟩
 
-def checker : P1.Checker Nat Nat Sym := ⟨⟨.ha, (program).clauses.map (·.clause)⟩, NafFailure.disabled, none, []⟩
+def checker (clauses : List Clause := kbClauses) : P1.Checker Nat Nat Sym :=
+  ⟨⟨.ha, (program clauses).clauses.map (·.clause)⟩, NafFailure.disabled, none, []⟩
 
-def outcomeOf (goal : T) : Option (Outcome Nat Nat Sym Unit Unit) :=
-  match Induction.check .ha (input goal) principleNames with
+def outcomeOf (goal : T) (clauses : List Clause := kbClauses) : Option (Outcome Nat Nat Sym Unit Unit) :=
+  match Induction.check .ha (input goal clauses) with
   | .ready plan => some (plan.run 2000)
   | _ => none
 
 def rulesOf' (goal : T) : Option (List RuleId) := (outcomeOf goal).bind fun outcome => outcome.proof?.map (·.tree.rules)
 
-def encoded (goal : T) : Option T :=
-  (outcomeOf goal).bind fun outcome => outcome.proof?.bind (P1.exportProof vocab (fun _ => .truth))
+def encoded (goal : T) (clauses : List Clause := kbClauses) : Option T :=
+  (outcomeOf goal clauses).bind fun outcome => outcome.proof?.bind (P1.exportProof vocab (fun _ => .truth))
 
-def accepted (goal : T) : Bool :=
-  match encoded goal with
-  | some term => decide (P1.checkProof vocab checker [] [] goal term = .accept)
+def accepted (goal : T) (clauses : List Clause := kbClauses) : Bool :=
+  match encoded goal clauses with
+  | some term => decide (P1.checkProof vocab (checker clauses) [] [] goal term = .accept)
   | none => false
 
 -- The principles are generated from the rules: Bool has two cases without
@@ -490,8 +559,7 @@ def accepted (goal : T) : Bool :=
 -- Another domain's principle does not apply. A program carrying only Bool's
 -- and the list's principles has no plan for a Nat universal, and a tree citing
 -- Bool's principle at the Nat focus is rejected.
-#guard match Induction.check .ha (input (universal .nat .reachable) (kbClauses.filter (· ≠ principleOf .nat)))
-    principleNames with
+#guard match Induction.check .ha (input (universal .nat .reachable) (kbClauses.filter (· ≠ principleOf .nat))) with
   | .needsEvidence [.principle] => true
   | _ => false
 def tree (goal : T) : Option (P1.Proof Nat Nat Sym) :=
@@ -506,6 +574,13 @@ partial def cite (original replacement : Clause) : P1.Proof Nat Nat Sym → P1.P
   | some proof => P1.check checker (fun _ _ _ => false) [] proof &&
       !(P1.check checker (fun _ _ _ => false) [] (cite (principleOf .nat) (principleOf .bool) proof))
   | none => false
+-- A step clause guarding its variable atomically at the default D_all range:
+-- the case's assumption isNat(n) ∨ false is split at the guard goal, and the
+-- exported Term, with its split, is accepted.
+def dallStep : Clause := .definite (atom .reachable [atom .succ [.var 5]]) [atom .allData [.var 5], atom .reachable [.var 5]]
+def withDall : List Clause := [.definite (atom .reachable [k .zero]) [], dallStep, principleOf .nat]
+#guard (outcomeOf (universal .nat .reachable) withDall).map (·.kind) = some .success
+#guard accepted (universal .nat .reachable) withDall
 -- A property that fails one case is not proved: `defined` has no list cases,
 -- `reachable` no Bool cases.
 #guard (outcomeOf (universal .list .defined)).map (·.kind) = some .exhausted

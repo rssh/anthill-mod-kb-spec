@@ -23,7 +23,8 @@ The source clause is lowered by `elaborateClause?` with `P` at `.predicate 1`:
 lowering adds the guard `P_1(P)` and each field's guard; a range on `P` that
 does not admit a unary predicate, a data range or `D_all`, is rejected
 (`lower_rejects`). `principle` is the lowered clause, built with the
-guards in place; admission checks that lowering the source gives it.
+guards in place, and lowering the source gives it for admissible names
+(`lower_principle`).
 
 Validity is a theorem, not an assumption: in every model realizing the
 signature, exact membership makes the members of `D` the values built by its
@@ -188,6 +189,229 @@ theorem admissible?_spec {hoApplySymbol : Symbol} {rules : List (Rule Domain Sym
   · exact (perRule rule member).1.2 index lt same
 
 end Names
+
+/-! ## Lowering gives the principle
+
+Lowering the source changes no binder-free part, and gives each field binder
+its domain's guard from `ranges`; the source passes the predicate-range
+check, since no field shadows `P` and no constructor is `ho_apply`. -/
+
+section Lowering
+
+variable [DecidableEq Domain] [DecidableEq Variable] [DecidableEq Symbol]
+
+omit [DecidableEq Domain] [DecidableEq Variable] [DecidableEq Symbol] in
+theorem elaborate_guard (naming : Naming Domain Symbol) (membership : Domain → Symbol) (name : Variable) :
+    ∀ (domains : List Domain) (ranges : Ranges Domain),
+      elaborate naming ranges (InductiveDomains.guard membership domains (.var name) : Term Variable Literal Symbol) =
+        InductiveDomains.guard membership domains (.var name)
+  | [], _ => by simp [InductiveDomains.guard, elaborate]
+  | domain :: rest, ranges => by
+      have next := elaborate_guard naming membership name rest (child ranges 1)
+      simp only [InductiveDomains.guard, List.map_cons, List.foldr_cons] at next ⊢
+      simp [elaborate, elaborateArgs, next]
+
+omit [DecidableEq Domain] [DecidableEq Variable] [DecidableEq Symbol] in
+theorem elaborateArgs_fieldVars (naming : Naming Domain Symbol) (ranges : Ranges Domain) (field : Nat → Variable) :
+    ∀ (count offset index : Nat),
+      elaborateArgs naming ranges offset (fieldVars field index count : List (Term Variable Literal Symbol)) =
+        fieldVars field index count
+  | 0, _, _ => by simp [fieldVars, elaborateArgs]
+  | count + 1, offset, index => by
+      simp [fieldVars, elaborateArgs, elaborate, elaborateArgs_fieldVars naming ranges field count]
+
+omit [DecidableEq Variable] [DecidableEq Symbol] in
+theorem elaborate_hypotheses (hoApplySymbol : Symbol) (naming : Naming Domain Symbol) (domain : Domain)
+    (predicate : Variable) (field : Nat → Variable) {conclusion : Term Variable Literal Symbol}
+    (unchanged : ∀ ranges, elaborate naming ranges conclusion = conclusion) :
+    ∀ (fields : List Domain) (index : Nat) (ranges : Ranges Domain),
+      elaborate naming ranges (hypotheses hoApplySymbol domain predicate field fields index conclusion) =
+        hypotheses hoApplySymbol domain predicate field fields index conclusion
+  | [], _, ranges => unchanged ranges
+  | fieldDomain :: rest, index, ranges => by
+      unfold hypotheses
+      split
+      · simp [elaborate, applied, Term.hoApply, elaborateArgs,
+          elaborate_hypotheses hoApplySymbol naming domain predicate field unchanged rest (index + 1)]
+      · exact elaborate_hypotheses hoApplySymbol naming domain predicate field unchanged rest (index + 1) ranges
+
+omit [DecidableEq Variable] [DecidableEq Symbol] in
+theorem elaborate_matrix (hoApplySymbol : Symbol) (naming : Naming Domain Symbol) (domain : Domain)
+    (names : Names Variable) (rule : Rule Domain Symbol) (ranges : Ranges Domain) :
+    elaborate naming ranges (matrix hoApplySymbol domain names rule : Term Variable Literal Symbol) =
+      matrix hoApplySymbol domain names rule := by
+  unfold matrix
+  apply elaborate_hypotheses
+  intro ranges
+  simp [elaborate, applied, Term.hoApply, elaborateArgs, elaborateArgs_fieldVars]
+
+omit [DecidableEq Variable] [DecidableEq Symbol] in
+theorem elaborate_bindFields (naming : Naming Domain Symbol) (domain : Domain) (rules : List (Rule Domain Symbol))
+    (field : Nat → Variable) {body : Term Variable Literal Symbol}
+    (unchanged : ∀ ranges, elaborate naming ranges body = body) {case : Nat} {rule : Rule Domain Symbol}
+    (found : (rulesOf rules domain)[case]? = some rule) :
+    ∀ (rest : List Domain) (index : Nat), rule.fields.drop index = rest →
+      elaborate naming (fun path => ranges domain rules ((case + 1) :: List.replicate index 0 ++ path))
+        (bindFields field rest index body) = guardFields naming field rest index body
+  | [], _, _ => unchanged _
+  | fieldDomain :: rest, index, dropped => by
+      have located : rule.fields[index]? = some fieldDomain := by
+        rw [← Nat.add_zero index, ← List.getElem?_drop, dropped]; rfl
+      have tail : rule.fields.drop (index + 1) = rest := by
+        rw [← List.tail_drop, dropped]; rfl
+      have range : ranges domain rules ((case + 1) :: List.replicate index 0 ++ []) = .data [fieldDomain] := by
+        simp [ranges, found, located]
+      have next : child (fun path => ranges domain rules ((case + 1) :: List.replicate index 0 ++ path)) 0 =
+          fun path => ranges domain rules ((case + 1) :: List.replicate (index + 1) 0 ++ path) := by
+        funext path
+        simp [child, List.replicate_succ']
+      simp only [bindFields, guardFields, elaborate]
+      rw [range, next, elaborate_bindFields naming domain rules field unchanged found rest (index + 1) tail]
+
+omit [DecidableEq Variable] [DecidableEq Symbol] in
+theorem elaborateArgs_cases (hoApplySymbol : Symbol) (naming : Naming Domain Symbol) (domain : Domain)
+    (rules : List (Rule Domain Symbol)) (names : Names Variable) :
+    ∀ (cases : List (Rule Domain Symbol)) (offset : Nat),
+      (∀ position, (rulesOf rules domain)[offset + position]? = cases[position]?) →
+      elaborateArgs naming (ranges domain rules) (offset + 1)
+          (cases.map fun rule => bindFields names.field rule.fields 0
+            (matrix (Literal := Literal) hoApplySymbol domain names rule)) =
+        cases.map fun rule => guardFields naming names.field rule.fields 0 (matrix hoApplySymbol domain names rule)
+  | [], _, _ => by simp [elaborateArgs]
+  | rule :: rest, offset, aligned => by
+      have found : (rulesOf rules domain)[offset]? = some rule := by simpa using aligned 0
+      have shifted : ∀ position, (rulesOf rules domain)[offset + 1 + position]? = rest[position]? := fun position => by
+        have := aligned (position + 1)
+        simpa [Nat.add_assoc, Nat.add_comm 1 position] using this
+      simp only [List.map_cons, elaborateArgs]
+      rw [elaborateArgs_cases hoApplySymbol naming domain rules names rest (offset + 1) shifted]
+      congr 1
+      exact elaborate_bindFields naming domain rules names.field (elaborate_matrix hoApplySymbol naming domain names rule)
+        found rule.fields 0 List.drop_zero
+
+omit [DecidableEq Domain] [DecidableEq Variable] [DecidableEq Symbol] in
+theorem elaborate_head (hoApplySymbol : Symbol) (naming : Naming Domain Symbol) (domain : Domain)
+    (names : Names Variable) (ranges : Ranges Domain) :
+    elaborate naming ranges (head hoApplySymbol naming domain names : Term Variable Literal Symbol) =
+      head hoApplySymbol naming domain names := by
+  simp [head, rangeGuard, elaborate, applied, Term.hoApply, elaborateArgs, elaborate_guard]
+
+/-! ### The source passes the predicate-range check -/
+
+omit [DecidableEq Domain] in
+theorem predicateRanged_guard (hoApplySymbol : Symbol) (membership : Domain → Symbol) (name : Variable)
+    (scope : Variable → Option (Range Domain)) (admits : (scope name).all (admitsPredicate · 0) = true) :
+    ∀ (domains : List Domain) (ranges : Ranges Domain),
+      predicateRanged hoApplySymbol ranges scope (InductiveDomains.guard membership domains (.var name) :
+        Term Variable Literal Symbol) = true
+  | [], _ => by simp [InductiveDomains.guard, predicateRanged]
+  | domain :: rest, ranges => by
+      have next := predicateRanged_guard hoApplySymbol membership name scope admits rest (child ranges 1)
+      simp only [InductiveDomains.guard, List.map_cons, List.foldr_cons] at next ⊢
+      simp [predicateRanged, predicateRangedArgs, headRanged, admits, next]
+
+omit [DecidableEq Domain] in
+theorem predicateRangedArgs_fieldVars (hoApplySymbol : Symbol) (ranges : Ranges Domain)
+    (scope : Variable → Option (Range Domain)) (field : Nat → Variable) :
+    ∀ (count offset index : Nat),
+      predicateRangedArgs hoApplySymbol ranges scope offset
+        (fieldVars field index count : List (Term Variable Literal Symbol)) = true
+  | 0, _, _ => by simp [fieldVars, predicateRangedArgs]
+  | count + 1, offset, index => by
+      simp [fieldVars, predicateRangedArgs, predicateRanged, predicateRangedArgs_fieldVars hoApplySymbol ranges scope field count]
+
+omit [DecidableEq Domain] in
+theorem predicateRanged_applied (hoApplySymbol : Symbol) (predicate : Variable) {subject : Term Variable Literal Symbol}
+    (scope : Variable → Option (Range Domain)) (unary : scope predicate = some (.predicate 1))
+    (inner : ∀ ranges, predicateRanged hoApplySymbol ranges scope subject = true) (ranges : Ranges Domain) :
+    predicateRanged hoApplySymbol ranges scope (applied hoApplySymbol predicate subject) = true := by
+  simp [applied, Term.hoApply, predicateRanged, predicateRangedArgs, headRanged, unary, admitsPredicate, inner]
+
+theorem predicateRanged_hypotheses (hoApplySymbol : Symbol) (domain : Domain) (predicate : Variable)
+    (field : Nat → Variable) (scope : Variable → Option (Range Domain)) (unary : scope predicate = some (.predicate 1))
+    {conclusion : Term Variable Literal Symbol}
+    (inner : ∀ ranges, predicateRanged hoApplySymbol ranges scope conclusion = true) :
+    ∀ (fields : List Domain) (index : Nat) (ranges : Ranges Domain),
+      predicateRanged hoApplySymbol ranges scope (hypotheses hoApplySymbol domain predicate field fields index conclusion) =
+        true
+  | [], _, ranges => inner ranges
+  | fieldDomain :: rest, index, ranges => by
+      unfold hypotheses
+      split
+      · simp only [predicateRanged, Bool.and_eq_true]
+        exact ⟨predicateRanged_applied hoApplySymbol predicate scope unary
+            (fun _ => by simp [predicateRanged]) _,
+          predicateRanged_hypotheses hoApplySymbol domain predicate field scope unary inner rest (index + 1) _⟩
+      · exact predicateRanged_hypotheses hoApplySymbol domain predicate field scope unary inner rest (index + 1) ranges
+
+theorem predicateRanged_matrix (hoApplySymbol : Symbol) (domain : Domain) (names : Names Variable)
+    (rule : Rule Domain Symbol) (ordinary : rule.symbol ≠ hoApplySymbol) (scope : Variable → Option (Range Domain))
+    (unary : scope names.predicate = some (.predicate 1)) (ranges : Ranges Domain) :
+    predicateRanged hoApplySymbol ranges scope (matrix (Literal := Literal) hoApplySymbol domain names rule) = true := by
+  unfold matrix
+  apply predicateRanged_hypotheses _ _ _ _ _ unary
+  intro ranges
+  apply predicateRanged_applied _ _ _ unary
+  intro ranges
+  simp [predicateRanged, ordinary, predicateRangedArgs_fieldVars]
+
+omit [DecidableEq Domain] in
+theorem predicateRanged_bindFields (hoApplySymbol : Symbol) (predicate : Variable) (field : Nat → Variable)
+    {body : Term Variable Literal Symbol}
+    (inner : ∀ (ranges : Ranges Domain) (scope : Variable → Option (Range Domain)),
+      scope predicate = some (.predicate 1) → predicateRanged hoApplySymbol ranges scope body = true) :
+    ∀ (fields : List Domain) (index : Nat), (∀ position, position < fields.length → field (index + position) ≠ predicate) →
+      ∀ (ranges : Ranges Domain) (scope : Variable → Option (Range Domain)), scope predicate = some (.predicate 1) →
+        predicateRanged hoApplySymbol ranges scope (bindFields field fields index body) = true
+  | [], _, _, ranges, scope, unary => inner ranges scope unary
+  | _ :: rest, index, free, ranges, scope, unary => by
+      have here : field index ≠ predicate := by simpa using free 0 (by simp)
+      simp only [bindFields, predicateRanged]
+      apply predicateRanged_bindFields hoApplySymbol predicate field inner rest (index + 1)
+        (fun position below => by
+          have := free (position + 1) (by simp; omega)
+          simpa [Nat.add_assoc, Nat.add_comm 1 position] using this)
+      simp [update, unary, Ne.symm here]
+
+/-- Lowering the source with `P` at `.predicate 1` gives the principle, for
+admissible names: the source's head and matrices have no binders, its fields'
+binders get their domains' guards from `ranges`, and no field shadows `P`. -/
+theorem lower_principle (hoApplySymbol : Symbol) (naming : Naming Domain Symbol) (domain : Domain)
+    (rules : List (Rule Domain Symbol)) (names : Names Variable)
+    (admissible : Admissible hoApplySymbol (rulesOf rules domain) names) :
+    elaborateClause? hoApplySymbol naming (ranges domain rules) (rangeOf names)
+      (source (Literal := Literal) hoApplySymbol naming domain rules names) =
+      some (principle hoApplySymbol naming domain rules names) := by
+  have unary : (some ∘ rangeOf (Domain := Domain) names) names.predicate = some (.predicate 1) := by simp [rangeOf]
+  rw [elaborateClause?_eq_some]
+  constructor
+  · simp only [source, clausePredicateRanged, Bool.and_eq_true]
+    constructor
+    · simp only [head, predicateRanged, rangeGuard, Bool.and_eq_true]
+      refine ⟨predicateRanged_guard _ _ _ _ (by simp [rangeOf, admissible.target_free, admitsPredicate]) _ _,
+        predicateRanged_applied _ _ _ unary (fun _ => by simp [predicateRanged]) _⟩
+    · suffices ∀ (cases : List (Rule Domain Symbol)) (offset : Nat), (∀ rule ∈ cases, rule ∈ rulesOf rules domain) →
+          predicateRangedArgs hoApplySymbol (ranges domain rules) (some ∘ rangeOf names) offset
+            (cases.map fun rule => bindFields names.field rule.fields 0
+              (matrix (Literal := Literal) hoApplySymbol domain names rule)) = true from
+        this _ 1 fun _ member => member
+      intro cases
+      induction cases with
+      | nil => intro _ _; simp [predicateRangedArgs]
+      | cons rule rest ih =>
+          intro offset inside
+          have member := inside rule (by simp)
+          simp only [List.map_cons, predicateRangedArgs, Bool.and_eq_true]
+          refine ⟨?_, ih _ fun other below => inside other (by simp [below])⟩
+          apply predicateRanged_bindFields _ _ _ _ rule.fields 0
+            (fun position below => by simpa using admissible.fields_free rule member position below) _ _ unary
+          intro ranges scope unaryScope
+          exact predicateRanged_matrix _ _ _ _ (admissible.constructors_ordinary rule member) _ unaryScope _
+  · simp only [elaborateClause, source, principle, elaborate_head]
+    congr 2
+    exact elaborateArgs_cases hoApplySymbol naming domain rules names _ 0 (fun position => by simp)
+
+end Lowering
 
 /-! ## Validity -/
 

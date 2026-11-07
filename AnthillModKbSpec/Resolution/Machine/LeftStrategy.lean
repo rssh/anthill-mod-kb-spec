@@ -241,6 +241,19 @@ def left (hoApplySymbol : Symbol) (program : Program Variable Literal Symbol) (s
               obligation store goal context
           | first :: rest => .candidates (first :: rest)
 
+/-- The left strategy committed to its selection: a focus where `select`
+chooses commands gets only those, in order, and any other focus is `left`'s.
+A selection naming the one rule a plan applies at a focus, or an invertible
+step, is then not raced against identity, introductions, and clauses, which
+depth-first search would try first (S12). -/
+def leftCommitted (hoApplySymbol : Symbol) (program : Program Variable Literal Symbol)
+    (select : Selection Variable Literal Symbol) : Strategy Variable Literal Symbol Certificate :=
+  fun obligation store =>
+    match chosenAttempts hoApplySymbol program select obligation store (store.resolve obligation.goal)
+        (store.readContext obligation) with
+    | [] => left hoApplySymbol program select obligation store
+    | first :: rest => respond (first :: rest)
+
 /-! ## Soundness -/
 
 variable {hoApplySymbol : Symbol} {naf : NafFailure Variable Literal Symbol} {program : Program Variable Literal Symbol}
@@ -367,5 +380,29 @@ theorem left_reconstructs (program : Program Variable Literal Symbol) (select : 
     (ran : run (left hoApplySymbol program select) fuel (State.init snapshot flexibles context goal) = .success proof resume) :
     Derives hoApplySymbol program.kb (context.map proof.store.resolve) (proof.store.resolve goal) naf :=
   run_init_reconstructs _ (left_sound program select) fuel snapshot flexibles context goal ran
+
+/-- The committed left strategy is sound for its program's KB: its commands
+are the chosen ones or `left`'s. -/
+theorem leftCommitted_sound (program : Program Variable Literal Symbol) (select : Selection Variable Literal Symbol) :
+    Strategy.Sound hoApplySymbol program.kb naf (leftCommitted (Certificate := Certificate) hoApplySymbol program select) := by
+  intro obligation store valid declared expansion member
+  unfold leftCommitted at member
+  split at member
+  · exact left_sound program select obligation store valid declared expansion member
+  · rename_i first rest chosen
+    refine respond_sound (fun candidate inside => ?_) expansion member
+    rw [← chosen] at inside
+    exact chosenAttempts_sound valid declared select candidate inside
+
+/-- A successful run of the committed left strategy reconstructs `Derives` for
+its answer instance in the program's KB. -/
+theorem leftCommitted_reconstructs (program : Program Variable Literal Symbol) (select : Selection Variable Literal Symbol)
+    (fuel : Nat) (snapshot : Snapshot) (flexibles : List Variable) (context : ProofContext Variable Literal Symbol)
+    (goal : Formula Variable Literal Symbol) {resume : State Variable Literal Symbol Certificate Snapshot}
+    {proof : CompletedProof Variable Literal Symbol Certificate Snapshot}
+    (ran : run (leftCommitted hoApplySymbol program select) fuel (State.init snapshot flexibles context goal) =
+      .success proof resume) :
+    Derives hoApplySymbol program.kb (context.map proof.store.resolve) (proof.store.resolve goal) naf :=
+  run_init_reconstructs _ (leftCommitted_sound program select) fuel snapshot flexibles context goal ran
 
 end AnthillModKbSpec.Machine
