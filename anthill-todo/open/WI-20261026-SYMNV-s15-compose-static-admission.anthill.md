@@ -9,7 +9,7 @@
 
 - acceptance: lake build
 
-- depends_on: WI-20261026-ANXY6-s10-implement-evidence-first, WI-20261026-P6JQV-s12-admit-explicit-induction, WI-20261026-5G8F5-s14-implement-dictionary-law
+- depends_on: WI-20261026-ANXY6-s10-implement-evidence-first, WI-20261026-P6JQV-s12-admit-explicit-induction, WI-20261026-5G8F5-s14-implement-dictionary-law, WI-20261107-JA6WZ-s22-answers-yes-no-unknown-and
 
 - tags: resolution-machine
 
@@ -35,6 +35,7 @@ Validation: lake build and focused Lean tests/examples appropriate to the change
 Design references: docs/resolution-state-machine.md and docs/resolution-implementation-plan.md.
 
 Profile composition acceptance (S01 revision): use one syntax and one Step/run. Prove P0-to-P1-to-P2 admission inclusion and preservation of embedded plans. P1 requires totality, soundness, and completeness for a named decision problem, with no completed Unknown result. P2 may exhaust a terminating proof strategy with Unknown. A decision request cannot silently fall back to P2. Generic induction/law search is P2 unless a complete decision contract is supplied; keep non-derivability distinct from semantic refutation and NAF evidence. See docs/lean-admission-contract.md.
+
 ## Changes
 
 ### 2026-10-31T19:37:46Z — feedback — user
