@@ -3,9 +3,9 @@
 - id: WI-20261026-9C19E-s13-specify-checked-typeless
 - created: 2026-10-26T08:32:34Z
 
-- status: Open
-- status_agent: user
-- status_at: 2026-10-26T08:32:34Z
+- status: Claimed
+- status_agent: claude
+- status_at: 2026-11-07T18:44:36Z
 
 - acceptance: lake build
 
@@ -31,3 +31,4 @@ No polymorphic type system or unverified runtime evaluator is introduced.
 
 Validation: lake build and focused Lean tests/examples appropriate to the changed definitions and proofs. Documentation-only work is checked against its stated deliverables; a build alone does not establish them.
 Design references: docs/resolution-state-machine.md and docs/resolution-implementation-plan.md.
+

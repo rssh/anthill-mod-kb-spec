@@ -69,8 +69,8 @@ Dictionary extensions may represent references differently from nullary symbol
 values. `DictionaryCompatible` explicitly requires agreement for registered
 references before `dictionary_hoApply` connects their invocation and ho_apply.
 The existing dictionary extension contract alone does not establish this
-agreement. Dictionary registration, lookup guards, and evaluator admission remain
-S13-S14 obligations.
+agreement. Dictionary registration and its guards are
+[S13's registry](dictionary-registry.md); evaluator admission remains S14's.
 
 The concrete witness reuses `InductionModel.model`, its exact generated Nat
 domain, and its KB model theorem. Regressions cover unary reachable, an overlapping

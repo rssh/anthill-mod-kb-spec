@@ -33,14 +33,12 @@ theorem equation_valid (environment : Environment String Value) :
   simp only [Model.Satisfies, Term.conjunction, List.foldr_cons, List.foldr_nil,
     Model.eval, isNat, List.map_cons, List.map_nil] at condition
   have positive := ((model.holds_conjunction _ _).mp condition).1
-  have exactDomain := nat_member_exact (environment "x")
-  rw [natOrd, member_dictionary _ _ _ rfl] at exactDomain
-  have domain : NatDomain (environment "x") := exactDomain.mp positive
+  have domain : NatDomain (environment "x") := (holds_isNat _).mp positive
   obtain ⟨n, value⟩ := domain
   simp only [natEqualSelf, trueValue, Model.eval, List.map_cons, List.map_nil]
   change application .natEqual [environment "x", environment "x"] = boolean true
   rw [value]
-  simp [application, primitive]
+  simp [application, primitive, predicateTruth, operationValue]
 
 theorem fact_valid (environment : Environment String Value) :
     model.Satisfies environment natFact.toFormula := by
@@ -48,7 +46,7 @@ theorem fact_valid (environment : Environment String Value) :
   apply (model.holds_implication _ _).mpr
   intro _
   simp [isNat, three, Model.eval, model, OperationDictionaries.Extension.withDictionaryCalls,
-    baseModel, application, primitive, holds]
+    baseModel, application, primitive, predicateTruth, operationValue, holds, NatDomain]
 
 theorem equation_body_valid (environment : Environment String Value) :
     model.Satisfies environment equationBodyRule.toFormula := by
@@ -61,7 +59,7 @@ theorem equation_body_valid (environment : Environment String Value) :
   rw [values]
   simp only [trueValue, Model.eval]
   change holds (application .isBool [boolean true])
-  simp [application, primitive, holds]
+  exact (holds_isBool _).mpr ⟨true, rfl⟩
 
 theorem kb_valid : model.Models kb := by
   intro clause member environment
@@ -115,7 +113,8 @@ example : ¬ Derives .hoApply kb [] (.app .isBool [natEqualSelf (.lit (.ordering
   have result := model.positive_sound kb_valid proof (fun _ => .invalid)
     (by intro assumption member; cases member)
   simp [Model.Satisfies, natEqualSelf, Model.eval, model,
-    OperationDictionaries.Extension.withDictionaryCalls, baseModel, application, primitive, holds] at result
+    OperationDictionaries.Extension.withDictionaryCalls, baseModel, application, primitive, predicateTruth, operationValue, holds,
+    BoolDomain] at result
 
 -- Use the conditional equation inside a dictionary-operation argument.
 def beforeCall : T := compareTerm (.var "D") (natEqualSelf three) (.lit (.bool false))
@@ -158,13 +157,14 @@ example : ¬ model.Satisfies (fun _ : String => .invalid)
     simpa [Model.Satisfies, Term.conjunction, Model.eval] using model.holds_top
   have equal := (model.satisfies_equation _ _ _ _).mp valid condition
   simp [natEqualSelf, trueValue, Model.eval, model,
-    OperationDictionaries.Extension.withDictionaryCalls, baseModel, application, primitive] at equal
+    OperationDictionaries.Extension.withDictionaryCalls, baseModel, application, primitive, predicateTruth, operationValue] at equal
 
--- Logical truth equivalence does not identify distinct formula values.
-example : model.holds (boolean true) ∧ model.holds (.proposition True) ∧
+-- The Boolean value true is data, not logical truth: it does not hold, and it
+-- is not the value of the formula `true`.
+example : ¬ model.holds (boolean true) ∧ model.holds (.proposition True) ∧
     ¬ model.Satisfies (fun _ : String => .invalid)
       (.equal (.lit (.bool true)) .truth) := by
-  refine ⟨rfl, True.intro, ?_⟩
+  refine ⟨id, True.intro, ?_⟩
   rw [model.satisfies_equal]
   simp [Model.eval, model, OperationDictionaries.Extension.withDictionaryCalls, baseModel]
 

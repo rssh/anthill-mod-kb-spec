@@ -153,4 +153,6 @@ contract's satisfiability; it does not interpret Nat operations arithmetically.
 [The Nat and Bool Ord example](order-dictionaries.md) supplies interpreted
 comparison and equality operations, nested required models, and proofs of
 domain membership and ordering laws. The same syntax-level term can use either
-dictionary through its environment.
+dictionary through its environment. [The dictionary registry](dictionary-registry.md)
+registers dictionaries by name, connects each to its inductive domain by
+evidence, and classifies calls before anything runs.

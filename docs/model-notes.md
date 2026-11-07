@@ -104,11 +104,15 @@ search fragments retain their existing restrictions on data and atoms.
 See [the dictionary note](operation-dictionaries.md) for examples and boundaries.
 
 `OrderDictionaries` constructs Nat and Bool order dictionaries in one shared
-carrier. Each has a nested WeakOrd dictionary and required Eq dictionary.
+carrier. Each has `less`, a nested WeakOrd dictionary, and a required Eq
+dictionary; a second Nat dictionary orders Nat in reverse.
 `nat_implements` and `bool_implements` prove interface satisfaction, exact
 domain membership, equality correctness, and total-order laws. Comparisons
-return `Ordering` values, and Bool is ordered `false < true`. See
-[the order example](order-dictionaries.md) for the syntax and scope of this model.
+return `Ordering` values, and Bool is ordered `false < true`. Nat and Bool are
+constructor domains realized exactly, and only logical values hold: Bool
+results are data. See [the order example](order-dictionaries.md) for the
+syntax and scope of this model, and [the dictionary registry](dictionary-registry.md)
+for its registration.
 
 ## Certificate support and limits
 

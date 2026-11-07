@@ -30,3 +30,9 @@ Acceptance:
 
 Validation: lake build and focused Lean tests/examples appropriate to the changed definitions and proofs. Documentation-only work is checked against its stated deliverables; a build alone does not establish them.
 Design references: docs/fast-decision-routes.md, docs/resolution-state-machine.md, docs/resolution-implementation-plan.md.
+## Changes
+
+### 2026-11-07T18:44:37Z — feedback — user
+
+From S13 (dictionary registry, docs/dictionary-registry.md): the evaluator computes with S13's primitive contracts (Primitive.Holds: total on the declared argument domains, results in the declared result domain), registered per dictionary. In the Nat/Bool registry (Resolution/OrderRegistry.lean) less and equal carry contracts; compare has none, since its Ordering results lie in no declared domain. Laws are statements with a validity theorem (law_valid), not KB clauses: making them checked lemmas (S20) and the conditional-rule view are S14's. Generated clauses give I(n) and DomainMember(n, X) :- D(X) only; the converse D(x) from DomainMember(n, x) is a model theorem (domainMember_iff). A declared access evaluates by access_eval; an unknown name (aliasOrd in the example) is a blocker, never No.
+

@@ -25,14 +25,14 @@ theorem kb_valid : model.Models kb := by
   apply (model.holds_implication _ _).mpr
   intro _
   simp [conclusion, Model.eval, model, OperationDictionaries.Extension.withDictionaryCalls,
-    baseModel, application, primitive, holds]
+    baseModel, application, primitive, predicateTruth, operationValue, holds, BoolDomain]
 
 theorem accepted : oracle.certifies [] left right := by
   refine ⟨rfl, ?_, ?_, ?_⟩
   · simp [left, Term.freeVars]
   · simp [right, Term.freeVars]
   · simp [left, right, Model.eval, model, OperationDictionaries.Extension.withDictionaryCalls,
-      baseModel, application, primitive, compareNat]
+      baseModel, application, primitive, predicateTruth, operationValue, compareNat]
 
 theorem equality_proof {naf : NafFailure String Data Symbol} :
     Derives .hoApply extended [] (.equal left right) naf :=
@@ -55,7 +55,7 @@ example : ¬ Derives .hoApply extended [] .falsity :=
 -- Wrong computations are not accepted by the concrete oracle.
 example : ¬ oracle.certifies [] left (.lit (.ordering .gt)) := by
   simp [oracle, EquationOracle.closed, left, Term.freeVars, Model.eval, model,
-    OperationDictionaries.Extension.withDictionaryCalls, baseModel, application, primitive, compareNat]
+    OperationDictionaries.Extension.withDictionaryCalls, baseModel, application, primitive, predicateTruth, operationValue, compareNat]
 
 -- A closed-computation oracle can leave even a valid open equality unanswered.
 example : ¬ oracle.certifies [] (.var "x") (.var "x") := by

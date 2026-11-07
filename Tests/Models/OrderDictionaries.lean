@@ -49,11 +49,22 @@ example : model.eval (environment natOrd (nat 7) (nat 7)) equalGoal = boolean tr
 example : model.eval (environment boolOrd (boolean false) (boolean true)) equalGoal = boolean false := by
   rw [equal_evaluates, bool_equality]; rfl
 
--- An operation returning Bool can be inspected in formula position.
-example : model.Satisfies (environment natOrd (nat 7) (nat 7)) equalGoal := by
+-- A Bool result is a value, not a truth value: it is compared with `true`.
+-- The call in formula position does not hold; the equation does.
+example : ¬ model.Satisfies (environment natOrd (nat 7) (nat 7)) equalGoal := by
   unfold Semantics.Model.Satisfies
   rw [equal_evaluates, nat_equality]
+  exact id
+
+example : model.Satisfies (environment natOrd (nat 7) (nat 7)) (.equal equalGoal (.lit (.bool true))) := by
+  unfold Semantics.Model.Satisfies
+  simp only [Semantics.Model.eval]
+  rw [equal_evaluates, nat_equality]
   rfl
+
+-- Two Nat dictionaries order the same domain in opposite directions.
+example : lessThan natOrd (nat 2) (nat 3) = boolean true ∧ lessThan natDesc (nat 2) (nat 3) = boolean false := by
+  simp
 
 example : Implements extension natOrd (ordInterface NatDomain) := nat_implements
 example : Implements extension boolOrd (ordInterface BoolDomain) := bool_implements
@@ -81,9 +92,7 @@ example : ¬ Implements extension natOrd (ordInterface BoolDomain) := by
   cases impossible
 
 example : comparison natOrd (boolean false) (boolean true) = .invalid := by
-  simp only [comparison, model, Extension.withDictionaryCalls, natOrd]
-  rw [lookup_compare _ _ _ rfl]
-  simp only [Extension.invoke_eq]
-  simp [baseModel, application, primitive]
+  rw [comparison, natOrd_eq, call_dictionary _ _ _ _ (lookup_compare _ _ _ _ rfl)]
+  simp [application, primitive, predicateTruth, operationValue]
 
 end OrderDictionaryTests

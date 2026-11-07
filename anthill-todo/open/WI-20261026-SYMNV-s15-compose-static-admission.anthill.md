@@ -56,3 +56,11 @@ NAF in induction cases (from S12, 2026-11-07): S12's Induction.check reports NAF
 ### 2026-11-07T13:03:20Z — feedback — user
 
 Correction to the 2026-11-07 NAF note: only NAF as a goal in a clause the S12 cases may select is a negation need (CaseGap .negation). NAF assumed in the query's context is a hypothesis, reported as P0's scopedProof request, and is not a route for nafByRefutation.
+### 2026-11-07T18:44:39Z — feedback — user
+
+From S13 (dictionary registry): S13 classifies one call at a time (Registry.access? with its Position); it does not traverse formulas. Composition runs Registry.WellFormed (Invalid on failure: an inconsistent registry) and access? at every dictionaryCall site with that site's position, turning non-declared accesses into blockers via Access.blocker?.
+
+### 2026-11-07T21:18:59Z — feedback — user
+
+Correction to the S13 note after review: the consistency check is Snapshot.WellFormed (the registry's own consistency plus separation of its symbols from the signature's membership symbols and D_all; separation from P_n stays a naming hypothesis). Each access has a Verdict (Access.verdict): runs, blocked with its reason (Missing.mode for a dictionary variable, construct (dictionary reason) otherwise), or inconsistent (an invalid input, impossible in a well-formed registry: access?_consistent). Plan reuse is Snapshot.Unchanged (signature, naming, and the names read); Registration.Checked.transfer carries evidence across it.
+

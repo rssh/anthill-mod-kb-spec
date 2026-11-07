@@ -37,6 +37,21 @@ namespace AnthillModKbSpec.Answers
 
 open Machine Semantics
 
+/-- Why a dictionary call has no route (S13's access check). -/
+inductive DictionaryMiss where
+  /-- No registration has the dictionary's name. -/
+  | unknown
+  /-- The dictionary is neither a name nor a variable: the registry resolves names. -/
+  | unnamed
+  /-- The dictionary's interface declares no operation at this path and field. -/
+  | operation
+  /-- The operation is not declared at this argument count. -/
+  | arity
+  /-- An operation call stands where a formula is needed: its value is data,
+  to be compared with a value. -/
+  | formula
+  deriving DecidableEq, Repr
+
 /-- A construct the module has no route for. -/
 inductive Construct where
   /-- A capability P0 names that is not a proof, a mode, or a termination argument. -/
@@ -57,6 +72,8 @@ inductive Construct where
   /-- An open predicate's marked case, in a route that reads markers closed
   (P0): the completion route answers it. -/
   | openPredicate
+  /-- A dictionary call the registry does not declare (S13), and why. -/
+  | dictionary (miss : DictionaryMiss)
   deriving DecidableEq, Repr
 
 /-- What a blocker lacks. Supplying it may settle the goal. -/

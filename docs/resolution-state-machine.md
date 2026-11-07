@@ -593,6 +593,10 @@ entries (including nested paths), proved laws, and admitted evaluation contracts
 A domain connection must have checked meaning, for example evidence relating
 `DomainMember(d,x)` to `D_i.member(x)`; a table entry alone is not a logical axiom.
 Different dictionaries may operate on the same domain.
+[S13's registry](dictionary-registry.md) implements this: interfaces and
+registrations, exact interpretation of both relations, per-registration
+evidence, generated guard clauses, valid generic laws, and an access check
+whose unknown and invalid outcomes are blockers.
 
 A law can quantify over dictionary values and their associated domains:
 

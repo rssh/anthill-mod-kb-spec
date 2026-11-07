@@ -63,7 +63,7 @@ A blocker lacks one of these (`Missing`):
 | `proof` | A guarded universal over an infinite domain, a goal implication, a goal no search proved or refuted |
 | `mode` | A name that must be bound before the formula runs (a P0 ground instance); a goal still waiting at the end of its branch (floundering) |
 | `termination` | A dependency cycle; a run interrupted by its fuel |
-| `construct` | A construct the route has no route for: a P0 capability, NAF in an induction case, an unsupported focus, a contract breach |
+| `construct` | A construct the route has no route for: a P0 capability, NAF in an induction case, an unsupported focus, a contract breach, a dictionary call the [registry](dictionary-registry.md) does not declare |
 | `witnesses` | Open atoms whose two witnesses were not both found |
 
 Supplying checked evidence for a blocker turns Undecided into Yes or No

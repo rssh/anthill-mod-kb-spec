@@ -13,6 +13,8 @@ import AnthillModKbSpec.Resolution.ScopedSearch
 import AnthillModKbSpec.Resolution.SearchSoundness
 import AnthillModKbSpec.Resolution.AdmissionSignature
 import AnthillModKbSpec.Resolution.Elaboration
+import AnthillModKbSpec.Resolution.DictionaryRegistry
+import AnthillModKbSpec.Resolution.OrderRegistry
 import AnthillModKbSpec.Resolution.Machine
 import AnthillModKbSpec.Resolution.ScopedAtomSemantics
 import AnthillModKbSpec.Resolution.CertifiedRefutation
