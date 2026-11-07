@@ -143,7 +143,9 @@ its callers. An incompatible negative result cannot be coerced into NAF.
 ### Initial catalog of P1 decision routes
 
 These entries specify procedures to formalize, not existing implementations.
-Each needs its full decision contract before it is enabled.
+Each needs its full decision contract before it is enabled. The
+[fast decision routes](fast-decision-routes.md) (S23–S25) specify three of
+them on the shared backtracking machine, under the completion.
 The [roadmap's route ownership table](resolution-implementation-plan.md#p1-route-ownership-and-delivery-boundary)
 assigns the implemented subset to S01-S17 and explicitly defers the other
 catalog procedures; listing a route here does not enable it.
