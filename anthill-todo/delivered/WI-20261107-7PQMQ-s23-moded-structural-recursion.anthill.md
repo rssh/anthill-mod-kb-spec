@@ -3,9 +3,9 @@
 - id: WI-20261107-7PQMQ-s23-moded-structural-recursion
 - created: 2026-11-07T13:58:00Z
 
-- status: Claimed
-- status_agent: user
-- status_at: 2026-11-07T21:32:59Z
+- status: Delivered
+- status_agent: claude
+- status_at: 2026-11-08T06:45:27Z
 
 - acceptance: lake build
 
