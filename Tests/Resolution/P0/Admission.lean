@@ -498,7 +498,7 @@ def answerKind (query : Input Dom Nat Nat Sym) : String :=
   | .ok (.undecided [⟨.site (.head 0), [], _, .termination⟩]) => true
   | _ => false
 -- P0 reads a marker closed, so it decides no formula reaching one: with q the
--- open marker, p :- q is a blocker at its body goal, and naf p is not decided.
+-- unknown marker, p :- q is a blocker at its body goal, and naf p is not decided.
 #guard match Admission.answer (· == Sym.q) .ha (input [rule (k .p) [k .q]] [] (naf (k .p))) with
   | .ok (.undecided [⟨.site (.body 0 0), [], _, .construct .openPredicate⟩]) => true
   | _ => false

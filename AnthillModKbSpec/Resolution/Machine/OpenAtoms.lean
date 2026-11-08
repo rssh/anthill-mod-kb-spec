@@ -53,8 +53,8 @@ def mayMatchAll (free : Symbol → Nat → Bool) :
 end
 
 /-- A marker atom: an application of a marker. -/
-def markerAtom (marker : Symbol → Bool) : Term Variable Literal Symbol → Bool
-  | .app symbol _ => marker symbol
+def unknownMarkerAtom (unknownMarker : Symbol → Bool) : Term Variable Literal Symbol → Bool
+  | .app symbol _ => unknownMarker symbol
   | _ => false
 
 /-- The atoms of a formula in goal positions, through its connectives and
@@ -76,29 +76,29 @@ def coveringBodies (free : Symbol → Nat → Bool) (clauses : List (HornClause 
 /-- The marker atoms reachable from a worklist of atoms: a marker atom is
 collected; any other atom, expanded once, adds the atoms of its covering
 clauses' bodies. The fuel bounds the steps. -/
-def openReach (marker : Symbol → Bool) (free : Symbol → Nat → Bool) (clauses : List (HornClause Variable Literal Symbol)) :
+def openReach (unknownMarker : Symbol → Bool) (free : Symbol → Nat → Bool) (clauses : List (HornClause Variable Literal Symbol)) :
     Nat → List (Term Variable Literal Symbol) → List (Term Variable Literal Symbol) → List (Term Variable Literal Symbol)
   | 0, _, _ => []
   | _ + 1, [], _ => []
   | fuel + 1, atom :: rest, seen =>
-      if markerAtom marker atom then atom :: openReach marker free clauses fuel rest seen
-      else if seen.contains atom then openReach marker free clauses fuel rest seen
+      if unknownMarkerAtom unknownMarker atom then atom :: openReach unknownMarker free clauses fuel rest seen
+      else if seen.contains atom then openReach unknownMarker free clauses fuel rest seen
       else
         match atom with
         | .app symbol args =>
-            openReach marker free clauses fuel
+            openReach unknownMarker free clauses fuel
               (rest ++ (coveringBodies free clauses symbol args).flatMap (·.flatMap goalAtoms)) (atom :: seen)
-        | _ => openReach marker free clauses fuel rest seen
+        | _ => openReach unknownMarker free clauses fuel rest seen
 
 /-- The open atoms a formula reaches through the clauses, each once. The fuel
 covers every expansion: each distinct atom is expanded at most once, and each
 expansion adds at most all the atoms of the clause bodies. -/
-def openAtomsOf (marker : Symbol → Bool) (free : Symbol → Nat → Bool) (clauses : List (HornClause Variable Literal Symbol))
+def openAtomsOf (unknownMarker : Symbol → Bool) (free : Symbol → Nat → Bool) (clauses : List (HornClause Variable Literal Symbol))
     (formula : Term Variable Literal Symbol) : List (Term Variable Literal Symbol) :=
   let atoms := goalAtoms formula
   let bodyAtoms := clauses.flatMap fun
     | .definite _ body | .goal body => body.flatMap goalAtoms
-  (openReach marker free clauses ((atoms.length + bodyAtoms.length + 1) * (bodyAtoms.length + 1)) atoms []).eraseDups
+  (openReach unknownMarker free clauses ((atoms.length + bodyAtoms.length + 1) * (bodyAtoms.length + 1)) atoms []).eraseDups
 
 /-- The free constructors of a completed program, by symbol and arity. -/
 def Completed.free (completion : Completed Variable Literal Symbol) (symbol : Symbol) (arity : Nat) : Bool :=

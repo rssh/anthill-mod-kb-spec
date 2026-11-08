@@ -192,19 +192,19 @@ theorem Strategy.withRefutation_sound {hoApplySymbol : Symbol} {kb : LogicalKb V
 /-- Open goals (S22): a goal that reads as a marker atom, and that the base
 has no candidate for, is reported `opened`. An open atom has no clauses and
 no completion, so no proof or refutation search could decide it. -/
-def Strategy.withOpenGoals {Certificate : Type} (marker : Symbol → Bool)
+def Strategy.withOpenGoals {Certificate : Type} (unknownMarker : Symbol → Bool)
     (base : Strategy Variable Literal Symbol Certificate) : Strategy Variable Literal Symbol Certificate :=
   fun obligation store =>
     let response := base obligation store
     match store.resolve obligation.goal, response.alternatives with
-    | .app symbol _, [] => if marker symbol then .opened else response
+    | .app symbol _, [] => if unknownMarker symbol then .opened else response
     | _, _ => response
 
 omit [DecidableEq Symbol] [DecidableEq Literal] in
-theorem mem_withOpenGoals {Certificate : Type} {marker : Symbol → Bool}
+theorem mem_withOpenGoals {Certificate : Type} {unknownMarker : Symbol → Bool}
     {base : Strategy Variable Literal Symbol Certificate} {obligation : Obligation Variable Literal Symbol}
     {store : Store Variable Literal Symbol} {expansion : Expansion Variable Literal Symbol Certificate}
-    (member : expansion ∈ (Strategy.withOpenGoals marker base obligation store).alternatives) :
+    (member : expansion ∈ (Strategy.withOpenGoals unknownMarker base obligation store).alternatives) :
     expansion ∈ (base obligation store).alternatives := by
   unfold Strategy.withOpenGoals at member
   dsimp only at member
@@ -217,9 +217,9 @@ theorem mem_withOpenGoals {Certificate : Type} {marker : Symbol → Bool}
 omit [DecidableEq Symbol] [DecidableEq Literal] in
 /-- Reporting open goals offers nothing new, so it keeps the base's soundness. -/
 theorem Strategy.withOpenGoals_sound {Certificate : Type} {hoApplySymbol : Symbol} {kb : LogicalKb Variable Literal Symbol}
-    {naf : NafFailure Variable Literal Symbol} {marker : Symbol → Bool}
+    {naf : NafFailure Variable Literal Symbol} {unknownMarker : Symbol → Bool}
     {base : Strategy Variable Literal Symbol Certificate} (baseSound : Strategy.Sound hoApplySymbol kb naf base) :
-    Strategy.Sound hoApplySymbol kb naf (Strategy.withOpenGoals marker base) :=
+    Strategy.Sound hoApplySymbol kb naf (Strategy.withOpenGoals unknownMarker base) :=
   fun obligation store valid declared expansion member =>
     baseSound obligation store valid declared expansion (mem_withOpenGoals member)
 
@@ -447,18 +447,18 @@ theorem witnessSearch_defeats {vocab : Vocabulary Symbol} {snapshot : Snapshot V
 /-- Evidence-first NAF over the left strategy on a completed program: a NAF
 goal the left strategy cannot close is refuted in the same program, and the
 refutation is checked against it. The completed clauses and the refutation
-search are built once, not per refutation. With `marker` (S22), a goal that
+search are built once, not per refutation. With `unknownMarker` (S22), a goal that
 reads as a marker atom, or a NAF whose operand reaches an open atom through
 the program's clauses (`openAtomsOf`), is reported `opened`, and no
 refutation is searched for it; the default marks nothing. -/
 def nafByRefutation (vocab : Vocabulary Symbol) (hoApplySymbol : Symbol)
     (completion : Completion.Completed Variable Literal Symbol) (guard : Symbol → Bool)
-    (select : Selection Variable Literal Symbol) (fuel : Nat) (marker : Symbol → Bool := fun _ => false) :
+    (select : Selection Variable Literal Symbol) (fuel : Nat) (unknownMarker : Symbol → Bool := fun _ => false) :
     Strategy Variable Literal Symbol (Term Variable Literal Symbol) :=
   let clauses := completion.clauses
   let search := refuter hoApplySymbol completion guard
-  Strategy.withOpenGoals marker
-    (Strategy.withRefutation (fun operand => !(openAtomsOf marker completion.free completion.program operand).isEmpty)
+  Strategy.withOpenGoals unknownMarker
+    (Strategy.withRefutation (fun operand => !(openAtomsOf unknownMarker completion.free completion.program operand).isEmpty)
       (refutationCheck vocab ⟨hoApplySymbol, clauses⟩).check (refute vocab search fuel)
       (left hoApplySymbol (Program.ofClauses clauses guard) select))
 
@@ -466,10 +466,10 @@ def nafByRefutation (vocab : Vocabulary Symbol) (hoApplySymbol : Symbol)
 evidence, so in every model of it with complement NAF (`refutation_adequate`). -/
 theorem nafByRefutation_sound (vocab : Vocabulary Symbol) (hoApplySymbol : Symbol)
     (completion : Completion.Completed Variable Literal Symbol) (guard : Symbol → Bool)
-    (select : Selection Variable Literal Symbol) (fuel : Nat) (marker : Symbol → Bool) :
+    (select : Selection Variable Literal Symbol) (fuel : Nat) (unknownMarker : Symbol → Bool) :
     Strategy.Sound hoApplySymbol (Snapshot.kb ⟨hoApplySymbol, completion.clauses⟩)
       (refutation hoApplySymbol (Snapshot.kb ⟨hoApplySymbol, completion.clauses⟩))
-      (nafByRefutation vocab hoApplySymbol completion guard select fuel marker) := by
+      (nafByRefutation vocab hoApplySymbol completion guard select fuel unknownMarker) := by
   have base := left_sound (Certificate := Term Variable Literal Symbol) (hoApplySymbol := hoApplySymbol)
     (naf := refutation hoApplySymbol (Snapshot.kb ⟨hoApplySymbol, completion.clauses⟩))
     (Program.ofClauses completion.clauses guard) select

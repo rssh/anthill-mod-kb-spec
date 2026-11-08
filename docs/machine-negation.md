@@ -177,7 +177,7 @@ logical nodes (`exportDerived`, `Unfold.*_proves`). No new rule is checked.
 operand as read and their free names rigid. It exports the run as a proof
 term. A run that is exhausted, opened, abandoned, or interrupted gives no
 evidence. `nafByRefutation` puts this together over the left strategy and a
-completed program, with `refutationCheck` as the check; given the open marker,
+completed program, with `refutationCheck` as the check; given the unknown marker,
 it also reports marker goals (`Strategy.withOpenGoals`) and NAF on open
 operands as `opened`.
 

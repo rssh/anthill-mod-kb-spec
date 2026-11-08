@@ -18,7 +18,7 @@ evaluation. It changes nothing in the machine. Traces are in
 
 `Program` holds what admission reads: the KB clauses with their indices (the
 sites of blockers), the declared free constructors by symbol and arity, the
-guard symbols, the open markers, the `ho_apply` symbol, and the **mode
+guard symbols, the unknown markers, the `ho_apply` symbol, and the **mode
 declarations** (`Modes`): for each predicate symbol, the mode of each argument
 position, input or output. The KB generator emits modes with the clauses, as it
 emits explicit binder ranges; they are never inferred. A predicate without a
@@ -117,7 +117,7 @@ the fragment lacks its **construct**:
 | --- | --- |
 | A compound head or a concrete `ho_apply` head: the completion leaves the predicates it may conclude open (`Completion.headOpens`) | `compoundHead`, `hoApplyConversion`, at each such predicate |
 | A formula-variable head, or a head applying a predicate variable: it may conclude any predicate, and the completion closes none | `formulaVariable`, `hoApplyConversion`, at every predicate |
-| A KB clause concluding a guard atom or an open marker | `guardDefinition`, `markerDefinition`, at every predicate |
+| A KB clause concluding a guard atom or an unknown marker | `guardDefinition`, `unknownMarkerDefinition`, at every predicate |
 | A head that is no formula: a literal, a dictionary call | `termKind`, `dictionaryLaw`, at every predicate |
 | A formula variable or a literal as a goal; `ho_apply` of a predicate variable, also in an antecedent; `ho_apply` inside data | `formulaVariable`, `termKind`, `hoApplyConversion` |
 | A data symbol that is no declared constructor: a defined operation | `operation` |

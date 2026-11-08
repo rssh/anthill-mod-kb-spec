@@ -22,7 +22,7 @@ completion with complement NAF that realize the admission signature
    guard symbols exactly, so they realize the signature (`realizes_guards`);
    the program and the goal mention no guard symbol.
 3. **The full run.** Otherwise, after a run that met an open atom (alone or
-   beside other gaps), the same run without the open marker, where every
+   beside other gaps), the same run without the unknown marker, where every
    stable NAF is refuted: a denial may force an open atom, and an operand
    that reaches one may still be refuted. A checked success is Yes.
 4. **Refutation.** A refutation of the goal in the completion, within the
@@ -49,7 +49,7 @@ abbrev ModuleAnswer (Variable Literal Symbol : Type) :=
   Answer (Term Variable Literal Symbol) (Term Variable Literal Symbol) (List (Term Variable Literal Symbol))
     (Blocker Variable Literal Symbol)
 
-/-- A completed program with its open marker, its admission signature, and
+/-- A completed program with its unknown marker, its admission signature, and
 the bounds of its runs. The completion is the program's for a signature that
 closes no marker and not `ho_apply`, as `complete?`'s is
 (`Setup.ofComplete?`); it is built once. The admission signature's guard
@@ -59,14 +59,14 @@ structure Setup (Domain Variable Literal Symbol : Type) [DecidableEq Variable] [
     [DecidableEq Symbol] [FreshNames Variable] where
   vocab : Vocabulary Symbol
   hoApplySymbol : Symbol
-  marker : Symbol → Bool
+  unknownMarker : Symbol → Bool
   admission : AdmissionSignature.SignatureSnapshot Domain Symbol
   isGuard : Symbol → Bool
   isGuard_iff : ∀ symbol, isGuard symbol = true ↔ Open.IsGuard admission.naming symbol
   separated : Open.Separated admission.naming hoApplySymbol
   clauses : List (HornClause Variable Literal Symbol)
   signature : Signature Literal Symbol
-  closed : ∀ key ∈ signature.predicates, marker key.1 = false ∧ key.1 ≠ hoApplySymbol
+  closed : ∀ key ∈ signature.predicates, unknownMarker key.1 = false ∧ key.1 ≠ hoApplySymbol
   completion : Completed Variable Literal Symbol
   completion_eq : completion = Completion.completion clauses signature
   guard : Symbol → Bool := fun _ => false
@@ -83,10 +83,10 @@ variable {Domain : Type} (setup : Setup Domain Variable Literal Symbol)
 /-- The completed snapshot answers are checked against. -/
 def snapshot : Snapshot Variable Literal Symbol := ⟨setup.hoApplySymbol, setup.completion.clauses⟩
 
-/-- Evidence-first NAF over the completion; with `fast`, the open marker. -/
+/-- Evidence-first NAF over the completion; with `fast`, the unknown marker. -/
 def strategy (fast : Bool) : Strategy Variable Literal Symbol (Term Variable Literal Symbol) :=
   nafByRefutation setup.vocab setup.hoApplySymbol setup.completion setup.guard setup.select setup.depth
-    (if fast then setup.marker else fun _ => false)
+    (if fast then setup.unknownMarker else fun _ => false)
 
 /-- A run from the query, its free names rigid. -/
 def run (fast : Bool) (context : ProofContext Variable Literal Symbol) (goal : Formula Variable Literal Symbol) :
@@ -115,7 +115,7 @@ def refuted (context : ProofContext Variable Literal Symbol) (goal : Formula Var
 
 /-- The open atoms a formula reaches through the program's clauses. -/
 def opened (formula : Formula Variable Literal Symbol) : List (Term Variable Literal Symbol) :=
-  openAtomsOf setup.marker setup.completion.free setup.clauses formula
+  openAtomsOf setup.unknownMarker setup.completion.free setup.clauses formula
 
 /-- The candidate assignments of the open atoms: all true, all false, each one
 alone true, each one alone false. -/
@@ -127,10 +127,10 @@ program's class, with no guard symbol and no closed guard predicate, is
 checked once, and each candidate evaluated once. -/
 def valued (atoms : List (Term Variable Literal Symbol)) (goal : Formula Variable Literal Symbol) :
     List (List (Term Variable Literal Symbol) × Bool) :=
-  if Open.covers setup.hoApplySymbol setup.isGuard setup.marker setup.clauses &&
+  if Open.covers setup.hoApplySymbol setup.isGuard setup.unknownMarker setup.clauses &&
       setup.signature.predicates.all (fun key => !setup.isGuard key.1) then
     (candidates atoms).filterMap fun assignment =>
-      (Open.witnessValue setup.hoApplySymbol setup.isGuard setup.marker setup.clauses goal assignment).map
+      (Open.witnessValue setup.hoApplySymbol setup.isGuard setup.unknownMarker setup.clauses goal assignment).map
         (assignment, ·)
   else []
 
@@ -166,7 +166,7 @@ def metOpen : Outcome Variable Literal Symbol (Term Variable Literal Symbol) Uni
   | _ => false
 
 /-- The full run's proof, after a run that met an open atom: every stable NAF
-refuted, with no open marker. -/
+refuted, with no unknown marker. -/
 def full (fast : Outcome Variable Literal Symbol (Term Variable Literal Symbol) Unit)
     (context : ProofContext Variable Literal Symbol) (goal : Formula Variable Literal Symbol) :
     Option (Term Variable Literal Symbol) :=
@@ -242,7 +242,7 @@ theorem refuted_sound {context : ProofContext Variable Literal Symbol} {goal : F
 signature closes no guard predicate. -/
 theorem valued_check {atoms : List (Term Variable Literal Symbol)} {goal : Formula Variable Literal Symbol}
     {entry : List (Term Variable Literal Symbol) × Bool} (member : entry ∈ setup.valued atoms goal) :
-    Open.check setup.hoApplySymbol setup.isGuard setup.marker setup.clauses goal entry.1 entry.2 = true ∧
+    Open.check setup.hoApplySymbol setup.isGuard setup.unknownMarker setup.clauses goal entry.1 entry.2 = true ∧
       ∀ key ∈ setup.signature.predicates, setup.isGuard key.1 = false := by
   unfold valued at member
   split at member
@@ -259,7 +259,7 @@ that realizes the admission signature, in which the goal has the expected
 value: the witness model with the guards interpreted exactly. -/
 theorem check_model {goal : Formula Variable Literal Symbol} {expected : Bool}
     {assignment : List (Term Variable Literal Symbol)}
-    (checked : Open.check setup.hoApplySymbol setup.isGuard setup.marker setup.clauses goal assignment expected = true)
+    (checked : Open.check setup.hoApplySymbol setup.isGuard setup.unknownMarker setup.clauses goal assignment expected = true)
     (unguarded : ∀ key ∈ setup.signature.predicates, setup.isGuard key.1 = false) :
     ∃ model : Model Literal Symbol (Key Literal Symbol) setup.hoApplySymbol,
       (model.Models setup.snapshot.kb ∧ model.ComplementNAF ∧ AdmissionSignature.Realizes setup.admission model) ∧
@@ -344,18 +344,18 @@ end Setup
 /-- The setup of a program `complete?` accepts, with its own signature and the
 completion `complete?` built, for an admission signature whose guard symbols
 `isGuard` decides and which are separated. -/
-def Setup.ofComplete? {Domain : Type} (vocab : Vocabulary Symbol) (hoApplySymbol : Symbol) (marker free : Symbol → Bool)
+def Setup.ofComplete? {Domain : Type} (vocab : Vocabulary Symbol) (hoApplySymbol : Symbol) (unknownMarker free : Symbol → Bool)
     (admission : AdmissionSignature.SignatureSnapshot Domain Symbol) (isGuard : Symbol → Bool)
     (isGuard_iff : ∀ symbol, isGuard symbol = true ↔ Open.IsGuard admission.naming symbol)
     (separated : Open.Separated admission.naming hoApplySymbol)
     (clauses : List (HornClause Variable Literal Symbol)) (formulas : List (Term Variable Literal Symbol))
     (fuel depth : Nat) (guard : Symbol → Bool := fun _ => false)
     (select : Selection Variable Literal Symbol := fun _ _ _ _ => []) : Except Nat (Setup Domain Variable Literal Symbol) :=
-  match completes : complete? marker hoApplySymbol free clauses formulas with
+  match completes : complete? unknownMarker hoApplySymbol free clauses formulas with
   | .error index => .error index
   | .ok completion =>
-      .ok { vocab, hoApplySymbol, marker, admission, isGuard, isGuard_iff, separated, clauses,
-            signature := Signature.of marker hoApplySymbol free clauses formulas
+      .ok { vocab, hoApplySymbol, unknownMarker, admission, isGuard, isGuard_iff, separated, clauses,
+            signature := Signature.of unknownMarker hoApplySymbol free clauses formulas
             closed := fun _ member => Signature.of_open member, completion, completion_eq := complete?_ok completes,
             guard, select, fuel, depth }
 

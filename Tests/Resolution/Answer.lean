@@ -28,9 +28,9 @@ def atom (symbol : Sym) (args : List T) : T := .app symbol args
 def fact (head : T) : Clause := .definite head []
 def naf (goal : T) : T := .defaultNeg goal
 
-/-- The data constants are free constructors; `unknown` is the open marker. -/
+/-- The data constants are free constructors; `unknown` is the unknown marker. -/
 def free (symbol : Sym) : Bool := [Sym.a, .b].contains symbol
-def marker (symbol : Sym) : Bool := symbol == .unknown
+def unknownMarker (symbol : Sym) : Bool := symbol == .unknown
 
 /-- The admission signature: one domain without constructors, no registered
 predicate. Its guard symbols `isUnit`, `allData`, and `isPred n` have one role
@@ -55,7 +55,7 @@ theorem separated : Open.Separated admission.naming Sym.ha where
 
 /-- The module over the completion of `clauses`, closing the query's predicates. -/
 def setupOf (clauses : List Clause) (formulas : List T) (fuel : Nat := 2000) : Option (Setup Unit Nat Nat Sym) :=
-  match Setup.ofComplete? vocab .ha marker free admission isGuard isGuard_iff separated clauses formulas fuel 200 with
+  match Setup.ofComplete? vocab .ha unknownMarker free admission isGuard isGuard_iff separated clauses formulas fuel 200 with
   | .ok setup => some setup
   | .error _ => none
 
@@ -103,15 +103,15 @@ def openQ : List Clause := [.definite (atom .q [k .a]) [k .unknown]]
   | some (.unknown holds fails) => identicalArgs holds [k .unknown] && fails.isEmpty
   | _ => false
 -- The witnesses check: each is a model of the completion with the expected value.
-#guard Open.check .ha isGuard marker openQ (naf (atom .q [k .a])) [] true
-#guard Open.check .ha isGuard marker openQ (naf (atom .q [k .a])) [k .unknown] false
-#guard !Open.check .ha isGuard marker openQ (naf (atom .q [k .a])) [k .unknown] true
+#guard Open.check .ha isGuard unknownMarker openQ (naf (atom .q [k .a])) [] true
+#guard Open.check .ha isGuard unknownMarker openQ (naf (atom .q [k .a])) [k .unknown] false
+#guard !Open.check .ha isGuard unknownMarker openQ (naf (atom .q [k .a])) [k .unknown] true
 -- An atom of another predicate is no open atom: a candidate must be a marker atom.
-#guard !Open.check .ha isGuard marker openQ (naf (atom .q [k .a])) [atom .q [k .a]] false
+#guard !Open.check .ha isGuard unknownMarker openQ (naf (atom .q [k .a])) [atom .q [k .a]] false
 -- The witnesses' models realize the admission signature: they interpret the
 -- guards exactly, and the program and goal mention none. A goal that mentions
 -- a guard symbol is outside the check: Undecided, not Unknown.
-#guard !Open.check .ha isGuard marker openQ (.conj (naf (atom .q [k .a])) (naf (atom .isUnit [k .a]))) [] true
+#guard !Open.check .ha isGuard unknownMarker openQ (.conj (naf (atom .q [k .a])) (naf (atom .isUnit [k .a]))) [] true
 #guard kindOf (answerOf openQ (.conj (naf (atom .q [k .a])) (naf (atom .isUnit [k .a])))) = "undecided"
 
 -- A marker with arguments keeps atoms apart: q(a) open, q(b) refuted by its
@@ -177,7 +177,7 @@ def openQx : List Clause := [.definite (atom .q [.var 0]) [k .unknown]]
 -- completion. The witness making q(a) true violates the denial, so there is no
 -- Unknown; the full run refutes q(a) by the denial.
 def forced : List Clause := openQ ++ [.goal [atom .q [k .a]]]
-#guard !Open.check .ha isGuard marker forced (naf (atom .q [k .a])) [k .unknown] false
+#guard !Open.check .ha isGuard unknownMarker forced (naf (atom .q [k .a])) [k .unknown] false
 #guard kindOf (answerOf forced (naf (atom .q [k .a]))) = "yes"
 #guard kindOf (answerOf forced (atom .q [k .a])) = "no"
 

@@ -35,7 +35,7 @@ def guard : Sym → Bool
   | .isNat | .allData => true
   | _ => false
 
-def marker : Sym → Bool := (· == .unknown)
+def unknownMarker : Sym → Bool := (· == .unknown)
 
 open Mode in
 /-- The mode declarations the KB generator emits. -/
@@ -48,7 +48,7 @@ def modes : Modes Sym
   | _ => none
 
 def program (clauses : List Clause) (declared : Modes Sym := modes) : Program Nat Nat Sym :=
-  ⟨clauses.zipIdx.map fun (clause, index) => (index, clause), free, guard, marker, .ha, declared⟩
+  ⟨clauses.zipIdx.map fun (clause, index) => (index, clause), free, guard, unknownMarker, .ha, declared⟩
 
 def isP1 : Profile Nat Nat Sym → Bool
   | .p1 => true
@@ -368,7 +368,7 @@ def built (clauses : List Clause) : Machine.Program Nat Nat Sym :=
 def effective (clauses : List Clause) : ProgramInput Dom Nat Nat Sym :=
   ⟨snapshot, names, rules, listed, complete, distinct, built clauses, fun _ => Machine.guardSymbol_iff⟩
 
-def lowered (clauses : List Clause) : Program Nat Nat Sym := Program.ofInput (effective clauses) .ha free marker modes
+def lowered (clauses : List Clause) : Program Nat Nat Sym := Program.ofInput (effective clauses) .ha free unknownMarker modes
 
 -- Lowering prepends a guard for every clause variable, the output `Y` of
 -- `path` included: each waits until a goal binds its name, and the lowered

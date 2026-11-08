@@ -335,9 +335,9 @@ def clear (excluded : Symbol → Bool) (goal : Term Variable Literal Symbol) : B
 /-- A clause the witness check covers: a ground definite clause whose head is
 an atom and no marker atom, with a P0 body, or a denial with a P0 body; no
 atom of an excluded symbol (a guard) anywhere. -/
-def covered (excluded marker : Symbol → Bool) : HornClause Variable Literal Symbol → Bool
+def covered (excluded unknownMarker : Symbol → Bool) : HornClause Variable Literal Symbol → Bool
   | .definite head body =>
-      isAtom hoApplySymbol head && !markerAtom marker head && clear excluded head &&
+      isAtom hoApplySymbol head && !unknownMarkerAtom unknownMarker head && clear excluded head &&
         body.all (fun goal => isGoal hoApplySymbol goal && clear excluded goal)
   | .goal body => body.all (fun goal => isGoal hoApplySymbol goal && clear excluded goal)
 
@@ -370,18 +370,18 @@ def bound (rank : Term Variable Literal Symbol → Nat) (clauses : List (HornCla
   ((edges clauses).flatMap fun edge => [rank edge.1, rank edge.2]).foldr max 0 + 1
 
 /-- The program is in the covered class. -/
-def covers (excluded marker : Symbol → Bool) (clauses : List (HornClause Variable Literal Symbol)) : Bool :=
-  clauses.all (covered hoApplySymbol excluded marker)
+def covers (excluded unknownMarker : Symbol → Bool) (clauses : List (HornClause Variable Literal Symbol)) : Bool :=
+  clauses.all (covered hoApplySymbol excluded unknownMarker)
 
 /-- The goal's value under a witness: when the assignment lists marker atoms
 of symbols not excluded, the witness program is ranked, and every denial body
 is false, the goal's value in the witness program; `none` otherwise. -/
-def witnessValue (excluded marker : Symbol → Bool) (clauses : List (HornClause Variable Literal Symbol))
+def witnessValue (excluded unknownMarker : Symbol → Bool) (clauses : List (HornClause Variable Literal Symbol))
     (goal : Term Variable Literal Symbol) (assignment : List (Term Variable Literal Symbol)) : Option Bool :=
   let run := witnessClauses clauses assignment
   let rank := rank run
   let bound := bound rank run
-  if assignment.all (fun atom => isAtom hoApplySymbol atom && markerAtom marker atom && clear excluded atom) &&
+  if assignment.all (fun atom => isAtom hoApplySymbol atom && unknownMarkerAtom unknownMarker atom && clear excluded atom) &&
       ranked? rank run &&
       (denials clauses).all (fun body => value hoApplySymbol excluded run bound (.conjunction body) == some false) then
     value hoApplySymbol excluded run bound goal
@@ -389,10 +389,10 @@ def witnessValue (excluded marker : Symbol → Bool) (clauses : List (HornClause
 
 /-- Check a witness for a goal: the program is covered, and the goal has the
 expected value under the witness. -/
-def check (excluded marker : Symbol → Bool) (clauses : List (HornClause Variable Literal Symbol))
+def check (excluded unknownMarker : Symbol → Bool) (clauses : List (HornClause Variable Literal Symbol))
     (goal : Term Variable Literal Symbol) (assignment : List (Term Variable Literal Symbol)) (expected : Bool) : Bool :=
-  covers hoApplySymbol excluded marker clauses &&
-    witnessValue hoApplySymbol excluded marker clauses goal assignment == some expected
+  covers hoApplySymbol excluded unknownMarker clauses &&
+    witnessValue hoApplySymbol excluded unknownMarker clauses goal assignment == some expected
 
 /-! ## A checked witness has a model -/
 
@@ -468,11 +468,11 @@ theorem clear_conjunction {excluded : Symbol → Bool} {goals : List (Term Varia
 variable [FreshNames Variable]
 
 omit [FreshNames Variable] in
-theorem check_parts {excluded marker : Symbol → Bool} {clauses : List (HornClause Variable Literal Symbol)}
+theorem check_parts {excluded unknownMarker : Symbol → Bool} {clauses : List (HornClause Variable Literal Symbol)}
     {goal : Term Variable Literal Symbol} {assignment : List (Term Variable Literal Symbol)} {expected : Bool}
-    (checked : check hoApplySymbol excluded marker clauses goal assignment expected = true) :
-    (∀ clause ∈ clauses, covered hoApplySymbol excluded marker clause = true) ∧
-    (∀ atom ∈ assignment, (isAtom hoApplySymbol atom = true ∧ markerAtom marker atom = true) ∧
+    (checked : check hoApplySymbol excluded unknownMarker clauses goal assignment expected = true) :
+    (∀ clause ∈ clauses, covered hoApplySymbol excluded unknownMarker clause = true) ∧
+    (∀ atom ∈ assignment, (isAtom hoApplySymbol atom = true ∧ unknownMarkerAtom unknownMarker atom = true) ∧
       clear excluded atom = true) ∧
     ranked? (rank (witnessClauses clauses assignment)) (witnessClauses clauses assignment) = true ∧
     (∀ body ∈ denials clauses, value hoApplySymbol excluded (witnessClauses clauses assignment)
@@ -485,17 +485,17 @@ theorem check_parts {excluded marker : Symbol → Bool} {clauses : List (HornCla
   split at valued
   · rename_i ok
     simp only [Bool.and_eq_true, List.all_eq_true, beq_iff_eq] at ok coveredAll
-    obtain ⟨⟨markers, ranked⟩, denied⟩ := ok
-    exact ⟨coveredAll, markers, ranked, denied, valued⟩
+    obtain ⟨⟨unknownMarkers, ranked⟩, denied⟩ := ok
+    exact ⟨coveredAll, unknownMarkers, ranked, denied, valued⟩
   · cases valued
 
 omit [DecidableEq Variable] [DecidableEq Literal] [FreshNames Variable] in
 /-- The witness program is well formed: every clause has a ground atomic head
 and a P0 body. -/
-theorem witnessClauses_ok {excluded marker : Symbol → Bool} {clauses : List (HornClause Variable Literal Symbol)}
+theorem witnessClauses_ok {excluded unknownMarker : Symbol → Bool} {clauses : List (HornClause Variable Literal Symbol)}
     {assignment : List (Term Variable Literal Symbol)}
-    (coveredAll : ∀ clause ∈ clauses, covered hoApplySymbol excluded marker clause = true)
-    (markers : ∀ atom ∈ assignment, (isAtom hoApplySymbol atom = true ∧ markerAtom marker atom = true) ∧
+    (coveredAll : ∀ clause ∈ clauses, covered hoApplySymbol excluded unknownMarker clause = true)
+    (unknownMarkers : ∀ atom ∈ assignment, (isAtom hoApplySymbol atom = true ∧ unknownMarkerAtom unknownMarker atom = true) ∧
       clear excluded atom = true) :
     ∀ clause ∈ witnessClauses clauses assignment, IsClause hoApplySymbol clause := by
   intro clause member
@@ -508,16 +508,16 @@ theorem witnessClauses_ok {excluded marker : Symbol → Bool} {clauses : List (H
         exact .definite (isAtom_iff.mp ok.1.1.1) fun goal inside => isGoal_iff.mp (ok.2 goal inside).1
     | goal body => cases isDefinite
   · obtain ⟨atom, inAssignment, rfl⟩ := List.mem_map.mp inFacts
-    exact .definite (isAtom_iff.mp (markers atom inAssignment).1.1) (by simp)
+    exact .definite (isAtom_iff.mp (unknownMarkers atom inAssignment).1.1) (by simp)
 
 /-- The witness program as a ground program. -/
-def witnessProgram {excluded marker : Symbol → Bool} {clauses : List (HornClause Variable Literal Symbol)}
+def witnessProgram {excluded unknownMarker : Symbol → Bool} {clauses : List (HornClause Variable Literal Symbol)}
     {assignment : List (Term Variable Literal Symbol)}
-    (coveredAll : ∀ clause ∈ clauses, covered hoApplySymbol excluded marker clause = true)
-    (markers : ∀ atom ∈ assignment, (isAtom hoApplySymbol atom = true ∧ markerAtom marker atom = true) ∧
+    (coveredAll : ∀ clause ∈ clauses, covered hoApplySymbol excluded unknownMarker clause = true)
+    (unknownMarkers : ∀ atom ∈ assignment, (isAtom hoApplySymbol atom = true ∧ unknownMarkerAtom unknownMarker atom = true) ∧
       clear excluded atom = true) :
     Program Variable Literal Symbol hoApplySymbol :=
-  ⟨witnessClauses clauses assignment, witnessClauses_ok coveredAll markers⟩
+  ⟨witnessClauses clauses assignment, witnessClauses_ok coveredAll unknownMarkers⟩
 
 /-- `check_model`: a checked witness has a model. The constructor-key model of
 the witness program, with the excluded symbols interpreted by `outside`,
@@ -525,11 +525,11 @@ satisfies every clause of the program's completion, for any signature that
 closes no marker, not `ho_apply`, and no excluded symbol; its NAF is
 complement; the goal has the expected value in every environment; and on the
 excluded symbols the interpretation is `outside`. -/
-theorem check_model {excluded marker : Symbol → Bool} {clauses : List (HornClause Variable Literal Symbol)}
+theorem check_model {excluded unknownMarker : Symbol → Bool} {clauses : List (HornClause Variable Literal Symbol)}
     {goal : Term Variable Literal Symbol} {assignment : List (Term Variable Literal Symbol)} {expected : Bool}
-    (checked : check hoApplySymbol excluded marker clauses goal assignment expected = true)
+    (checked : check hoApplySymbol excluded unknownMarker clauses goal assignment expected = true)
     (signature : Signature Literal Symbol)
-    (closed : ∀ key ∈ signature.predicates, marker key.1 = false ∧ key.1 ≠ hoApplySymbol ∧ excluded key.1 = false)
+    (closed : ∀ key ∈ signature.predicates, unknownMarker key.1 = false ∧ key.1 ≠ hoApplySymbol ∧ excluded key.1 = false)
     (outside : Symbol → List (Key Literal Symbol) → Prop) :
     ∃ interpretation : Symbol → List (Key Literal Symbol) → Prop,
       (∀ symbol, excluded symbol = true → ∀ keys, interpretation symbol keys ↔ outside symbol keys) ∧
@@ -537,8 +537,8 @@ theorem check_model {excluded marker : Symbol → Bool} {clauses : List (HornCla
         (fun clause => clause ∈ (completion clauses signature).clauses : LogicalKb Variable Literal Symbol) ∧
       (Model.keys hoApplySymbol interpretation).ComplementNAF ∧
       ∀ environment, (Model.keys hoApplySymbol interpretation).Satisfies environment goal ↔ expected = true := by
-  obtain ⟨coveredAll, markers, rankedB, denied, valued⟩ := check_parts checked
-  let program := witnessProgram coveredAll markers
+  obtain ⟨coveredAll, unknownMarkers, rankedB, denied, valued⟩ := check_parts checked
+  let program := witnessProgram coveredAll unknownMarkers
   have ranked : Ranked (rank (witnessClauses clauses assignment)) program.clauses :=
     ranked_iff_edges.mpr fun edge member => by
       simp only [ranked?, List.all_eq_true, decide_eq_true_eq] at rankedB
@@ -577,8 +577,8 @@ theorem check_model {excluded marker : Symbol → Bool} {clauses : List (HornCla
         exact absurd (refuted.mp holds) (by simp)
   -- The only-if clauses.
   · obtain ⟨⟨symbol, arity⟩, key, rfl⟩ := List.mem_map.mp inOnlyIfs
-    obtain ⟨notMarker, ordinary, notExcluded⟩ := closed _ key
-    simp only at notMarker ordinary notExcluded
+    obtain ⟨notUnknownMarker, ordinary, notExcluded⟩ := closed _ key
+    simp only at notUnknownMarker ordinary notExcluded
     show (model hoApplySymbol excluded outside program).Satisfies environment (.imp (.conjunction [_]) _)
     rw [satisfies_imp, satisfies_conjunction]
     intro holds
@@ -595,10 +595,10 @@ theorem check_model {excluded marker : Symbol → Bool} {clauses : List (HornCla
           · exact (List.mem_filter.mp inDefinite).1
           · obtain ⟨atom, inAssignment, same⟩ := List.mem_map.mp inFacts
             cases same
-            have isMarker := (markers _ inAssignment).1.2
-            simp only [markerAtom] at isMarker
-            rw [isMarker] at notMarker
-            cases notMarker
+            have isUnknownMarker := (unknownMarkers _ inAssignment).1.2
+            simp only [unknownMarkerAtom] at isUnknownMarker
+            rw [isUnknownMarker] at notUnknownMarker
+            cases notUnknownMarker
         have ok := coveredAll _ inClauses
         simp only [covered, Bool.and_eq_true, List.all_eq_true] at ok
         have bodyGoals : ∀ goal ∈ body, IsGoal hoApplySymbol goal := fun goal inside => isGoal_iff.mp (ok.2 goal inside).1

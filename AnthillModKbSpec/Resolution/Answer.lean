@@ -78,8 +78,8 @@ inductive Construct where
   which the fast fragment neither matches nor evaluates (S14 evaluates
   operations). -/
   | operation
-  /-- A KB clause concluding an open marker: a marker has no clauses. -/
-  | markerDefinition
+  /-- A KB clause concluding an unknown marker: a marker has no clauses. -/
+  | unknownMarkerDefinition
   deriving DecidableEq, Repr
 
 /-- What a blocker lacks. Supplying it may settle the goal. -/
@@ -391,9 +391,9 @@ def Plan.decision (plan : Plan Domain Variable Literal Symbol hoApplySymbol) : P
 /-- The formulas of an input that mention a marker atom in goal positions: the
 goal, an assumption, or a KB clause's body goal, each at its site. P0 reads a
 marker as an atom without clauses, so it decides none of them. -/
-def markerBlockers (marker : Symbol → Bool) (input : Input Domain Variable Literal Symbol) :
+def unknownMarkerBlockers (unknownMarker : Symbol → Bool) (input : Input Domain Variable Literal Symbol) :
     List (Blocker Variable Literal Symbol) :=
-  let reaches := fun (formula : Term Variable Literal Symbol) => (Completion.goalAtoms formula).any (Completion.markerAtom marker)
+  let reaches := fun (formula : Term Variable Literal Symbol) => (Completion.goalAtoms formula).any (Completion.unknownMarkerAtom unknownMarker)
   let blocker := fun (site : Site) (formula : Term Variable Literal Symbol) =>
     (⟨.site site, [], formula, .construct .openPredicate⟩ : Blocker Variable Literal Symbol)
   (if reaches input.goal then [blocker .goal input.goal] else []) ++
@@ -405,19 +405,19 @@ def markerBlockers (marker : Symbol → Bool) (input : Input Domain Variable Lit
       | (index, .goal body) => body.zipIdx.filterMap fun (goal, position) =>
           if reaches goal then some (blocker (.body index position) goal) else none
 
-/-- The P0 answer of an input, with `marker` the open marker. Admission's
+/-- The P0 answer of an input, with `unknownMarker` the unknown marker. Admission's
 requests are its blockers, reported before anything runs, and so is every
-formula that mentions a marker atom (`markerBlockers`); a Ready plan with no
+formula that mentions a marker atom (`unknownMarkerBlockers`); a Ready plan with no
 marker is decided; an input contradicting its own declarations is invalid,
 not an answer. -/
-def answer (marker : Symbol → Bool) (hoApplySymbol : Symbol) (input : Input Domain Variable Literal Symbol) :
+def answer (unknownMarker : Symbol → Bool) (hoApplySymbol : Symbol) (input : Input Domain Variable Literal Symbol) :
     Except Diagnostic (P0Answer Domain Variable Literal Symbol) :=
   match check hoApplySymbol input with
   | .invalid diagnostic => .error diagnostic
   | .needsEvidence request more =>
-      .ok (.undecided (markerBlockers marker input ++ (request :: more).map Blocker.ofRequest))
+      .ok (.undecided (unknownMarkerBlockers unknownMarker input ++ (request :: more).map Blocker.ofRequest))
   | .ready plan =>
-      match markerBlockers marker input with
+      match unknownMarkerBlockers unknownMarker input with
       | [] => .ok plan.decision
       | blockers => .ok (.undecided blockers)
 
@@ -431,23 +431,23 @@ def Plan.meaning (plan : Plan Domain Variable Literal Symbol hoApplySymbol) : Me
 
 /-- Admission's requests are Undecided blockers, at their sites and paths, and
 nothing runs for them. -/
-theorem answer_needsEvidence {marker : Symbol → Bool} {input : Input Domain Variable Literal Symbol}
+theorem answer_needsEvidence {unknownMarker : Symbol → Bool} {input : Input Domain Variable Literal Symbol}
     {request : Request Variable Literal Symbol} {more : List (Request Variable Literal Symbol)}
     (needs : check hoApplySymbol input = .needsEvidence request more) :
-    answer marker hoApplySymbol input =
-      .ok (.undecided (markerBlockers marker input ++ (request :: more).map Blocker.ofRequest)) := by
+    answer unknownMarker hoApplySymbol input =
+      .ok (.undecided (unknownMarkerBlockers unknownMarker input ++ (request :: more).map Blocker.ofRequest)) := by
   simp [answer, needs]
 
-theorem answer_ready {marker : Symbol → Bool} {input : Input Domain Variable Literal Symbol}
+theorem answer_ready {unknownMarker : Symbol → Bool} {input : Input Domain Variable Literal Symbol}
     {plan : Plan Domain Variable Literal Symbol hoApplySymbol} (ready : check hoApplySymbol input = .ready plan)
-    (unmarked : markerBlockers marker input = []) : answer marker hoApplySymbol input = .ok plan.decision := by
+    (unmarked : unknownMarkerBlockers unknownMarker input = []) : answer unknownMarker hoApplySymbol input = .ok plan.decision := by
   simp [answer, ready, unmarked]
 
 /-- P0 decides no input that mentions a marker atom: it reads markers closed,
 and the logical Unknown is the completion route's. -/
-theorem answer_marked {marker : Symbol → Bool} {input : Input Domain Variable Literal Symbol}
-    {result : P0Answer Domain Variable Literal Symbol} (marked : markerBlockers marker input ≠ [])
-    (answered : answer marker hoApplySymbol input = .ok result) : ∃ blockers, result = .undecided blockers := by
+theorem answer_marked {unknownMarker : Symbol → Bool} {input : Input Domain Variable Literal Symbol}
+    {result : P0Answer Domain Variable Literal Symbol} (marked : unknownMarkerBlockers unknownMarker input ≠ [])
+    (answered : answer unknownMarker hoApplySymbol input = .ok result) : ∃ blockers, result = .undecided blockers := by
   unfold answer at answered
   split at answered
   · cases answered
@@ -508,8 +508,8 @@ theorem Plan.decision_sound (plan : Plan Domain Variable Literal Symbol hoApplyS
 
 /-- Every P0 answer is sound: Undecided claims nothing, and a Ready plan's
 answer is sound for its completion. -/
-theorem answer_sound {marker : Symbol → Bool} {input : Input Domain Variable Literal Symbol}
-    {result : P0Answer Domain Variable Literal Symbol} (answered : answer marker hoApplySymbol input = .ok result) :
+theorem answer_sound {unknownMarker : Symbol → Bool} {input : Input Domain Variable Literal Symbol}
+    {result : P0Answer Domain Variable Literal Symbol} (answered : answer unknownMarker hoApplySymbol input = .ok result) :
     (∃ plan, check hoApplySymbol input = .ready plan ∧ result = plan.decision ∧ result.Sound plan.meaning) ∨
       ∃ blockers, result = .undecided blockers := by
   unfold answer at answered

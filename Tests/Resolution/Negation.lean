@@ -29,7 +29,7 @@ def naf (goal : T) : T := .defaultNeg goal
 predicate names a registry lists. `plus` is a defined operation. -/
 def free (symbol : Sym) : Bool := [Sym.zero, .succ, .one, .two, .p, .q].contains symbol
 
-/-- The signature of `clauses` and `formulas`, with `unknown` the open marker. -/
+/-- The signature of `clauses` and `formulas`, with `unknown` the unknown marker. -/
 def signatureOf (clauses : List Clause) (formulas : List T := []) : Signature Nat Sym :=
   Signature.of (· == .unknown) .ha free clauses formulas
 
@@ -144,7 +144,7 @@ def invalidAt (clauses : List Clause) : Option Nat :=
 abbrev Run := Outcome Nat Nat Sym T Unit
 
 /-- The evidence-first NAF strategy over the completion of `clauses`, with
-`unknown` the open marker. -/
+`unknown` the unknown marker. -/
 def strategy (clauses : List Clause) (formulas : List T := []) (select : Selection Nat Nat Sym := fun _ _ _ _ => []) :
     Strategy Nat Nat Sym T :=
   nafByRefutation vocab .ha (completionOf clauses formulas) (fun _ => false) select 200 (· == .unknown)

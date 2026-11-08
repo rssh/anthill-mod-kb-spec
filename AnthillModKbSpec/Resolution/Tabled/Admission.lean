@@ -44,7 +44,7 @@ variable [DecidableEq Variable] [DecidableEq Literal] [DecidableEq Symbol] (prog
 a guard, or a marker. -/
 def headOf? : Term Variable Literal Symbol → Option (Symbol × List (Term Variable Literal Symbol))
   | .app symbol args =>
-      if symbol = program.hoApply ∨ program.guard symbol = true ∨ program.marker symbol = true then none
+      if symbol = program.hoApply ∨ program.guard symbol = true ∨ program.unknownMarker symbol = true then none
       else some (symbol, args)
   | _ => none
 
@@ -178,7 +178,7 @@ def openCapability : Term Variable Literal Symbol → Capability
 /-- Blockers that hold for every predicate: a head that may conclude any
 predicate (a formula variable, or `ho_apply` of a predicate variable), as the
 completion closes none then (`Completion.headOpens`); a KB clause concluding
-a guard atom or an open marker; a head that is no formula (a literal, a
+a guard atom or an unknown marker; a head that is no formula (a literal, a
 dictionary call). -/
 def globalBlockers : List (Blocker Variable Literal Symbol) :=
   program.clauses.flatMap fun (index, clause) =>
@@ -191,7 +191,7 @@ def globalBlockers : List (Blocker Variable Literal Symbol) :=
               | none => [outside (.head index) [] head .hoApplyConversion]
               | some _ => []
             else if program.guard symbol then [outside (.head index) [] (.app symbol args) .guardDefinition]
-            else if program.marker symbol then [blocker (.head index) [] (.app symbol args) (.construct .markerDefinition)]
+            else if program.unknownMarker symbol then [blocker (.head index) [] (.app symbol args) (.construct .unknownMarkerDefinition)]
             else []
         | .equal _ _ => []
         | .lit value => [outside (.head index) [] (.lit value) .termKind]
@@ -431,9 +431,9 @@ KB clauses, as lowering gave them with their range guards, and the
 signature's guard symbols, with the declared free constructors, the open
 markers, and the mode declarations. -/
 def ofInput {Domain : Type} [DecidableEq Symbol] (input : Admission.ProgramInput Domain Variable Literal Symbol)
-    (hoApply : Symbol) (free : Symbol → Nat → Bool) (marker : Symbol → Bool) (modes : Modes Symbol) :
+    (hoApply : Symbol) (free : Symbol → Nat → Bool) (unknownMarker : Symbol → Bool) (modes : Modes Symbol) :
     Program Variable Literal Symbol :=
-  ⟨(input.ask [] .truth).kbClauses, free, Machine.guardSymbol input.signature, marker, hoApply, modes⟩
+  ⟨(input.ask [] .truth).kbClauses, free, Machine.guardSymbol input.signature, unknownMarker, hoApply, modes⟩
 
 end Program
 

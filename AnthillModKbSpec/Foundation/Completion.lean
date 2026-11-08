@@ -288,11 +288,11 @@ theory separates, for clauses and further formulas such as a query.
 Constructors are declared, never inferred: an application symbol is a free
 constructor when `free` says so, as the data signature's constructors are; a
 defined operation, such as one with equations, is not. Literals are always
-free. A predicate is closed unless it is a `marker` (an open marker such as
+free. A predicate is closed unless it is an `unknownMarker` (an unknown marker such as
 `UNKNOWN`), the `ho_apply` symbol, or a predicate some head may conclude other
 than as a defining clause (`headOpens`); a head that applies a predicate
 variable closes none. -/
-def Signature.of [DecidableEq Literal] [DecidableEq Symbol] (marker : Symbol → Bool) (hoApplySymbol : Symbol)
+def Signature.of [DecidableEq Literal] [DecidableEq Symbol] (unknownMarker : Symbol → Bool) (hoApplySymbol : Symbol)
     (free : Symbol → Bool) (clauses : List (HornClause Variable Literal Symbol))
     (formulas : List (Term Variable Literal Symbol)) : Signature Literal Symbol :=
   let found := (formulasOf clauses formulas).map formulaParts
@@ -307,7 +307,7 @@ def Signature.of [DecidableEq Literal] [DecidableEq Symbol] (marker : Symbol →
   | some opened =>
       let opens := opened.flatten
       ⟨(found.flatMap Prod.fst).eraseDups.filter (fun key =>
-          !marker key.1 && key.1 != hoApplySymbol && !opens.contains key.1), constructors⟩
+          !unknownMarker key.1 && key.1 != hoApplySymbol && !opens.contains key.1), constructors⟩
 
 /-- The predicate a clause concludes, if its head is an atom. -/
 def headSymbol? : HornClause Variable Literal Symbol → Option Symbol
@@ -315,46 +315,46 @@ def headSymbol? : HornClause Variable Literal Symbol → Option Symbol
   | _ => none
 
 /-- A marker occurs somewhere in the clauses or the formulas. -/
-def markerUsed (marker : Symbol → Bool) (clauses : List (HornClause Variable Literal Symbol))
+def unknownMarkerUsed (unknownMarker : Symbol → Bool) (clauses : List (HornClause Variable Literal Symbol))
     (formulas : List (Term Variable Literal Symbol)) : Bool :=
-  (symbolsOf (formulasOf clauses formulas)).any marker
+  (symbolsOf (formulasOf clauses formulas)).any unknownMarker
 
 /-- A clause that may conclude a marker: its head mentions one, or, when a
 marker is used at all, its head may conclude any predicate (`headOpens`). -/
-def mayConcludeMarker [DecidableEq Symbol] (marker : Symbol → Bool) (hoApplySymbol : Symbol) (used : Bool) :
+def mayConcludeUnknownMarker [DecidableEq Symbol] (unknownMarker : Symbol → Bool) (hoApplySymbol : Symbol) (used : Bool) :
     HornClause Variable Literal Symbol → Bool
-  | .definite head _ => (symbols head).any marker || (used && (headOpens hoApplySymbol head).isNone)
+  | .definite head _ => (symbols head).any unknownMarker || (used && (headOpens hoApplySymbol head).isNone)
   | .goal _ => false
 
 /-- The completed program of a KB with further formulas (`Signature.of`). A KB
-clause that may conclude a marker is invalid: the open marker has no clauses of
+clause that may conclude a marker is invalid: the unknown marker has no clauses of
 its own, not through a compound or `ho_apply` head, and not through a head that
 may conclude any predicate. The first such clause is reported. -/
 def complete? [DecidableEq Literal] [DecidableEq Symbol] [DecidableEq Variable] [FreshNames Variable]
-    (marker : Symbol → Bool) (hoApplySymbol : Symbol) (free : Symbol → Bool)
+    (unknownMarker : Symbol → Bool) (hoApplySymbol : Symbol) (free : Symbol → Bool)
     (clauses : List (HornClause Variable Literal Symbol))
     (formulas : List (Term Variable Literal Symbol)) : Except Nat (Completed Variable Literal Symbol) :=
-  match clauses.findIdx? (mayConcludeMarker marker hoApplySymbol (markerUsed marker clauses formulas)) with
+  match clauses.findIdx? (mayConcludeUnknownMarker unknownMarker hoApplySymbol (unknownMarkerUsed unknownMarker clauses formulas)) with
   | some index => .error index
-  | none => .ok (completion clauses (Signature.of marker hoApplySymbol free clauses formulas))
+  | none => .ok (completion clauses (Signature.of unknownMarker hoApplySymbol free clauses formulas))
 
 /-- An accepted completion is the program's completion for its own signature. -/
 theorem complete?_ok [DecidableEq Literal] [DecidableEq Symbol] [DecidableEq Variable] [FreshNames Variable]
-    {marker : Symbol → Bool} {hoApplySymbol : Symbol} {free : Symbol → Bool}
+    {unknownMarker : Symbol → Bool} {hoApplySymbol : Symbol} {free : Symbol → Bool}
     {clauses : List (HornClause Variable Literal Symbol)} {formulas : List (Term Variable Literal Symbol)}
-    {result : Completed Variable Literal Symbol} (completes : complete? marker hoApplySymbol free clauses formulas = .ok result) :
-    result = completion clauses (Signature.of marker hoApplySymbol free clauses formulas) := by
+    {result : Completed Variable Literal Symbol} (completes : complete? unknownMarker hoApplySymbol free clauses formulas = .ok result) :
+    result = completion clauses (Signature.of unknownMarker hoApplySymbol free clauses formulas) := by
   unfold complete? at completes
   split at completes
   · cases completes
   · cases completes; rfl
 
 /-- The completion closes no marker and not `ho_apply`. -/
-theorem Signature.of_open [DecidableEq Literal] [DecidableEq Symbol] {marker : Symbol → Bool} {hoApplySymbol : Symbol}
+theorem Signature.of_open [DecidableEq Literal] [DecidableEq Symbol] {unknownMarker : Symbol → Bool} {hoApplySymbol : Symbol}
     {free : Symbol → Bool} {clauses : List (HornClause Variable Literal Symbol)}
     {formulas : List (Term Variable Literal Symbol)} {key : Symbol × Nat}
-    (member : key ∈ (Signature.of marker hoApplySymbol free clauses formulas).predicates) :
-    marker key.1 = false ∧ key.1 ≠ hoApplySymbol := by
+    (member : key ∈ (Signature.of unknownMarker hoApplySymbol free clauses formulas).predicates) :
+    unknownMarker key.1 = false ∧ key.1 ≠ hoApplySymbol := by
   unfold Signature.of at member
   dsimp only at member
   split at member
@@ -369,11 +369,11 @@ theorem headSymbol?_disjunction (cases : List (Term Variable Literal Symbol)) (b
 /-- No KB clause of an accepted completion may conclude a marker: its head
 mentions none, and, when a marker is used, it may not conclude any predicate. -/
 theorem complete?_heads [DecidableEq Literal] [DecidableEq Symbol] [DecidableEq Variable] [FreshNames Variable]
-    {marker : Symbol → Bool} {hoApplySymbol : Symbol} {free : Symbol → Bool}
+    {unknownMarker : Symbol → Bool} {hoApplySymbol : Symbol} {free : Symbol → Bool}
     {clauses : List (HornClause Variable Literal Symbol)} {result : Completed Variable Literal Symbol}
     {formulas : List (Term Variable Literal Symbol)}
-    (completes : complete? marker hoApplySymbol free clauses formulas = .ok result) :
-    ∀ clause ∈ clauses, mayConcludeMarker marker hoApplySymbol (markerUsed marker clauses formulas) clause = false := by
+    (completes : complete? unknownMarker hoApplySymbol free clauses formulas = .ok result) :
+    ∀ clause ∈ clauses, mayConcludeUnknownMarker unknownMarker hoApplySymbol (unknownMarkerUsed unknownMarker clauses formulas) clause = false := by
   unfold complete? at completes
   split at completes
   · cases completes
@@ -383,14 +383,14 @@ theorem complete?_heads [DecidableEq Literal] [DecidableEq Symbol] [DecidableEq 
 
 /-- No clause of a completed program concludes a marker atom: the KB's clauses
 may conclude none (`complete?_heads`), and the generated ones conclude cases,
-equations, or falsity. So an open marker is never derived from a clause, and,
+equations, or falsity. So an unknown marker is never derived from a clause, and,
 closing no marker, the completion never refutes it. -/
 theorem complete?_reserved [DecidableEq Literal] [DecidableEq Symbol] [DecidableEq Variable] [FreshNames Variable]
-    {marker : Symbol → Bool} {hoApplySymbol : Symbol} {free : Symbol → Bool}
+    {unknownMarker : Symbol → Bool} {hoApplySymbol : Symbol} {free : Symbol → Bool}
     {clauses : List (HornClause Variable Literal Symbol)} {result : Completed Variable Literal Symbol}
     {formulas : List (Term Variable Literal Symbol)}
-    (completes : complete? marker hoApplySymbol free clauses formulas = .ok result) :
-    ∀ clause ∈ result.clauses, (headSymbol? clause).any marker = false := by
+    (completes : complete? unknownMarker hoApplySymbol free clauses formulas = .ok result) :
+    ∀ clause ∈ result.clauses, (headSymbol? clause).any unknownMarker = false := by
   have heads := complete?_heads completes
   unfold complete? at completes
   split at completes
@@ -402,7 +402,7 @@ theorem complete?_reserved [DecidableEq Literal] [DecidableEq Symbol] [Decidable
     · have clean := heads clause inKb
       rcases clause with ⟨head, _⟩ | _
       · cases head <;> try rfl
-        simp only [mayConcludeMarker, symbols, List.any_cons, Bool.or_eq_false_iff] at clean
+        simp only [mayConcludeUnknownMarker, symbols, List.any_cons, Bool.or_eq_false_iff] at clean
         simp [headSymbol?, clean.1.1]
       · rfl
     · simp [onlyIf, headSymbol?_disjunction]

@@ -53,13 +53,13 @@ variable {Variable Literal Symbol : Type}
 
 /-- What the fragment's admission reads: the KB clauses with their indices
 (the sites of blockers), the declared free constructors by symbol and arity,
-the guard symbols (decided from the signature), the open markers, the
+the guard symbols (decided from the signature), the unknown markers, the
 `ho_apply` symbol, and the mode declarations. -/
 structure Program (Variable Literal Symbol : Type) where
   clauses : List (Nat × HornClause Variable Literal Symbol)
   free : Symbol → Nat → Bool
   guard : Symbol → Bool
-  marker : Symbol → Bool
+  unknownMarker : Symbol → Bool
   hoApply : Symbol
   modes : Modes Symbol
 
@@ -158,10 +158,10 @@ def callOf? : Term Variable Literal Symbol → Option (Symbol × List (Term Vari
       if symbol = program.hoApply then
         match args with
         | .app predicate [] :: rest =>
-            if predicate = program.hoApply ∨ program.guard predicate = true ∨ program.marker predicate = true then none
+            if predicate = program.hoApply ∨ program.guard predicate = true ∨ program.unknownMarker predicate = true then none
             else some (predicate, rest)
         | _ => none
-      else if program.guard symbol = true ∨ program.marker symbol = true then none
+      else if program.guard symbol = true ∨ program.unknownMarker symbol = true then none
       else some (symbol, args)
   | _ => none
 
@@ -489,14 +489,14 @@ def scan (site : Site) (rigid bound : List Variable) (path : List Nat) : Term Va
       if symbol = program.hoApply then
         match args with
         | .app predicate [] :: rest =>
-            if predicate = program.hoApply ∨ program.guard predicate = true ∨ program.marker predicate = true then
+            if predicate = program.hoApply ∨ program.guard predicate = true ∨ program.unknownMarker predicate = true then
               ⟨.ofBlockers [outside site path (.app symbol args) .hoApplyConversion], bound, [], []⟩
             else program.scanCall site rigid bound path (.app symbol args) predicate rest 1
         | _ => ⟨.ofBlockers [outside site path (.app symbol args) .hoApplyConversion], bound, [], []⟩
       else if program.guard symbol then
         ⟨.ofBlockers (program.argsBlockers site path 0 args), bound, [],
           [⟨site, path, .app symbol args, (Term.app symbol args).freeVars⟩]⟩
-      else if program.marker symbol then
+      else if program.unknownMarker symbol then
         ⟨.ofBlockers (program.argsBlockers site path 0 args ++
             (if available rigid bound (Term.app symbol args).freeVars then [] else [blocker site path (.app symbol args) .mode])),
           bound, [], []⟩
@@ -511,7 +511,7 @@ def antecedentBlockers (site : Site) (path : List Nat) : Term Variable Literal S
       if symbol = program.hoApply then
         match args with
         | .app predicate [] :: rest =>
-            if predicate = program.hoApply ∨ program.guard predicate = true ∨ program.marker predicate = true then
+            if predicate = program.hoApply ∨ program.guard predicate = true ∨ program.unknownMarker predicate = true then
               [outside site path (.app symbol args) .hoApplyConversion]
             else program.argsBlockers site path 1 rest
         | _ => [outside site path (.app symbol args) .hoApplyConversion]
