@@ -82,7 +82,7 @@ def missingWitnesses : Option (ModuleAnswer Nat Nat Sym) → List T
 def missingKinds : Option (ModuleAnswer Nat Nat Sym) → List String
   | some (.undecided blockers) => blockers.map fun blocker => match blocker.missing with
       | .proof => "proof" | .mode => "mode" | .termination => "termination"
-      | .construct _ => "construct" | .witnesses _ => "witnesses"
+      | .construct _ => "construct" | .witnesses _ => "witnesses" | .consistency _ => "consistency"
   | _ => []
 
 /-! ### Unknown: an open predicate, two witnesses, no refutation -/

@@ -3,9 +3,9 @@
 - id: WI-20261107-R9YMZ-s24-tabled-backtracking-on-the
 - created: 2026-11-07T14:54:18Z
 
-- status: Open
-- status_agent: user
-- status_at: 2026-11-07T14:54:18Z
+- status: Claimed
+- status_agent: claude
+- status_at: 2026-11-08T09:56:57Z
 
 - acceptance: lake build
 
@@ -45,4 +45,8 @@ From S22 (2026-11-07, decided with the user): S22 checks Unknown witnesses, and 
 ### 2026-11-07T22:34:07Z — feedback — claude
 
 From S23 (2026-11-08): admission proves the call bound per component, for any answer relation in which predicates with data-term outputs answer data terms (AnswersBounded): calls_bounded (from a ground input, a complete predicate's component calls have inputs among dataTerms), outputs_bounded (data-term outputs give data-term answers: the step of an induction on answers), calls_decrease (a decreasing component's recursive calls have smaller inputs). S24 composes them along the component order for whole-run termination without fuel, and shows its tables answer only bounded answers. The complete class is data-term inputs on recursive calls with data-term outputs or decreasing recursion (decided with the user, 2026-11-07: count(+, -) is budgeted). P1 assumes a consistent KB: a denial whose body is Yes is S24's runtime check.
+
+### 2026-11-08T17:21:40Z — feedback — user
+
+Progress (claude, 2026-11-08): implemented in Tabled/Fixpoint, Abstract, AbstractSound, Witness, Engine, EngineSound, Answer (docs/tabled-evaluation.md, Tests/Resolution/Tabled/Evaluation.lean). Decided with the user: SLG as an extension of the machine (the run holds the tables, waiting branches, and one machine state per generator; the core step is unchanged), and No by the abstract greatest fixpoint over the data terms plus one value standing for every other value (Kripke-Kleene), Unknown by the least and greatest fixpoints (or ground fixpoints with NAF). Open: (1) termination of a P1 run without fuel, within a bound from S23's calls; (2) a theorem stating when the answer is never Undecided (exactness); (3) that every successful run's export checks is S15/S16's (noted there).
 

@@ -1,0 +1,644 @@
+import AnthillModKbSpec.Resolution.Tabled.EngineSound
+import AnthillModKbSpec.Resolution.P1.Answer
+
+/-! # The fast fragment's answers (S24)
+
+`Setup.answer` answers a query of the fast fragment against the Clark
+completion of its program:
+
+1. **Admission** (S23): a blocker gives Undecided before anything runs.
+2. **The tabled run** (`Engine.run`), with the setup's fuel. Running out of
+   fuel is Undecided, naming the call being evaluated: the growing call.
+3. **Yes**: a success, exported as an S08 term with every table answer
+   expanded from its own proof (`exportWith`), and checked (`checks`). A NAF
+   node carries the universe its refutation was computed over; the checker
+   computes the refutation again (`nafCheck`).
+4. **No**: after a completed run, a goal refuted by the Kripke–Kleene
+   iteration over the universe (`refutesIn`), false in every model of the
+   completion.
+5. **Unknown**: after a completed run, two witnesses (`witnesses`): for a
+   positive covered program, the greatest fixpoint, where the goal holds over
+   a post-fixpoint of the universe and one fresh value, and the least, where it
+   fails over a closed abstract least fixpoint; for a ground program, two
+   assignments that are fixpoints, NAF included. Every denial body fails in
+   both.
+6. Otherwise **Undecided**, with the run's gaps, or the consistency of the KB
+   when no assignment of a ground program's open atoms is a fixpoint.
+
+Every answer is sound for the models of the completion with complement NAF that
+realize the admission signature (`answer_sound`), and only Undecided changes
+with more fuel (`answer_mono`). -/
+
+namespace AnthillModKbSpec.Tabled
+
+open Machine Semantics Completion Answers P1
+
+variable {Variable Literal Symbol : Type} [DecidableEq Variable] [DecidableEq Literal] [DecidableEq Symbol]
+  [FreshNames Variable]
+
+attribute [local instance] termEq
+
+/-- A witness of an open goal: the greatest fixpoint, bounded below by these
+atoms; the least fixpoint, bounded above by these abstract atoms; or a ground
+fixpoint, these atoms true. -/
+inductive Witness (Variable Literal Symbol : Type) where
+  | greatest (atoms : List (AAtom Variable Literal Symbol))
+  | least (atoms : List (AAtom Variable Literal Symbol))
+  | assignment (atoms : List (GAtom Variable Literal Symbol))
+
+/-- The answers of the fast fragment: Yes and No carry terms (a checked proof,
+the refutation's universe), Unknown two witnesses. -/
+abbrev TabledAnswer (Variable Literal Symbol : Type) :=
+  Answer (Term Variable Literal Symbol) (Term Variable Literal Symbol) (Witness Variable Literal Symbol)
+    (Blocker Variable Literal Symbol)
+
+/-- A program of the fast fragment with what its answers need: the S08
+vocabulary, the unknown marker, the admission signature with its guard symbols
+decided and separated, the signature the completion closes, the rule name of
+table answers, and the fuel of a run. -/
+structure Setup (Domain Variable Literal Symbol : Type) [DecidableEq Variable] [DecidableEq Literal]
+    [DecidableEq Symbol] [FreshNames Variable] where
+  vocab : Vocabulary Symbol
+  fragment : Tabled.Program Variable Literal Symbol
+  admission : AdmissionSignature.SignatureSnapshot Domain Symbol
+  isGuard : Symbol → Bool
+  isGuard_iff : ∀ symbol, isGuard symbol = true ↔ Open.IsGuard admission.naming symbol
+  separated : Open.Separated admission.naming fragment.hoApply
+  markers : ∀ symbol, fragment.unknownMarker symbol = true → isGuard symbol = false
+  signature : Signature Literal Symbol
+  closed : ∀ key ∈ signature.predicates, fragment.unknownMarker key.1 = false ∧ key.1 ≠ fragment.hoApply ∧
+    isGuard key.1 = false
+  tableSymbol : Symbol
+
+namespace Setup
+
+variable {Domain : Type} (setup : Setup Domain Variable Literal Symbol)
+
+def hoApplySymbol : Symbol := setup.fragment.hoApply
+
+def clauses : List (HornClause Variable Literal Symbol) := setup.fragment.clauses.map Prod.snd
+
+def completion : Completed Variable Literal Symbol := Completion.completion setup.clauses setup.signature
+
+/-- The completed snapshot answers are checked against. -/
+def snapshot : P1.Snapshot Variable Literal Symbol := ⟨setup.hoApplySymbol, setup.completion.clauses⟩
+
+/-- The universe of a query: the ground data subterms of the program and the query. -/
+def space (context : ProofContext Variable Literal Symbol) (goal : Formula Variable Literal Symbol) :
+    List (Term Variable Literal Symbol) :=
+  universeOf setup.signature.constructors setup.clauses (goal :: context)
+
+/-- A ground operand refuted over a universe. -/
+def refutesIn (space : List (Term Variable Literal Symbol)) (operand : Term Variable Literal Symbol) : Bool :=
+  validUniverse setup.signature.constructors space &&
+    refutes setup.signature space setup.clauses (rounds setup.signature space) operand
+
+/-- The engine of a query, its refutations over the query's universe. -/
+def engine (space : List (Term Variable Literal Symbol)) : Engine Variable Literal Symbol where
+  hoApplySymbol := setup.hoApplySymbol
+  fragment := setup.fragment
+  resolution := Machine.Program.ofClauses setup.clauses setup.fragment.guard
+  unknownMarker := setup.fragment.unknownMarker
+  tableSymbol := setup.tableSymbol
+  refutes := setup.refutesIn space
+  evidence := fun _ => .app setup.tableSymbol space
+
+variable {setup}
+
+/-- A refutation is false in every model of the completed program. -/
+theorem refutesIn_sound {space : List (Term Variable Literal Symbol)} {operand : Term Variable Literal Symbol}
+    (refuted : setup.refutesIn space operand = true) {Value : Type} {model : Model Literal Symbol Value setup.hoApplySymbol}
+    (models : model.Models setup.snapshot.kb) (negation : model.ComplementNAF) (environment : Environment Variable Value) :
+    ¬ model.Satisfies environment operand := by
+  simp only [refutesIn, Bool.and_eq_true] at refuted
+  exact refutes_sound (Completes.of_models (signature := setup.signature) (clauses := setup.clauses) models)
+    refuted.1 negation refuted.2 environment
+
+/-- NAF evidence by refutation: the operand fails in every model. -/
+theorem refutesIn_naf {space : List (Term Variable Literal Symbol)} {operand : Term Variable Literal Symbol}
+    (refuted : setup.refutesIn space operand = true) (context : ProofContext Variable Literal Symbol) :
+    semanticNaf setup.hoApplySymbol setup.snapshot.kb context operand := by
+  intro Value model models negation environment _
+  rw [sat_neg model environment negation]
+  exact refutesIn_sound refuted models negation environment
+
+variable (setup)
+
+/-- The check of NAF evidence: a universe over which the operand is refuted. -/
+def nafCheck : NafCheck setup.snapshot semanticNaf where
+  check := fun _ operand evidence =>
+    match evidence with
+    | .app symbol space => decide (symbol = setup.tableSymbol) && setup.refutesIn space operand
+    | _ => false
+  sound := by
+    intro context operand evidence accepted
+    split at accepted
+    · simp only [Bool.and_eq_true] at accepted
+      exact refutesIn_naf accepted.2 context
+    · cases accepted
+
+/-- The checker of the fast fragment's proofs: NAF evidence by refutation. -/
+def checker : Checker Variable Literal Symbol := ⟨setup.snapshot, semanticNaf, some setup.nafCheck, []⟩
+
+/-- A proof term of the goal under the context, checked. -/
+def checks (context : ProofContext Variable Literal Symbol) (goal : Formula Variable Literal Symbol)
+    (proof : Term Variable Literal Symbol) : Bool :=
+  decide (checkProof setup.vocab setup.checker [] context goal proof = .accept)
+
+/-- The answer of a table with an atom in a context. -/
+def findAnswer (tables : List (Table Variable Literal Symbol)) (atom : Term Variable Literal Symbol)
+    (context : ProofContext Variable Literal Symbol) : Option (TableAnswer Variable Literal Symbol) :=
+  tables.findSome? fun table =>
+    if decide (table.call.context = context) then table.answers.find? fun answer => decide (answer.atom = atom) else none
+
+/-- Export a completed proof, each table answer expanded from its own proof. -/
+def exportWith (tables : List (Table Variable Literal Symbol)) :
+    Nat → CompletedProof Variable Literal Symbol (Term Variable Literal Symbol) Unit → Option (Proof Variable Literal Symbol)
+  | 0, proof => exportTree id proof.store (fun _ _ => none) proof.tree
+  | depth + 1, proof =>
+      exportTree id proof.store (fun rule _ =>
+        match rule with
+        | .extension symbol (atom :: context) none =>
+            if symbol = setup.tableSymbol then
+              (findAnswer tables atom context).bind fun answer => exportWith tables depth answer.proof
+            else none
+        | _ => none) proof.tree
+
+/-- A run's success, exported and checked. -/
+def proved (proof : CompletedProof Variable Literal Symbol (Term Variable Literal Symbol) Unit) (resume : Run Variable Literal Symbol)
+    (context : ProofContext Variable Literal Symbol) (goal : Formula Variable Literal Symbol) : Option (Term Variable Literal Symbol) :=
+  ((setup.exportWith resume.tables ((resume.tables.map fun table => table.answers.length).sum + 1) proof).map
+    (encode setup.vocab)).filter (setup.checks context goal)
+
+/-! ## Witnesses -/
+
+/-- The denials' bodies. -/
+def denials : List (List (Term Variable Literal Symbol)) :=
+  setup.clauses.filterMap fun
+    | .goal body => some body
+    | _ => none
+
+/-- The covered programs, decided. -/
+def covered : Bool :=
+  setup.clauses.all (fun
+    | .definite (.app symbol args) _ => decide ((symbol, args.length) ∈ setup.signature.predicates)
+    | .goal _ => true
+    | _ => false) &&
+  setup.signature.predicates.all fun key => decide (key.1 ≠ setup.hoApplySymbol)
+
+/-- The positive programs, decided. -/
+def positive : Bool :=
+  setup.clauses.all fun
+    | .definite (.app _ args) body => dataArgs args && body.all (positiveGoal setup.hoApplySymbol)
+    | _ => true
+
+/-- The two witnesses of a positive covered program: a post-fixpoint in which
+the goal holds and a closed abstract least fixpoint in which it fails, every
+denial body failing in both. -/
+def positiveWitnesses (space : List (Term Variable Literal Symbol)) (goal : Formula Variable Literal Symbol) :
+    Option (Witness Variable Literal Symbol × Witness Variable Literal Symbol) :=
+  let count := rounds setup.signature space
+  let low := leastOver setup.signature space setup.clauses count
+  let high := greatestOver setup.signature space setup.clauses setup.fragment.unknownMarker count
+  if !setup.fragment.unknownMarker setup.hoApplySymbol && setup.covered && setup.positive &&
+      positiveGoal setup.hoApplySymbol goal &&
+      closedLeast setup.signature space setup.clauses low && failsLeast setup.signature space low goal &&
+      setup.denials.all (fun body => failsLeast setup.signature space low (.conjunction body)) &&
+      postGreatest setup.signature space setup.clauses setup.fragment.unknownMarker high &&
+      vtrue setup.signature space setup.fragment.unknownMarker high (fun _ => none) goal &&
+      setup.denials.all (fun body => refutes setup.signature space setup.clauses count (.conjunction body)) then
+    some (.greatest high, .least low)
+  else none
+
+/-- Every sublist of a list. -/
+def subsets {α : Type} : List α → List (List α)
+  | [] => [[]]
+  | item :: rest => (subsets rest).flatMap fun subset => [item :: subset, subset]
+
+/-- The ground atoms of a program and a goal: closed atoms and unknown markers. -/
+def groundAtoms (goal : Formula Variable Literal Symbol) : List (GAtom Variable Literal Symbol) :=
+  let rec atomsOf : Term Variable Literal Symbol → List (GAtom Variable Literal Symbol)
+    | .app symbol args => [(symbol, args)]
+    | .conj left right | .disj left right | .imp left right => atomsOf left ++ atomsOf right
+    | .defaultNeg body => atomsOf body
+    | _ => []
+  ((goal :: setup.clauses.flatMap HornClause.terms).flatMap atomsOf).eraseDups
+
+/-- Assignments of a ground program's open atoms: the definitely true ones
+with the others, every way when there are few, otherwise all, none, or one. -/
+def assignments (space : List (Term Variable Literal Symbol)) (goal : Formula Variable Literal Symbol) :
+    List (List (GAtom Variable Literal Symbol)) :=
+  let kleene := kk setup.signature space setup.clauses (rounds setup.signature space)
+  let atoms := setup.groundAtoms goal
+  let definitely := atoms.filter fun atom => decide (atom ∈ kleene.1)
+  let undecided := atoms.filter fun atom =>
+    !decide (atom ∈ kleene.1) &&
+      (setup.fragment.unknownMarker atom.1 || decide ((atom.1, atom.2.map some) ∈ kleene.2))
+  let choices := if undecided.length ≤ 8 then subsets undecided
+    else [undecided, []] ++ undecided.map (fun atom => [atom]) ++ undecided.map (fun atom => undecided.erase atom)
+  choices.map (definitely ++ ·)
+
+/-- An assignment of a ground program that is a fixpoint with every denial
+body false. -/
+def groundModel (assignment : List (GAtom Variable Literal Symbol)) : Bool :=
+  groundFixpoint setup.signature setup.clauses assignment &&
+    assignment.all (fun atom => groundInAll setup.signature.constructors atom.2) &&
+    setup.denials.all fun body => !gtrue setup.signature assignment (.conjunction body)
+
+/-- Two ground fixpoints, one making the goal true and one false. -/
+def groundWitnesses (space : List (Term Variable Literal Symbol)) (goal : Formula Variable Literal Symbol) :
+    Option (Witness Variable Literal Symbol × Witness Variable Literal Symbol) :=
+  if groundProgram setup.hoApplySymbol setup.signature setup.fragment.unknownMarker setup.clauses &&
+      knownGoal setup.hoApplySymbol setup.signature setup.fragment.unknownMarker goal then
+    let models := (setup.assignments space goal).filter setup.groundModel
+    match models.find? (gtrue setup.signature · goal), models.find? (!gtrue setup.signature · goal) with
+    | some holds, some fails => some (.assignment holds, .assignment fails)
+    | _, _ => none
+  else none
+
+/-- The two witnesses of a closed goal with no assumptions. -/
+def witnesses (context : ProofContext Variable Literal Symbol) (goal : Formula Variable Literal Symbol) :
+    Option (Witness Variable Literal Symbol × Witness Variable Literal Symbol) :=
+  let space := setup.space context goal
+  if context.isEmpty && closedTerm goal && validUniverse setup.signature.constructors space then
+    (setup.positiveWitnesses space goal).or (setup.groundWitnesses space goal)
+  else none
+
+/-- A ground program none of whose candidate assignments is a model: its
+completion may be inconsistent (`p :- ¬p`). -/
+def inconsistent (space : List (Term Variable Literal Symbol)) (goal : Formula Variable Literal Symbol) : Bool :=
+  groundProgram setup.hoApplySymbol setup.signature setup.fragment.unknownMarker setup.clauses &&
+    !(setup.assignments space goal).any setup.groundModel
+
+/-! ## The answer -/
+
+/-- The blocker of an interrupted run: the call its newest generator evaluates. -/
+def growing (run : Run Variable Literal Symbol) (context : ProofContext Variable Literal Symbol)
+    (goal : Formula Variable Literal Symbol) : Blocker Variable Literal Symbol :=
+  match run.stack.head? with
+  | some generator => ⟨.reached generator.state.root.context [], [], generator.state.root.goal, .termination⟩
+  | none => Blocker.interrupted context goal
+
+/-- The blockers of a completed run that answered nothing. -/
+def blockersOf (outcome : Machine.Outcome Variable Literal Symbol (Term Variable Literal Symbol) Unit)
+    (goal : Formula Variable Literal Symbol) : List (Blocker Variable Literal Symbol) :=
+  match outcome with
+  | .opened gaps | .abandoned gaps => gaps.map (Blocker.ofGap fun formula => [formula])
+  | _ => [Blocker.unproved goal]
+
+/-- The answer after the tabled run, from its outcome. -/
+def answerFrom (context : ProofContext Variable Literal Symbol) (goal : Formula Variable Literal Symbol) :
+    Engine.Outcome Variable Literal Symbol → TabledAnswer Variable Literal Symbol
+  | .interrupted run => .undecided [growing run context goal]
+  | .success proof resume =>
+      match setup.proved proof resume context goal with
+      | some term => .yes term
+      | none => .undecided [Blocker.unproved goal]
+  | .finished outcome =>
+      if setup.refutesIn (setup.space context goal) goal then .no (.app setup.tableSymbol (setup.space context goal))
+      else
+        match setup.witnesses context goal with
+        | some (holds, fails) => .unknown holds fails
+        | none =>
+            if context.isEmpty && setup.inconsistent (setup.space context goal) goal then
+              .undecided [⟨.site .goal, [], goal, .consistency ((setup.groundAtoms goal).map fun atom => .app atom.1 atom.2)⟩]
+            else .undecided (blockersOf outcome goal)
+
+/-- The tabled run of a query's goal, with fuel. -/
+def runOf (fuel : Nat) (context : ProofContext Variable Literal Symbol) (goal : Formula Variable Literal Symbol) :
+    Engine.Outcome Variable Literal Symbol :=
+  (setup.engine (setup.space context goal)).run fuel (Engine.start context goal)
+
+/-- What a denial's run says about the KB: a proved body makes it
+inconsistent, a run out of fuel leaves its consistency open. -/
+def denialBlocker (fuel : Nat) (body : List (Term Variable Literal Symbol)) : Option (Blocker Variable Literal Symbol) :=
+  match setup.runOf fuel [] (.conjunction body) with
+  | .success proof resume =>
+      if (setup.proved proof resume [] (.conjunction body)).isSome then
+        some ⟨.site .goal, [], .conjunction body, .consistency body⟩
+      else none
+  | .interrupted run => some (growing run [] (.conjunction body))
+  | .finished _ => none
+
+/-- The runtime consistency check (S23's boundary): every answer assumes a
+model, so a denial whose body is proved, or not settled within the fuel,
+blocks every answer. -/
+def denialCheck (fuel : Nat) : Option (Blocker Variable Literal Symbol) :=
+  setup.denials.findSome? (setup.denialBlocker fuel)
+
+/-- The module's answer to a query of the fast fragment: its admission's
+blockers, the KB's consistency, or the answer of its run, for its goal with
+the answer names existentially closed. -/
+def answer (fuel : Nat) (query : Tabled.Query Variable Literal Symbol) : TabledAnswer Variable Literal Symbol :=
+  match setup.fragment.answer? query with
+  | some blocked => blocked
+  | none =>
+      match setup.denialCheck fuel with
+      | some blocker => .undecided [blocker]
+      | none =>
+          let goal := query.answers.foldr Term.existsVar query.goal
+          setup.answerFrom query.context goal (setup.runOf fuel query.context goal)
+
+end Setup
+
+/-- The setup of a fragment program, closing the predicates its clauses and
+the given formulas use, guards and unknown markers aside, and separating its
+declared constructors. -/
+def Setup.ofProgram {Domain : Type} (vocab : Vocabulary Symbol) (fragment : Tabled.Program Variable Literal Symbol)
+    (admission : AdmissionSignature.SignatureSnapshot Domain Symbol) (isGuard : Symbol → Bool)
+    (isGuard_iff : ∀ symbol, isGuard symbol = true ↔ Open.IsGuard admission.naming symbol)
+    (separated : Open.Separated admission.naming fragment.hoApply)
+    (markers : ∀ symbol, fragment.unknownMarker symbol = true → isGuard symbol = false)
+    (free : Symbol → Bool) (formulas : List (Term Variable Literal Symbol)) (tableSymbol : Symbol) :
+    Setup Domain Variable Literal Symbol :=
+  let opened := Signature.of fragment.unknownMarker fragment.hoApply free (fragment.clauses.map Prod.snd) formulas
+  { vocab, fragment, admission, isGuard, isGuard_iff, separated, markers
+    signature := ⟨opened.predicates.filter (fun key => !isGuard key.1), opened.constructors⟩
+    closed := fun key member => by
+      have inside := (List.mem_filter.mp member)
+      obtain ⟨notMarker, ordinary⟩ := Signature.of_open inside.1
+      exact ⟨notMarker, ordinary, by simpa using inside.2⟩
+    tableSymbol }
+
+namespace Setup
+
+variable {Domain : Type} (setup : Setup Domain Variable Literal Symbol)
+
+/-- The goal a query answers: its answer names existentially closed. -/
+def goalOf (query : Tabled.Query Variable Literal Symbol) : Formula Variable Literal Symbol :=
+  query.answers.foldr Term.existsVar query.goal
+
+/-- What the answers are about: the models of the completed program with
+complement NAF that realize the admission signature, under the query's
+context, for its goal with the answer names closed. -/
+def meaning (query : Tabled.Query Variable Literal Symbol) : Meaning :=
+  Meaning.ofModels (Variable := Variable) (hoApplySymbol := setup.hoApplySymbol)
+    (fun _ model => model.Models setup.snapshot.kb ∧ model.ComplementNAF ∧ AdmissionSignature.Realizes setup.admission model)
+    query.context (goalOf query)
+
+variable {setup}
+
+theorem checks_sound {context : ProofContext Variable Literal Symbol} {goal : Formula Variable Literal Symbol}
+    {proof : Term Variable Literal Symbol} (checked : setup.checks context goal proof = true) {Value : Type}
+    {model : Model Literal Symbol Value setup.hoApplySymbol} (models : model.Models setup.snapshot.kb)
+    (negation : model.ComplementNAF) : ∀ environment, model.ContextHolds environment context → model.Satisfies environment goal :=
+  model.sound models (semanticNaf_adequate model models negation)
+    (checked_toDerives setup.vocab setup.checker ((checkProof_accept_iff setup.vocab setup.checker).mp (of_decide_eq_true checked)))
+
+theorem proved_sound {proof : CompletedProof Variable Literal Symbol (Term Variable Literal Symbol) Unit}
+    {resume : Run Variable Literal Symbol} {context : ProofContext Variable Literal Symbol} {goal : Formula Variable Literal Symbol}
+    {term : Term Variable Literal Symbol} (found : setup.proved proof resume context goal = some term) {Value : Type}
+    {model : Model Literal Symbol Value setup.hoApplySymbol} (models : model.Models setup.snapshot.kb)
+    (negation : model.ComplementNAF) : ∀ environment, model.ContextHolds environment context → model.Satisfies environment goal :=
+  checks_sound (Option.filter_eq_some_iff.mp found).2 models negation
+
+/-- A key model interpreting the guards exactly realizes the admission signature. -/
+theorem realizes {base interp : Interp Literal Symbol}
+    (guards : ∀ symbol keys, setup.isGuard symbol = true → (base symbol keys ↔ Open.guardTruth setup.admission setup.hoApplySymbol symbol keys)) :
+    AdmissionSignature.Realizes setup.admission (keyModel setup.hoApplySymbol setup.signature base interp) := by
+  apply Open.realizes_guards setup.separated
+  intro symbol guard keys
+  have isGuard := (setup.isGuard_iff symbol).mpr guard
+  have notClosed : (symbol, keys.length) ∉ setup.signature.predicates := fun closed => by
+    have := (setup.closed _ closed).2.2; simp only at this; rw [isGuard] at this; cases this
+  rw [join_open notClosed]
+  exact guards symbol keys isGuard
+
+/-- The base of the least witness: guards exact, everything else false. -/
+def lowBase : Interp Literal Symbol := fun symbol keys =>
+  setup.isGuard symbol = true ∧ Open.guardTruth setup.admission setup.hoApplySymbol symbol keys
+
+/-- The base of the greatest witness: guards exact, unknown markers true. -/
+def highBase : Interp Literal Symbol := fun symbol keys =>
+  (setup.isGuard symbol = true ∧ Open.guardTruth setup.admission setup.hoApplySymbol symbol keys) ∨
+    (setup.isGuard symbol = false ∧ setup.fragment.unknownMarker symbol = true)
+
+theorem covered_spec (found : setup.covered = true) : Covered setup.hoApplySymbol setup.signature setup.clauses := by
+  simp only [covered, Bool.and_eq_true, List.all_eq_true, decide_eq_true_eq] at found
+  refine ⟨fun clause member => ?_, found.2⟩
+  have shape := found.1 clause member
+  match clause, shape with
+  | .definite (.app symbol args) body, shape => exact .inl ⟨symbol, args, body, rfl, by simpa using shape⟩
+  | .goal body, _ => exact .inr ⟨body, rfl⟩
+
+theorem positive_spec (found : setup.positive = true) : PositiveProgram setup.hoApplySymbol setup.clauses := by
+  intro symbol args body member
+  simp only [positive, List.all_eq_true] at found
+  have shape := found _ member
+  simp only [Bool.and_eq_true, List.all_eq_true] at shape
+  exact shape
+
+theorem mem_denials {body : List (Term Variable Literal Symbol)} (member : HornClause.goal body ∈ setup.clauses) :
+    body ∈ setup.denials :=
+  List.mem_filterMap.mpr ⟨_, member, rfl⟩
+
+/-- Two witnesses are two models of the completion, one where the goal holds
+and one where it fails. -/
+theorem witnesses_sound {query : Tabled.Query Variable Literal Symbol}
+    {holds fails : Witness Variable Literal Symbol} (found : setup.witnesses query.context (goalOf query) = some (holds, fails)) :
+    (setup.meaning query).independence := by
+  unfold witnesses at found
+  dsimp only at found
+  split at found
+  · rename_i conditions
+    simp only [Bool.and_eq_true, List.isEmpty_iff] at conditions
+    obtain ⟨⟨empty, closedGoal⟩, valid⟩ := conditions
+    have contextHolds : ∀ {Value : Type} {model : Model Literal Symbol Value setup.hoApplySymbol} environment,
+        model.ContextHolds environment query.context := fun _ => by rw [empty]; intro _ inside; cases inside
+    rcases positiveFound : setup.positiveWitnesses (setup.space query.context (goalOf query)) (goalOf query) with _ | pair
+    · -- Ground witnesses.
+      rw [positiveFound, Option.none_or] at found
+      unfold groundWitnesses at found
+      split at found
+      · rename_i groundConditions
+        simp only [Bool.and_eq_true] at groundConditions
+        dsimp only at found
+        split at found
+        · rename_i holding failing holdsFound failsFound
+          cases found
+          have holdsMember := List.mem_of_find?_eq_some holdsFound
+          have failsMember := List.mem_of_find?_eq_some failsFound
+          have holdsValue := List.find?_some holdsFound
+          have failsValue := List.find?_some failsFound
+          have modelOf : ∀ assignment, assignment ∈ (setup.assignments (setup.space query.context (goalOf query)) (goalOf query)).filter
+              setup.groundModel → ∃ model : Model Literal Symbol (Key Literal Symbol) setup.hoApplySymbol,
+                (model.Models setup.snapshot.kb ∧ model.ComplementNAF ∧ AdmissionSignature.Realizes setup.admission model) ∧
+                ∀ environment, (model.Satisfies environment (goalOf query) ↔ gtrue setup.signature assignment (goalOf query) = true) := by
+            intro assignment member
+            have checked := (List.mem_filter.mp member).2
+            simp only [groundModel, Bool.and_eq_true, List.all_eq_true, Bool.not_eq_true'] at checked
+            obtain ⟨⟨fixed, groundAtoms⟩, denied⟩ := checked
+            obtain ⟨models, valued⟩ := ground_witness groundConditions.1 fixed groundAtoms
+              (fun body member => denied body (mem_denials member))
+              (Open.guardTruth setup.admission setup.hoApplySymbol) groundConditions.2
+            refine ⟨_, ⟨models, Model.keys_complement _, realizes fun symbol keys isGuard => ?_⟩, valued⟩
+            have notMarker : setup.fragment.unknownMarker symbol = false := by
+              cases marker : setup.fragment.unknownMarker symbol
+              · rfl
+              · have := setup.markers symbol marker; rw [isGuard] at this; cases this
+            simp [groundBase, notMarker]
+          obtain ⟨holdsModel, holdsHolds, holdsValued⟩ := modelOf holding holdsMember
+          obtain ⟨failsModel, failsHolds, failsValued⟩ := modelOf failing failsMember
+          let environment : Environment Variable (Key Literal Symbol) := fun _ => .truth False
+          refine ⟨⟨_, holdsModel, holdsHolds, environment, contextHolds environment, (holdsValued environment).mpr holdsValue⟩,
+            ⟨_, failsModel, failsHolds, environment, contextHolds environment, fun satisfied => ?_⟩⟩
+          have := (failsValued environment).mp satisfied
+          simp [this] at failsValue
+        · cases found
+      · cases found
+    · -- The least and the greatest fixpoint.
+      rw [positiveFound] at found
+      simp only [Option.some_or, Option.some.injEq] at found
+      subst found
+      unfold positiveWitnesses at positiveFound
+      dsimp only at positiveFound
+      split at positiveFound
+      · rename_i conditions
+        cases positiveFound
+        simp only [Bool.and_eq_true, Bool.not_eq_true', List.all_eq_true] at conditions
+        obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨notMarker, coveredB⟩, positiveB⟩, goalPositive⟩, closedL⟩, failsL⟩, denialsL⟩, post⟩, holdsG⟩, denialsG⟩ :=
+          conditions
+        have covered := covered_spec coveredB
+        have positive := positive_spec positiveB
+        have markedTrue : ∀ symbol keys, setup.fragment.unknownMarker symbol = true → setup.highBase symbol keys := by
+          intro symbol keys marker
+          exact .inr ⟨setup.markers symbol marker, marker⟩
+        obtain ⟨highModels, highHolds⟩ := greatest_witness (base := setup.highBase) covered positive valid notMarker markedTrue
+          post (greatestOver_atoms _) (fun body member => denialsG body (mem_denials member)) goalPositive holdsG
+        obtain ⟨lowModels, lowFails⟩ := least_witness (base := setup.lowBase) covered positive valid closedL
+          (fun body member => denialsL body (mem_denials member)) failsL
+        refine ⟨⟨_, _, ⟨highModels, Model.keys_complement _, realizes fun symbol keys isGuard => ?_⟩, _, contextHolds _, highHolds⟩,
+          ⟨_, _, ⟨lowModels, Model.keys_complement _, realizes fun symbol keys isGuard => ?_⟩, fun _ => .truth False,
+            contextHolds _, lowFails _⟩⟩
+        · simp [highBase, isGuard]
+        · simp [lowBase, isGuard]
+      · cases positiveFound
+  · cases found
+
+theorem answerFrom_sound (query : Tabled.Query Variable Literal Symbol) (outcome : Engine.Outcome Variable Literal Symbol) :
+    (setup.answerFrom query.context (goalOf query) outcome).Sound (setup.meaning query) := by
+  unfold answerFrom
+  split
+  · trivial
+  · split
+    · rename_i term found
+      intro Value model ⟨models, negation, _⟩ environment holds
+      exact proved_sound found models negation environment holds
+    · trivial
+  · split
+    · rename_i refuted
+      intro Value model ⟨models, negation, _⟩ environment _ satisfied
+      exact refutesIn_sound refuted models negation environment satisfied
+    · split
+      · rename_i holds fails found
+        exact witnesses_sound found
+      · split <;> trivial
+
+/-- **The answers are sound**: Yes holds in every model of the completion,
+No fails in every one, Unknown holds in one and fails in another, Undecided
+claims nothing. -/
+theorem answer_sound (fuel : Nat) (query : Tabled.Query Variable Literal Symbol) :
+    (setup.answer fuel query).Sound (setup.meaning query) := by
+  unfold answer
+  split
+  · rename_i blocked found
+    unfold Program.answer? at found
+    split at found
+    · cases found; trivial
+    · cases found
+  · split
+    · trivial
+    · exact answerFrom_sound query _
+
+/-- **Unknown never comes from an operational outcome**: only after the run
+completed with no answer, and two witnesses. -/
+theorem answer_unknown {fuel : Nat} {query : Tabled.Query Variable Literal Symbol} {holds fails : Witness Variable Literal Symbol}
+    (answered : setup.answer fuel query = .unknown holds fails) :
+    ∃ outcome, setup.runOf fuel query.context (goalOf query) = .finished outcome := by
+  unfold answer at answered
+  split at answered
+  · rename_i blocked found
+    unfold Program.answer? at found
+    split at found
+    · cases found; cases answered
+    · cases found
+  · split at answered
+    · cases answered
+    dsimp only at answered
+    cases ran : setup.runOf fuel query.context (query.answers.foldr Term.existsVar query.goal) with
+    | interrupted run => rw [ran] at answered; simp [answerFrom] at answered
+    | success proof resume =>
+        rw [ran] at answered; simp only [answerFrom] at answered; split at answered <;> cases answered
+    | finished outcome => exact ⟨outcome, ran⟩
+
+end Setup
+
+/-! ## More fuel -/
+
+namespace Engine
+
+variable (engine : Engine Variable Literal Symbol)
+
+/-- A run that ended within its fuel ends the same with more. -/
+theorem run_more : ∀ (fuel extra : Nat) (run : Run Variable Literal Symbol),
+    (∀ final, engine.run fuel run ≠ .interrupted final) → engine.run (fuel + extra) run = engine.run fuel run
+  | 0, _, run, ended => absurd rfl (ended run)
+  | fuel + 1, extra, run, ended => by
+      rw [show fuel + 1 + extra = (fuel + extra) + 1 by omega]
+      unfold Engine.run
+      split
+      · rename_i next stepped
+        rw [run_more fuel extra next fun final same => ended final (by unfold Engine.run; rw [stepped]; exact same)]
+      · rfl
+      · rfl
+
+end Engine
+
+namespace Setup
+
+variable {Domain : Type} (setup : Setup Domain Variable Literal Symbol)
+
+theorem denialBlocker_more {fuel : Nat} {body : List (Term Variable Literal Symbol)}
+    (none_ : setup.denialBlocker fuel body = none) (extra : Nat) : setup.denialBlocker (fuel + extra) body = none := by
+  have ended : ∀ final, setup.runOf fuel [] (.conjunction body) ≠ .interrupted final := by
+    intro final ran
+    unfold denialBlocker at none_; rw [ran] at none_; cases none_
+  have more := (setup.engine (setup.space [] (.conjunction body))).run_more fuel extra (Engine.start [] (.conjunction body)) ended
+  unfold denialBlocker runOf at none_ ⊢
+  rw [more]; exact none_
+
+theorem denialCheck_more {fuel : Nat} (none_ : setup.denialCheck fuel = none) (extra : Nat) :
+    setup.denialCheck (fuel + extra) = none := by
+  unfold denialCheck at none_ ⊢
+  rw [List.findSome?_eq_none_iff] at none_ ⊢
+  exact fun body member => setup.denialBlocker_more (none_ body member) extra
+
+/-- **Answers are monotone in the fuel**: Yes, No, and Unknown never change
+with more fuel; only Undecided can. -/
+theorem answer_mono {fuel : Nat} {query : Tabled.Query Variable Literal Symbol}
+    (decided : (setup.answer fuel query).decided = true) (extra : Nat) :
+    setup.answer (fuel + extra) query = setup.answer fuel query := by
+  unfold answer at decided ⊢
+  split
+  · rfl
+  · rename_i notBlocked
+    rw [notBlocked] at decided
+    dsimp only at decided ⊢
+    cases checked : setup.denialCheck fuel with
+    | some blocker => rw [checked] at decided; simp [Answer.decided] at decided
+    | none =>
+        rw [checked] at decided
+        rw [setup.denialCheck_more checked extra]
+        dsimp only at decided ⊢
+        have ended : ∀ final, setup.runOf fuel query.context (query.answers.foldr Term.existsVar query.goal) ≠ .interrupted final := by
+          intro final ran
+          rw [ran] at decided
+          simp [answerFrom, Answer.decided] at decided
+        have more := (setup.engine (setup.space query.context (query.answers.foldr Term.existsVar query.goal))).run_more fuel extra
+          (Engine.start query.context (query.answers.foldr Term.existsVar query.goal)) ended
+        unfold runOf
+        rw [more]
+
+end Setup
+
+end AnthillModKbSpec.Tabled

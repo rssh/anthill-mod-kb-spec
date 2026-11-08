@@ -287,7 +287,9 @@ whose recursive calls take data terms and whose answers are data terms or
 whose recursion decreases, with no NAF or denial over a predicate on a cycle,
 is in P1: its run ends without needing fuel, and its Unknown is exact by the
 least and greatest fixpoints. S23 implements the admission
-([fast admission](fast-admission.md)); the rest of P2 is planned in S24–S26.
+([fast admission](fast-admission.md)), S24 the tabled run and its answers
+([tabled evaluation](tabled-evaluation.md)); contexts and constraints are
+planned in S26 and S21.
 
 ## P3: scoped proof strategies with Undecided
 

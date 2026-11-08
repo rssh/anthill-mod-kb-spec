@@ -67,7 +67,8 @@ applies to each call, so the run has no choice points there.
 
 S23 implements this admission ([fast admission](fast-admission.md)): modes,
 safety, the cost classes with each predicate's degree and determinism, the
-profiles, and blockers, with the call bound S24 runs on.
+profiles, and blockers, with the call bound S24 runs on. S24 implements the
+execution and the answers ([tabled evaluation](tabled-evaluation.md)).
 
 | Profile | Predicates |
 | --- | --- |
@@ -96,6 +97,18 @@ No, and one in between is Unknown, the two fixpoints its witnesses. So Unknown
 is exact in P1. With NAF or a denial over an atom the completion leaves open,
 exactness is NP-hard in general (supported models); in P2 the witness check
 keeps the run polynomial, at the cost of Undecided in the hard cases.
+
+"Over the finitely many calls" needs care, since the greatest fixpoint's
+answers need not be data terms: in `r(X) :- r(X). q(X) :- r(X). p(X).
+s :- q(Y), p(Y).` the greatest fixpoint over the data terms gives `r` no
+answer, yet `s` holds in a model where `r` holds of a value no data term
+denotes. S24 decides (with the user, 2026-11-08) No by an over-approximating
+greatest fixpoint over the data terms and one abstract value ⋆ standing for
+every other value, sound in every model of the completion, computed with the
+definitely true atoms NAF reads (Fitting's Kripke–Kleene iteration); and
+Unknown when the goal fails over the abstract least fixpoint and holds over a
+post-fixpoint of the data terms and one fresh value. Between them the answer is
+Undecided.
 
 Answers are **monotone in the fuel**: a Yes, a No, or an Unknown never changes
 with more fuel; only Undecided can.

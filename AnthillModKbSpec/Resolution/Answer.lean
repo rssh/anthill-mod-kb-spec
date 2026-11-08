@@ -99,6 +99,10 @@ inductive Missing (Variable Literal Symbol : Type) where
   /-- Open atoms whose two witnesses were not both exhibited: they occur both
   ways (`p(a) ∨ ¬p(a)`), or a denial constrains them. -/
   | witnesses (atoms : List (Term Variable Literal Symbol))
+  /-- The KB's consistency (S24): no assignment of these atoms is a model of
+  the completion (`p :- ¬p`), or a denial's body is derivable. Every answer
+  assumes a model. -/
+  | consistency (atoms : List (Term Variable Literal Symbol))
 
 /-- Where a blocker sits: a site admission inspected, before anything runs, or
 an obligation a run reached, with its context and its provenance from the

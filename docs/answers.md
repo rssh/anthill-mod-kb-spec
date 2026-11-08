@@ -272,13 +272,17 @@ no gap.
   programs with P0 bodies, markers, and denials, and queries with no
   assumptions. A non-ground or cyclic program, or a query with assumptions,
   gives Undecided naming the open atoms. Tabled evaluation (S24) extends the
-  witnesses to its fragment.
+  witnesses to non-ground and cyclic positive programs (the least and the
+  greatest fixpoint) and to ground programs with NAF, loops included
+  ([tabled evaluation](tabled-evaluation.md)); queries with assumptions are
+  S26's.
 - **Guards in witness programs.** A witness program and its goal mention no
   guard symbol, and the completion closes none: a guard atom would need its
   exact truth decided inside the witness program. The admission signature's
   guard symbols must have one role each (`Separated`): a naming that shares
   a symbol between roles, such as `D_all` and the only domain's membership,
-  gets no witness. S24 extends the witnesses.
+  gets no witness. S24's witness models interpret the guards exactly, so its
+  programs may mention them; they still realize only a separated signature.
 - **Candidates, not search.** The module tries all-true, all-false, and
   single-atom assignments. Open atoms that interact can need another
   assignment; then the answer is Undecided, never a wrong Unknown.

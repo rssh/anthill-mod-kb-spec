@@ -64,3 +64,7 @@ From S13 (dictionary registry): S13 classifies one call at a time (Registry.acce
 
 Correction to the S13 note after review: the consistency check is Snapshot.WellFormed (the registry's own consistency plus separation of its symbols from the signature's membership symbols and D_all; separation from P_n stays a naming hypothesis). Each access has a Verdict (Access.verdict): runs, blocked with its reason (Missing.mode for a dictionary variable, construct (dictionary reason) otherwise), or inconsistent (an invalid input, impossible in a well-formed registry: access?_consistent). Plan reuse is Snapshot.Unchanged (signature, naming, and the names read); Registration.Checked.transfer carries evidence across it.
 
+### 2026-11-08T17:17:34Z — feedback — user
+
+From S24 (2026-11-08): a tabled Yes is exported as an S08 term with every table answer expanded from its own proof (Setup.exportWith) and filtered by the S08 checker, whose NAF evidence is a universe the checker refutes the operand over again (Setup.nafCheck). That every successful tabled run's export checks is S15/S16's, as for S06 runs.
+

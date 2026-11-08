@@ -33,3 +33,9 @@ Acceptance:
 
 Validation: lake build and focused Lean tests/examples appropriate to the changed definitions and proofs.
 Design references: docs/fast-decision-routes.md, docs/machine-left.md, docs/machine-positive.md.
+## Changes
+
+### 2026-11-08T17:17:33Z — feedback — user
+
+From S24 (2026-11-08): tables are keyed by the call and its context, and only closed contexts are tabled; the witnesses (Setup.witnesses) need a query with no assumptions, so a query with a context gets No or Yes but never Unknown. S26 extends the witnesses to contexts (the assumed facts and Harrop clauses as part of the witness programs) and the tables to contexts with names.
+

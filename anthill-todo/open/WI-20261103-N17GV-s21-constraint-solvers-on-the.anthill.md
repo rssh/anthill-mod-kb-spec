@@ -56,3 +56,7 @@ Moved to the backlog (2026-11-07 reorganization): not needed for the fast fragme
 
 From S23 (2026-11-08): the relaxed NAF rule is in S23's admission. A NAF with a flexible or rigid name is admitted when its operand, scanned with those names unbound, is safe and calls only complete predicates; a rigid name at an operand input is a blocker (mode), and an operand that is not complete lacks a termination argument. S21 runs constructive negation for what S23 admits.
 
+### 2026-11-08T17:17:31Z — feedback — user
+
+From S24 (2026-11-08): the tabled run tables only calls whose inputs and context are closed as read; NAF on a non-ground operand (a flexible name, an eigenvariable, a rigid parameter) is not tabled: it reaches the positive strategy and is a gap (Engine.strategy). Constructive negation runs there: the operand's table answers become equations whose negation is the disequality constraint. The Kripke-Kleene refutation already quantifies over every abstract value of a goal's free names (Tabled/Abstract refutes, refutes_sound), which the falsity side can reuse.
+
