@@ -58,11 +58,13 @@ namespace Engine
 variable (engine : Engine Variable Literal Symbol) (kb : LogicalKb Variable Literal Symbol)
   (naf : NafFailure Variable Literal Symbol)
 
-/-- The tables' contexts are closed, and their answers are closed and
-derivable in them. -/
+/-- The tables' contexts are closed; their answers name only their calls'
+free names, rigid parameters of every consumer, and are derivable in their
+context. -/
 def TablesSound (tables : List (Table Variable Literal Symbol)) : Prop :=
   ∀ table ∈ tables, table.call.context.all closedTerm = true ∧
-    ∀ answer ∈ table.answers, closedTerm answer.atom = true ∧ Derives engine.hoApplySymbol kb table.call.context answer.atom naf
+    ∀ answer ∈ table.answers, (∀ name ∈ answer.atom.freeVars, name ∈ table.call.names) ∧
+      Derives engine.hoApplySymbol kb table.call.context answer.atom naf
 
 /-- A refuted ground operand has NAF evidence in every context. -/
 def RefutesSound : Prop :=
@@ -70,48 +72,84 @@ def RefutesSound : Prop :=
 
 variable {engine} {kb} {naf}
 
-omit [DecidableEq Literal] [FreshNames Variable] in
-theorem callOfAtom_spec {symbol : Symbol} {args : List (Term Variable Literal Symbol)}
+omit [DecidableEq Literal] [DecidableEq Symbol] in
+/-- A term whose names are rigid in a store reads as itself in every scoped
+refinement: a rigid name is never bound. -/
+theorem resolve_rigid {store later : Store Variable Literal Symbol} (refines : store.Refines later) (scopedLater : later.Scoped)
+    {term : Term Variable Literal Symbol} (rigid : ∀ name ∈ term.freeVars, store.info? name = some .rigid) :
+    later.resolve term = term :=
+  resolveWith_unbound fun name inside bound => by
+    obtain ⟨⟨_, value⟩, member, rfl⟩ := List.mem_map.mp bound
+    obtain ⟨_, flexible, _⟩ := scopedLater.answers _ value member
+    rw [refines.rigid _ (rigid _ inside)] at flexible
+    cases flexible
+
+omit [DecidableEq Literal] [DecidableEq Symbol] [FreshNames Variable] in
+theorem names_rigid {store : Store Variable Literal Symbol} {call : Call Variable Literal Symbol}
+    (inputs : call.inputs.all (rigidTerm store) = true) (context : call.context.all closedTerm = true) :
+    ∀ name ∈ call.names, store.info? name = some .rigid := by
+  intro name member
+  simp only [Call.names, List.mem_flatMap, List.mem_append] at member
+  obtain ⟨term, inside | inside, named⟩ := member
+  · have rigid := List.all_eq_true.mp inputs term inside
+    simp only [rigidTerm, List.all_eq_true, decide_eq_true_eq] at rigid
+    exact rigid name named
+  · have closed := List.all_eq_true.mp context term inside
+    simp only [closedTerm, List.isEmpty_iff] at closed
+    rw [closed] at named; cases named
+
+omit [FreshNames Variable] in
+theorem callOfAtom_spec {store : Store Variable Literal Symbol} {symbol : Symbol} {args : List (Term Variable Literal Symbol)}
     {context : ProofContext Variable Literal Symbol} {call : Call Variable Literal Symbol}
-    (found : engine.callOfAtom symbol args context = some call) :
-    call.predicate = symbol ∧ call.context = context ∧ (call.inputs ++ call.context).all closedTerm = true := by
+    (found : engine.callOfAtom store symbol args context = some call) :
+    call.predicate = symbol ∧ call.context = context ∧ call.context.all closedTerm = true ∧
+      ∀ name ∈ call.names, store.info? name = some .rigid := by
   unfold callOfAtom at found
   split at found
   · cases found
   · split at found
     · rename_i inputs outputs _
       split at found
-      · rename_i closed; cases found; exact ⟨rfl, rfl, closed⟩
+      · rename_i checked
+        cases found
+        simp only [Bool.and_eq_true] at checked
+        exact ⟨rfl, rfl, checked.1.2, names_rigid checked.1.1 checked.1.2⟩
       · cases found
     · cases found
 
-omit [DecidableEq Literal] in
 theorem call?_spec {obligation : Obligation Variable Literal Symbol} {store : Store Variable Literal Symbol}
     {call : Call Variable Literal Symbol} (found : engine.call? obligation store = some call) :
-    call.context = obligation.context ∧ call.context.all closedTerm = true := by
+    call.context = obligation.context ∧ call.context.all closedTerm = true ∧
+      ∀ name ∈ call.names, store.info? name = some .rigid := by
   unfold call? at found
   split at found
-  · obtain ⟨_, context, closed⟩ := callOfAtom_spec found
-    simp only [List.all_append, Bool.and_eq_true] at closed
-    exact ⟨context, closed.2⟩
+  · obtain ⟨_, context, closed, rigid⟩ := callOfAtom_spec found
+    exact ⟨context, closed, rigid⟩
   · cases found
 
 omit [FreshNames Variable] in
 theorem findTable_spec {tables : List (Table Variable Literal Symbol)} {call : Call Variable Literal Symbol}
     {index : Nat} {table : Table Variable Literal Symbol} (found : findTable tables call = some (index, table)) :
-    tables[index]? = some table ∧ table.call.context = call.context := by
+    tables[index]? = some table ∧ table.call = call := by
   unfold findTable at found
   obtain ⟨entry, inside, same⟩ := Option.map_eq_some_iff.mp found
   cases same
   have spec := List.find?_some inside
   have member := List.mem_of_find?_eq_some inside
   simp only [Call.same, Bool.and_eq_true, decide_eq_true_eq] at spec
-  exact ⟨by
+  refine ⟨by
     obtain ⟨⟨table', position⟩⟩ := entry
     have := List.mem_zipIdx member
     simp only [Nat.zero_add] at this
     obtain ⟨_, positionBound, same⟩ := this
-    rw [same]; exact List.getElem?_eq_getElem positionBound, spec.2⟩
+    rw [same]; exact List.getElem?_eq_getElem positionBound, ?_⟩
+  revert spec
+  generalize entry.1.call = found
+  intro spec
+  cases found; cases call
+  simp only at spec
+  obtain ⟨⟨rfl, rfl⟩, rfl⟩ := spec
+  rfl
 
 omit [FreshNames Variable] in
 theorem mem_of_findTable {tables : List (Table Variable Literal Symbol)} {call : Call Variable Literal Symbol}
@@ -119,38 +157,74 @@ theorem mem_of_findTable {tables : List (Table Variable Literal Symbol)} {call :
     table ∈ tables :=
   List.mem_of_getElem? (findTable_spec found).1
 
+/-- An attempt is sound when its candidate is, for each refinement of the store
+that is scoped and reads the matched sides as one. -/
+theorem attempt_sound_scoped {Certificate : Type} {hoApplySymbol : Symbol} {kb : LogicalKb Variable Literal Symbol}
+    {naf : NafFailure Variable Literal Symbol} {store : Store Variable Literal Symbol}
+    {obligation : Obligation Variable Literal Symbol} (valid : store.Scoped) {flexibles : List Variable}
+    {left right : Term Variable Literal Symbol}
+    {make : List (Variable × Term Variable Literal Symbol) → Expansion Variable Literal Symbol Certificate}
+    (shape : ∀ bindings, (make bindings).flexibles = flexibles ∧ (make bindings).rigids = [] ∧
+      (make bindings).bindings = bindings)
+    (matched : ∀ bindings (later : Store Variable Literal Symbol), store.Refines later → later.Scoped →
+      later.resolve left = later.resolve right → NodeSound hoApplySymbol kb naf later obligation (make bindings).premises) :
+    AttemptSound hoApplySymbol kb naf store obligation
+      (attempt ((store.prepare obligation flexibles []).unify obligation.scope hoApplySymbol left right) make) := by
+  intro expansion found next woken committed later refines scopedLater
+  unfold attempt at found
+  split at found
+  · rename_i final bindings computed
+    cases found
+    obtain ⟨sameFlexibles, noRigids, sameBindings⟩ := shape bindings
+    rw [sameFlexibles, noRigids, sameBindings] at committed
+    exact matched bindings later ((Store.commit_refines committed).trans refines) scopedLater
+      (refines.resolve_eq (Store.commit_matched valid computed committed))
+  all_goals cases found
+
+/-- A table answer is a sound candidate for a consumer of its call, whose
+store holds the call's names rigid. -/
+theorem consume_sound_of {obligation : Obligation Variable Literal Symbol} {store : Store Variable Literal Symbol}
+    (valid : store.Scoped) {call : Call Variable Literal Symbol} {atom : Term Variable Literal Symbol}
+    (contextClosed : call.context.all closedTerm = true) (within : ∀ name ∈ atom.freeVars, name ∈ call.names)
+    (rigid : ∀ name ∈ call.names, store.info? name = some .rigid)
+    (derived : Derives engine.hoApplySymbol kb call.context atom naf) (context : call.context = obligation.context) :
+    AttemptSound engine.hoApplySymbol kb naf store obligation (engine.consume obligation store call atom) := by
+  unfold consume
+  apply attempt_sound_scoped valid (flexibles := []) (fun _ => ⟨rfl, rfl, rfl⟩)
+  intro bindings later refines scopedLater same _
+  unfold ReadDerives
+  rw [same, resolve_rigid refines scopedLater (fun name inside => rigid name (within name inside)), ← context,
+    resolve_closed_all later contextClosed]
+  exact derived
+
 /-- A table answer is a sound candidate for a goal in the table's context. -/
 theorem consume_sound (sound : TablesSound engine kb naf tables) {table : Table Variable Literal Symbol}
     (member : table ∈ tables) {answer : TableAnswer Variable Literal Symbol} (inAnswers : answer ∈ table.answers)
     {obligation : Obligation Variable Literal Symbol} {store : Store Variable Literal Symbol} (valid : store.Scoped)
     {call : Call Variable Literal Symbol} (context : call.context = obligation.context)
-    (sameContext : table.call.context = call.context) :
+    (rigid : ∀ name ∈ call.names, store.info? name = some .rigid) (same : table.call = call) :
     AttemptSound engine.hoApplySymbol kb naf store obligation (engine.consume obligation store call answer.atom) := by
   obtain ⟨contextClosed, answers⟩ := sound table member
-  obtain ⟨atomClosed, derived⟩ := answers answer inAnswers
-  unfold consume
-  apply attempt_sound valid (flexibles := []) (fun _ => ⟨rfl, rfl, rfl⟩)
-  intro bindings later same _
-  unfold ReadDerives
-  rw [same, resolve_closed later atomClosed, ← context, ← sameContext, resolve_closed_all later contextClosed]
-  exact derived
+  obtain ⟨within, derived⟩ := answers answer inAnswers
+  subst same
+  exact consume_sound_of valid contextClosed within rigid derived context
 
-/-- **The engine's strategy is sound**: its table answers by the tables, its
-NAF nodes by the refutation, its equations by reflexivity, the rest by the
+/-- The engine's unfitted strategy is sound: its table answers by the tables,
+its NAF nodes by the refutation, its equations by reflexivity, the rest by the
 base strategy. -/
-theorem strategy_sound (baseSound : Strategy.Sound engine.hoApplySymbol kb naf engine.base)
+theorem strategyCore_sound (baseSound : Strategy.Sound engine.hoApplySymbol kb naf engine.base)
     (refutesSound : RefutesSound engine kb naf) {tables : List (Table Variable Literal Symbol)}
-    (sound : TablesSound engine kb naf tables) : Strategy.Sound engine.hoApplySymbol kb naf (engine.strategy tables) := by
+    (sound : TablesSound engine kb naf tables) : Strategy.Sound engine.hoApplySymbol kb naf (engine.strategyCore tables) := by
   intro obligation store valid declared expansion member
-  unfold strategy at member
+  unfold strategyCore at member
   split at member
   · rename_i call found
     split at member
     · rename_i index table tableFound
-      obtain ⟨context, _⟩ := call?_spec found
+      obtain ⟨context, _, rigid⟩ := call?_spec found
       refine respond_sound (fun candidate inside => ?_) expansion member
       obtain ⟨answer, inAnswers, rfl⟩ := List.mem_map.mp inside
-      exact consume_sound sound (mem_of_findTable tableFound) inAnswers valid context (findTable_spec tableFound).2
+      exact consume_sound sound (mem_of_findTable tableFound) inAnswers valid context rigid (findTable_spec tableFound).2
     · cases member
   · split at member
     · rename_i _ operand reads
@@ -178,6 +252,41 @@ theorem strategy_sound (baseSound : Strategy.Sound engine.hoApplySymbol kb naf e
       rw [written, Store.resolve_equal, same]
       exact .equalRefl
     · exact baseSound obligation store valid declared expansion member
+
+omit [DecidableEq Variable] [DecidableEq Literal] [FreshNames Variable] in
+/-- Fitting keeps some of a response's alternatives. -/
+theorem fit_alternatives (top : Nat) (response : Response Variable Literal Symbol (Term Variable Literal Symbol)) :
+    ∀ expansion ∈ (engine.fit top response).alternatives, expansion ∈ response.alternatives := by
+  intro expansion member
+  unfold fit at member
+  split at member
+  · exact member
+  · unfold fitTo at member
+    split at member
+    · split at member
+      · exact member
+      · exact (List.mem_filter.mp member).1
+    · exact (List.mem_filter.mp member).1
+    · exact member
+
+omit [DecidableEq Literal] in
+/-- A fitted sound strategy is sound. -/
+theorem fit_sound {strategy : Strategy Variable Literal Symbol (Term Variable Literal Symbol)} (weight : Obligation Variable Literal Symbol → Nat)
+    (sound : Strategy.Sound engine.hoApplySymbol kb naf strategy) :
+    Strategy.Sound engine.hoApplySymbol kb naf (fun obligation store => engine.fit (weight obligation) (strategy obligation store)) :=
+  fun obligation store valid declared expansion member =>
+    sound obligation store valid declared expansion (engine.fit_alternatives _ _ expansion member)
+
+/-- **The engine's strategy is sound**, fitted or not. -/
+theorem strategy_sound (baseSound : Strategy.Sound engine.hoApplySymbol kb naf engine.base)
+    (refutesSound : RefutesSound engine kb naf) {tables : List (Table Variable Literal Symbol)}
+    (sound : TablesSound engine kb naf tables) : Strategy.Sound engine.hoApplySymbol kb naf (engine.strategy tables) :=
+  fit_sound (fun obligation => goalSize engine.hoApplySymbol obligation.goal) (strategyCore_sound baseSound refutesSound sound)
+
+/-- A generator's root strategy is sound. -/
+theorem rootStrategy_sound (baseSound : Strategy.Sound engine.hoApplySymbol kb naf engine.base) :
+    Strategy.Sound engine.hoApplySymbol kb naf engine.rootStrategy :=
+  fit_sound (fun _ => engine.rootWeight) baseSound
 
 end Engine
 
@@ -303,8 +412,9 @@ def Waiter.Fits (state : State Variable Literal Symbol (Term Variable Literal Sy
 /-- The invariant of a tabled run. Every generator is a valid and sound machine
 state; generators have distinct tables, below the table count, and the query
 generator proves the query; every waiting branch is a valid, sound branch of
-its owner, and a consumer is in its table's context; table answers are closed
-and derivable, and a generator proves its table's call in its context. -/
+its owner, and a consumer is in its table's context with the call's names
+rigid; table answers name only their call's names and are derivable, and a
+generator proves its table's call in its context. -/
 structure Run.Inv (run : Run Variable Literal Symbol) : Prop where
   valid : ∀ generator ∈ run.stack, generator.state.Valid
   sound : ∀ generator ∈ run.stack, generator.state.Sound engine.hoApplySymbol kb naf
@@ -319,7 +429,8 @@ structure Run.Inv (run : Run Variable Literal Symbol) : Prop where
   ownersBounded : ∀ table ∈ run.tables, ∀ waiter ∈ table.waiters, ∀ index, waiter.owner = some index → index < run.tables.length
   waiters : ∀ table ∈ run.tables, ∀ waiter ∈ table.waiters,
     Branch.Sound engine.hoApplySymbol kb naf waiter.store (.solve waiter.obligation) waiter.frames waiter.deferred ∧
-      (waiter.negative = false → waiter.obligation.context = table.call.context)
+      (waiter.negative = false → waiter.obligation.context = table.call.context ∧
+        ∀ name ∈ table.call.names, waiter.store.info? name = some .rigid)
 
 variable {engine} {kb} {naf} {query}
 
@@ -382,7 +493,8 @@ theorem Run.Inv.waited {run : Run Variable Literal Symbol} (inv : Run.Inv engine
     {generator : Generator Variable Literal Symbol} (found : run.stack[position]? = some generator)
     {obligation : Obligation Variable Literal Symbol} (focus : generator.state.focus = .solve obligation)
     {index : Nat} {table : Table Variable Literal Symbol} (tableFound : run.tables[index]? = some table) (negative : Bool)
-    (context : negative = false → obligation.context = table.call.context) :
+    (context : negative = false → obligation.context = table.call.context ∧
+      ∀ name ∈ table.call.names, generator.state.store.info? name = some .rigid) :
     Run.Inv engine kb naf query (wait run position index negative) := by
   have member := List.mem_of_getElem? found
   unfold wait
@@ -480,14 +592,13 @@ theorem generator_root (symbol : Symbol) (args : List (Term Variable Literal Sym
     (engine.generator symbol args call).root.context = call.context := by
   simp [Engine.generator, State.init, Obligation.root, Obligation.context]
 
-omit [DecidableEq Literal] in
 /-- Opening the table of a new call keeps the invariant. -/
 theorem Run.Inv.opened {run : Run Variable Literal Symbol} (inv : Run.Inv engine kb naf query run) {symbol : Symbol}
     {args : List (Term Variable Literal Symbol)} {context : ProofContext Variable Literal Symbol}
-    {call : Call Variable Literal Symbol} (found : engine.callOfAtom symbol args context = some call) :
+    {store : Store Variable Literal Symbol}
+    {call : Call Variable Literal Symbol} (found : engine.callOfAtom store symbol args context = some call) :
     Run.Inv engine kb naf query (engine.open_ run symbol args call) := by
-  obtain ⟨_, _, closed⟩ := callOfAtom_spec found
-  simp only [List.all_append, Bool.and_eq_true] at closed
+  obtain ⟨_, _, closed, _⟩ := callOfAtom_spec found
   unfold Engine.open_
   dsimp only
   generalize stateEq : engine.generator symbol args call = state
@@ -542,7 +653,7 @@ theorem Run.Inv.opened {run : Run Variable Literal Symbol} (inv : Run.Inv engine
   · rcases List.mem_append.mp inside with old | inNew
     · exact inv.tables table old
     · rw [List.mem_singleton] at inNew; subst inNew
-      exact ⟨closed.2, fun answer member => by cases member⟩
+      exact ⟨closed, fun answer member => by cases member⟩
   · intro owned
     rcases List.mem_append.mp inside with old | inNew
     · rcases List.mem_cons.mp genMember with rfl | oldGen
@@ -561,20 +672,6 @@ theorem Run.Inv.opened {run : Run Variable Literal Symbol} (inv : Run.Inv engine
   · rcases List.mem_append.mp inside with old | inNew
     · exact inv.waiters table old waiter waiterMember
     · rw [List.mem_singleton] at inNew; subst inNew; cases waiterMember
-
-/-- A table answer, closed and derivable in the waiter's context, is a sound
-candidate for the waiter. -/
-theorem consume_sound_of {obligation : Obligation Variable Literal Symbol} {store : Store Variable Literal Symbol}
-    (valid : store.Scoped) {call : Call Variable Literal Symbol} {atom : Term Variable Literal Symbol}
-    (contextClosed : call.context.all closedTerm = true) (atomClosed : closedTerm atom = true)
-    (derived : Derives engine.hoApplySymbol kb call.context atom naf) (context : call.context = obligation.context) :
-    AttemptSound engine.hoApplySymbol kb naf store obligation (engine.consume obligation store call atom) := by
-  unfold consume
-  apply attempt_sound valid (flexibles := []) (fun _ => ⟨rfl, rfl, rfl⟩)
-  intro bindings later same _
-  unfold ReadDerives
-  rw [same, resolve_closed later atomClosed, ← context, resolve_closed_all later contextClosed]
-  exact derived
 
 /-- Scheduling an answer of a table to one of its waiters keeps the invariant. -/
 theorem Run.Inv.scheduled {run : Run Variable Literal Symbol} (inv : Run.Inv engine kb naf query run)
@@ -616,9 +713,9 @@ theorem Run.Inv.scheduled {run : Run Variable Literal Symbol} (inv : Run.Inv eng
               simp only [List.mem_singleton] at candidateMember
               rw [candidateMember]
               obtain ⟨contextClosed, answers⟩ := inv.tables table tableMember
-              obtain ⟨atomClosed, derived⟩ := answers _ answerMember
-              have context := soundWaiter.2 (by simpa using ‹¬waiter.negative = true›)
-              exact consume_sound_of (fits.storeScoped) contextClosed atomClosed derived context.symm expansion consumed
+              obtain ⟨within, derived⟩ := answers _ answerMember
+              obtain ⟨context, rigid⟩ := soundWaiter.2 (by simpa using ‹¬waiter.negative = true›)
+              exact consume_sound_of (fits.storeScoped) contextClosed within rigid derived context.symm expansion consumed
             · exact originalSound.choices point old
         · exact ⟨rfl, rfl, rfl, inv.valid original originalMember, inv.sound original originalMember⟩
       have tablesSame : (run.stack.map push).map Generator.table = run.stack.map Generator.table := by
@@ -684,11 +781,12 @@ theorem getElem?_updateTable_cases {tables : List (Table Variable Literal Symbol
     exact ⟨original, originalFound, .inl rfl⟩
   · exact ⟨table, found, .inr rfl⟩
 
-/-- Recording a closed, derivable answer of a table, and scheduling it to the
-table's consumers, keeps the invariant. -/
+/-- Recording a derivable answer of a table, naming only its call's names, and
+scheduling it to the table's consumers, keeps the invariant. -/
 theorem Run.Inv.answered {run : Run Variable Literal Symbol} (inv : Run.Inv engine kb naf query run) {index : Nat}
     {table : Table Variable Literal Symbol} (tableFound : run.tables[index]? = some table) {atom : Term Variable Literal Symbol}
-    {proof : CompletedProof Variable Literal Symbol (Term Variable Literal Symbol) Unit} (closed : closedTerm atom = true)
+    {proof : CompletedProof Variable Literal Symbol (Term Variable Literal Symbol) Unit}
+    (within : ∀ name ∈ atom.freeVars, name ∈ table.call.names)
     (derived : Derives engine.hoApplySymbol kb table.call.context atom naf) :
     Run.Inv engine kb naf query (engine.answer run index atom proof) := by
   unfold Engine.answer
@@ -713,7 +811,7 @@ theorem Run.Inv.answered {run : Run Variable Literal Symbol} (inv : Run.Inv engi
           refine ⟨contextClosed, fun answer member => ?_⟩
           rcases List.mem_append.mp member with old | inNew
           · exact answers answer old
-          · rw [List.mem_singleton] at inNew; subst inNew; exact ⟨closed, derived⟩
+          · rw [List.mem_singleton] at inNew; subst inNew; exact ⟨within, derived⟩
     have folded : ∀ (waiters : List (Waiter Variable Literal Symbol)), (∀ waiter ∈ waiters, waiter ∈ table.waiters) →
         ∀ (acc : List (Generator Variable Literal Symbol) × List (Gap Variable Literal Symbol)),
           Run.Inv engine kb naf query
@@ -733,7 +831,9 @@ theorem Run.Inv.answered {run : Run Variable Literal Symbol} (inv : Run.Inv engi
           apply ih (fun other member => subset other (List.mem_cons_of_mem _ member))
           exact Run.Inv.scheduled (table := added) (proof := proof) invAcc addedMember (by simp [added])
             (subset waiter List.mem_cons_self) _
-    exact { folded table.waiters (fun _ member => member) (run.stack, []) { first with } with }
+    cases space : engine.inSpace atom
+    · simp only [Bool.false_eq_true, ↓reduceIte]; exact { first with }
+    · simp only [↓reduceIte]; exact { folded table.waiters (fun _ member => member) (run.stack, []) { first with } with }
 
 /-- Completing the top generators' tables and popping them keeps the invariant. -/
 theorem Run.Inv.completed {run next : Run Variable Literal Symbol} (inv : Run.Inv engine kb naf query run) {count : Nat}
@@ -844,19 +944,19 @@ theorem Run.Inv.advanced {run : Run Variable Literal Symbol} (inv : Run.Inv engi
               cases advanced
               exact ⟨read, rooted ▸ completed, resumed⟩
           | some index =>
-              cases closed : closedTerm (proof.store.resolve proof.root.goal) with
+              have bound := inv.bounded original member index (by rw [← sameTable]; exact tableEq)
+              obtain ⟨table, tableFound⟩ : ∃ table, run.tables[index]? = some table :=
+                ⟨run.tables[index], List.getElem?_eq_getElem bound⟩
+              cases within : withinCall run.tables index (proof.store.resolve proof.root.goal) with
               | false =>
-                  simp only []
+                  simp only [within, Bool.false_eq_true, ↓reduceIte]
                   refine ⟨fun final advanced => ?_, fun _ _ advanced => (by cases advanced)⟩
                   cases advanced
                   exact { resumed with }
               | true =>
-                  simp only [ite_true]
+                  simp only [within, ↓reduceIte]
                   refine ⟨fun final advanced => ?_, fun _ _ advanced => (by cases advanced)⟩
                   cases advanced
-                  have bound := inv.bounded original member index (by rw [← sameTable]; exact tableEq)
-                  obtain ⟨table, tableFound⟩ : ∃ table, run.tables[index]? = some table :=
-                    ⟨run.tables[index], List.getElem?_eq_getElem bound⟩
                   have context := inv.contexts original member index table (by rw [← sameTable]; exact tableEq) tableFound
                   obtain ⟨contextClosed, _⟩ := inv.tables table (List.mem_of_getElem? tableFound)
                   have derived : Derives engine.hoApplySymbol kb table.call.context (proof.store.resolve proof.root.goal) naf := by
@@ -864,7 +964,10 @@ theorem Run.Inv.advanced {run : Run Variable Literal Symbol} (inv : Run.Inv engi
                     rw [completed.rooted, sameState, context, resolve_closed_all _ contextClosed] at read
                     rw [completed.rooted, sameState]
                     exact read
-                  exact resumed.answered tableFound closed derived
+                  have names : ∀ name ∈ (proof.store.resolve proof.root.goal).freeVars, name ∈ table.call.names := by
+                    simp only [withinCall, tableFound, List.all_eq_true, decide_eq_true_eq] at within
+                    exact within
+                  exact resumed.answered tableFound names derived
       | _ => exact ⟨fun final advanced => (by cases advanced; exact inv), fun _ _ advanced => (by cases advanced)⟩
 
 
@@ -884,11 +987,10 @@ theorem wait_found {run : Run Variable Literal Symbol} {position : Nat} {generat
   | proved _ => exact ⟨generator, found, rfl, rfl⟩
   | failed => exact ⟨generator, found, rfl, rfl⟩
 
-omit [DecidableEq Literal] in
 theorem call?_app {obligation : Obligation Variable Literal Symbol} {store : Store Variable Literal Symbol}
     {call : Call Variable Literal Symbol} (found : engine.call? obligation store = some call) {symbol : Symbol}
     {args : List (Term Variable Literal Symbol)} (reads : store.resolve obligation.goal = .app symbol args) :
-    engine.callOfAtom symbol args obligation.scope.assumptions = some call := by
+    engine.callOfAtom store symbol args obligation.scope.assumptions = some call := by
   unfold call? at found; rw [reads] at found; exact found
 
 variable (baseSound : Strategy.Sound engine.hoApplySymbol kb naf engine.base) (refutesSound : RefutesSound engine kb naf)
@@ -905,58 +1007,58 @@ theorem Run.Inv.steppedAt {run : Run Variable Literal Symbol} (inv : Run.Inv eng
   have plain := inv.advanced found rfl rfl tabled
   unfold stepAt
   split
+  · -- The root: resolution against the clauses.
+    have started := inv.replace found (change := fun generator => { generator with started := true }) (fun _ => rfl)
+      (inv.valid generator (List.mem_of_getElem? found)) (inv.sound generator (List.mem_of_getElem? found)) rfl (Nat.le_refl _)
+    have startedFound : (updateAt run.stack position fun generator => { generator with started := true })[position]? =
+        some { generator with started := true } := by
+      rw [getElem?_updateAt, ite_eq_left rfl, found]; rfl
+    exact started.advanced startedFound rfl rfl (rootStrategy_sound baseSound)
+  split
   · rename_i obligation focus
     split
-    · -- The root: resolution against the clauses.
-      have started := inv.replace found (change := fun generator => { generator with started := true }) (fun _ => rfl)
-        (inv.valid generator (List.mem_of_getElem? found)) (inv.sound generator (List.mem_of_getElem? found)) rfl (Nat.le_refl _)
-      have startedFound : (updateAt run.stack position fun generator => { generator with started := true })[position]? =
-          some { generator with started := true } := by
-        rw [getElem?_updateAt, ite_eq_left rfl, found]; rfl
-      exact started.advanced startedFound rfl rfl baseSound
-    · split
-      · rename_i call callFound
-        cases tableEq : findTable run.tables call with
-        | none =>
-            simp only []
-            split
-            · rename_i symbol args reads
-              exact ⟨fun next opened => by cases opened; exact inv.opened (call?_app callFound reads),
-                fun _ _ opened => (by cases opened)⟩
-            · exact plain
-        | some found' =>
-            obtain ⟨index, table⟩ := found'
-            simp only []
-            obtain ⟨tableAt, sameContext⟩ := findTable_spec tableEq
-            have waitedInv : Run.Inv engine kb naf query (if table.complete then run else wait run position index false) := by
-              split
-              · exact inv
-              · exact inv.waited found focus tableAt false fun _ => by
-                  rw [sameContext]; exact ((call?_spec callFound).1).symm
-            obtain ⟨waiting, waitingFound, sameState, sameTable⟩ :
-                ∃ waiting, (if table.complete then run else wait run position index false).stack[position]? = some waiting ∧
-                  waiting.state = generator.state ∧ waiting.table = generator.table := by
-              split
-              · exact ⟨generator, found, rfl, rfl⟩
-              · exact wait_found found index false
-            exact waitedInv.advanced waitingFound sameState.symm sameTable.symm tabled
-      · split
-        · rename_i symbol args _ reads
+    · rename_i call callFound
+      cases tableEq : findTable run.tables call with
+      | none =>
+          simp only []
           split
-          · split
-            · rename_i call callFound
+          · rename_i symbol args reads
+            exact ⟨fun next opened => by cases opened; exact inv.opened (call?_app callFound reads),
+              fun _ _ opened => (by cases opened)⟩
+          · exact plain
+      | some found' =>
+          obtain ⟨index, table⟩ := found'
+          simp only []
+          obtain ⟨tableAt, sameContext⟩ := findTable_spec tableEq
+          have waitedInv : Run.Inv engine kb naf query (if table.complete then run else wait run position index false) := by
+            split
+            · exact inv
+            · exact inv.waited found focus tableAt false fun _ => by
+                rw [sameContext]; exact ⟨((call?_spec callFound).1).symm, (call?_spec callFound).2.2⟩
+          obtain ⟨waiting, waitingFound, sameState, sameTable⟩ :
+              ∃ waiting, (if table.complete then run else wait run position index false).stack[position]? = some waiting ∧
+                waiting.state = generator.state ∧ waiting.table = generator.table := by
+            split
+            · exact ⟨generator, found, rfl, rfl⟩
+            · exact wait_found found index false
+          exact waitedInv.advanced waitingFound sameState.symm sameTable.symm tabled
+    · split
+      · rename_i symbol args _ reads
+        split
+        · split
+          · rename_i call callFound
+            split
+            · exact ⟨fun next opened => by cases opened; exact inv.opened callFound, fun _ _ opened => (by cases opened)⟩
+            · rename_i index table tableFound
+              obtain ⟨tableAt, _⟩ := findTable_spec tableFound
               split
-              · exact ⟨fun next opened => by cases opened; exact inv.opened callFound, fun _ _ opened => (by cases opened)⟩
-              · rename_i index table tableFound
-                obtain ⟨tableAt, _⟩ := findTable_spec tableFound
-                split
-                · exact plain
-                · obtain ⟨waiting, waitingFound, sameState, sameTable⟩ := wait_found found index true
-                  exact (inv.waited found focus tableAt true fun never => by cases never).advanced waitingFound
-                    sameState.symm sameTable.symm tabled
-            · exact plain
+              · exact plain
+              · obtain ⟨waiting, waitingFound, sameState, sameTable⟩ := wait_found found index true
+                exact (inv.waited found focus tableAt true fun never => by cases never).advanced waitingFound
+                  sameState.symm sameTable.symm tabled
           · exact plain
         · exact plain
+      · exact plain
   · exact plain
 
 /-- **Every transition keeps the invariant**, and a success of the query

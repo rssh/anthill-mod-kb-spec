@@ -25,7 +25,8 @@ a design; its work items are S22–S26 in the
   waits for answers instead of looping; tables complete per strongly connected
   component; a loop through NAF is delayed and resolved when its component
   completes.
-- **Fuel** bounds every run.
+- **Fuel** bounds a P2 run. A P1 run is bounded by its data and ends without
+  fuel (S24: [termination](tabled-evaluation.md#termination-bounded-runs-without-fuel)).
 - **One machine.** Tabling is an extension of the shared machine, and the
   fragment's conditions are admission conditions. There is no separate engine.
 
@@ -83,7 +84,7 @@ execution and the answers ([tabled evaluation](tabled-evaluation.md)).
 | **Yes** | A proof is found | `Derives`, exportable as an S08 tree |
 | **No** | The search completed, and the failure depends on no cycle | Finite failure, sound for the completion |
 | **Unknown** | The search completed, and the completion leaves the goal open: an open predicate reached; a failure through a positive cycle (`path(a, c)` over a cycle a ↔ b, c unreachable); a loop through NAF with models both ways (`p :- ¬q`, `q :- ¬p`); case-split branches that disagree | Two witness models, checked against the KB's clauses and denials |
-| **Undecided** | The fuel ran out; the completion is inconsistent (`p :- ¬p`); the witnesses do not check; a construct outside the fragment | Blockers: the growing call, the cycle, or the construct, with site and path |
+| **Undecided** | The fuel ran out (P2); the completion is inconsistent (`p :- ¬p`); the witnesses do not check; a construct outside the fragment | Blockers: the growing call, the cycle, or the construct, with site and path |
 
 The answers are against the Clark completion, as S10's NAF is (decided with
 the user, 2026-11-07): a goal cut on a positive cycle is Unknown, not the
@@ -111,7 +112,8 @@ post-fixpoint of the data terms and one fresh value. Between them the answer is
 Undecided.
 
 Answers are **monotone in the fuel**: a Yes, a No, or an Unknown never changes
-with more fuel; only Undecided can.
+with more fuel; only Undecided can. A P1 answer does not depend on the fuel at
+all.
 
 ## Contexts: case splits, implications, universals
 

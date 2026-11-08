@@ -288,8 +288,11 @@ whose recursion decreases, with no NAF or denial over a predicate on a cycle,
 is in P1: its run ends without needing fuel, and its Unknown is exact by the
 least and greatest fixpoints. S23 implements the admission
 ([fast admission](fast-admission.md)), S24 the tabled run and its answers
-([tabled evaluation](tabled-evaluation.md)); contexts and constraints are
-planned in S26 and S21.
+([tabled evaluation](tabled-evaluation.md)): a P1 query runs bounded by its
+data, and the run ends without fuel for every program (`Engine.runToEnd`);
+that its bounds never cut a P1 run short, and the completeness and exactness
+of P1 decisions, are S15's. Contexts and constraints are planned in S26 and
+S21.
 
 ## P3: scoped proof strategies with Undecided
 

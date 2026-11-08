@@ -197,10 +197,69 @@ def grow : List Clause := [rule (atom .p [v 0]) [atom .p [succ (v 0)]]]
   | .app .p [.app .succ _] => true
   | _ => false
 
--- Monotone in the fuel: a decided answer stays; too little fuel is Undecided.
-#guard kindOf (answerOf (cyclic ++ rightRecursive) (atom .path [k .a, k .b]) (fuel := 5)) == "undecided"
-#guard kindOf (answerOf (cyclic ++ rightRecursive) (atom .path [k .a, k .b]) (fuel := 300)) == "yes"
+/-- A query's profile. -/
+def profileKind (clauses : List Clause) (goal : T) (answers : List Nat := []) (declared : Modes Sym := modes) : String :=
+  match (fragmentOf clauses declared).admit ⟨[], goal, answers⟩ with
+  | .undecided _ => "undecided"
+  | .p1 => "p1"
+  | .p2 _ => "p2"
+
+-- A P1 query needs no fuel: its run is bounded and ends, the same answer with
+-- no fuel and with plenty.
+#guard profileKind (cyclic ++ rightRecursive) (atom .path [k .a, k .b]) == "p1"
+#guard kindOf (answerOf (cyclic ++ rightRecursive) (atom .path [k .a, k .b]) (fuel := 0)) == "yes"
 #guard kindOf (answerOf (cyclic ++ rightRecursive) (atom .path [k .a, k .b]) (fuel := 9000)) == "yes"
+
+/-- `p :- ¬q.  q :- ¬p.`: NAF through a cycle, P2. -/
+def loopNaf : List Clause := [rule (k .p) [naf (k .q)], rule (k .q) [naf (k .p)]]
+
+-- A P2 query is bounded by the fuel, and monotone in it: too little fuel is
+-- Undecided, a decided answer stays.
+#guard profileKind loopNaf (k .p) (declared := nullary) == "p2"
+#guard kindOf (answerOf loopNaf (k .p) (fuel := 5) (declared := nullary)) == "undecided"
+#guard kindOf (answerOf loopNaf (k .p) (fuel := 300) (declared := nullary)) == "unknown"
+#guard kindOf (answerOf loopNaf (k .p) (fuel := 9000) (declared := nullary)) == "unknown"
+
+/-! ## Bounded runs end without fuel -/
+
+/-- The outcome of a query's bounded run. -/
+def decidedKind (clauses : List Clause) (goal : T) : String :=
+  match (setupOf clauses goal).decided [] goal with
+  | .success _ _ => "success"
+  | .interrupted _ => "interrupted"
+  | .finished .exhausted => "exhausted"
+  | .finished (.opened _) => "opened"
+  | .finished (.abandoned _) => "abandoned"
+  | .finished _ => "finished"
+
+/-- The tables a bounded run opens, and the calls its bounds allow. -/
+def decidedTables (clauses : List Clause) (goal : T) : Nat :=
+  match (setupOf clauses goal).decided [] goal with
+  | .success _ resume => resume.tables.length
+  | _ => 0
+
+def boundCalls (clauses : List Clause) (goal : T) : Nat := ((setupOf clauses goal).bounds [] goal).calls.length
+
+-- A bounded run ends for any program: the growing call `p(succ(…))` leaves the
+-- bounds and is abandoned, where the fuelled run is interrupted.
+#guard decidedKind grow (atom .p [k .zero]) == "abandoned"
+-- `∃Y. path(a, Y)` opens four tables, among the bounds' calls.
+#guard decidedTables (cyclic ++ rightRecursive) (.existsVar 7 (atom .path [k .a, v 7])) == 4
+#guard decidedTables (cyclic ++ rightRecursive) (.existsVar 7 (atom .path [k .a, v 7])) ≤
+  boundCalls (cyclic ++ rightRecursive) (.existsVar 7 (atom .path [k .a, v 7]))
+
+/-! ## Rigid parameters -/
+
+-- `path(X, c)` with `X` a rigid parameter of the query: its call is tabled, so
+-- left recursion over the cycle ends (plain SLD on it looped): No, since
+-- `edge(Z, c)` holds for no `Z`.
+#guard profileKind (cyclic ++ leftRecursive) (atom .path [v 9, k .c]) == "p1"
+#guard decidedKind (cyclic ++ leftRecursive) (atom .path [v 9, k .c]) == "exhausted"
+#guard kindOf (answerOf (cyclic ++ leftRecursive) (atom .path [v 9, k .c])) == "no"
+-- `path(X, a)` neither holds for every `X` nor is refuted, and witnesses with
+-- parameters are S26's: Undecided, after a run that ended.
+#guard decidedKind (cyclic ++ leftRecursive) (atom .path [v 9, k .a]) == "exhausted"
+#guard kindOf (answerOf (cyclic ++ leftRecursive) (atom .path [v 9, k .a])) == "undecided"
 
 /-! ## Open predicates, the fresh value, denials, admission -/
 

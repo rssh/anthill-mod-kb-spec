@@ -11,9 +11,12 @@ Unknown, and Undecided against the Clark completion. Traces are in
 | [Tabled/Abstract](../AnthillModKbSpec/Resolution/Tabled/Abstract.lean) | The universe of a query (`universeOf`), abstract values, the Kripke–Kleene iteration (`kk`, `refutes`), the abstract least fixpoint (`leastOver`), the greatest post-fixpoint over the universe and a fresh value (`greatestOver`), ground fixpoints (`groundFixpoint`) |
 | [Tabled/AbstractSound](../AnthillModKbSpec/Resolution/Tabled/AbstractSound.lean) | Free constructors (`Free`, `free_of_equality`), the abstraction of values (`Abs`), commutation (`aeval_abs`), the body lemma (`body_sound`), every round sound (`kk_sound`), a refuted goal false in every model (`refutes_sound`) |
 | [Tabled/Witness](../AnthillModKbSpec/Resolution/Tabled/Witness.lean) | The least and greatest witnesses of a positive program (`least_witness`, `greatest_witness`), the ground witness with NAF (`ground_witness`) |
-| [Tabled/Engine](../AnthillModKbSpec/Resolution/Tabled/Engine.lean) | Calls, tables, waiting branches, the completion stack (`Run`), the engine's strategy (`Engine.strategy`), the run's transitions (`Engine.step`, `Engine.run`) |
-| [Tabled/EngineSound](../AnthillModKbSpec/Resolution/Tabled/EngineSound.lean) | NAF evidence by the completion's models (`semanticNaf`), the strategy sound (`strategy_sound`), the run's invariant (`Run.Inv`) kept by every transition (`Run.Inv.step`), reconstruction (`run_init_reconstructs`) |
-| [Tabled/Answer](../AnthillModKbSpec/Resolution/Tabled/Answer.lean) | The setup, the checker of exported proofs (`checker`, `nafCheck`), the witnesses, the answer (`Setup.answer`), soundness (`answer_sound`), monotonicity in the fuel (`answer_mono`) |
+| [Tabled/Multiset](../AnthillModKbSpec/Resolution/Tabled/Multiset.lean) | The multiset order on lists (`Lower`), well-founded for a well-founded order (`Lower.wellFounded`) |
+| [Tabled/Weight](../AnthillModKbSpec/Resolution/Tabled/Weight.lean) | Goal sizes (`goalSize`), the weights of a machine state's branches (`weights`), a candidate fitting its focus (`Fits`), every machine step lowering the weights (`step_lower`) |
+| [Tabled/Engine](../AnthillModKbSpec/Resolution/Tabled/Engine.lean) | Calls, tables, waiting branches, the completion stack (`Run`), the bounds of a bounded run (`Bounds`, `admits`, `inSpace`, `fit`), the engine's strategy (`Engine.strategy`), the run's transitions (`Engine.step`, `Engine.run`) |
+| [Tabled/EngineSound](../AnthillModKbSpec/Resolution/Tabled/EngineSound.lean) | NAF evidence by the completion's models (`semanticNaf`), the strategy sound, fitted or not (`strategy_sound`), the run's invariant (`Run.Inv`) kept by every transition (`Run.Inv.step`), reconstruction (`run_init_reconstructs`) |
+| [Tabled/Termination](../AnthillModKbSpec/Resolution/Tabled/Termination.lean) | The calls and answers of the bounds (`Bounds.calls`, `Bounds.answers`), the rank of a run (`Engine.rank`) lowered by every transition (`Engine.step_rank`), the run without fuel (`Engine.runToEnd`) |
+| [Tabled/Answer](../AnthillModKbSpec/Resolution/Tabled/Answer.lean) | The setup, the checker of exported proofs (`checker`, `nafCheck`), the witnesses, a query's bounds (`Setup.bounds`) and bounded run (`Setup.decided`), the answer (`Setup.answer`), soundness (`answer_sound`), P1 without fuel (`answer_p1`), monotonicity in the fuel (`answer_mono`) |
 
 ## Tabling on the shared machine
 
@@ -24,11 +27,11 @@ invariants hold for every generator unchanged.
 
 | Event | What the run does |
 | --- | --- |
-| A focused atom with a declared mode, closed inputs as read, and a closed context | A **call**: a predicate, its input values, its context (`Call`) |
+| A focused atom with a declared mode, inputs with no flexible name as read (rigid parameters are fixed for the run), and a closed context | A **call**: a predicate, its input values, its context (`Call`) |
 | A call with no table | Create its table and push its generator: a machine state for the atom with its outputs as fresh answer names, which resolves it against the clauses. The caller stays focused on the call until the table completes |
 | A call with a complete table | Consume the table: each answer a candidate, its node a leaf naming the answer and its context |
 | A call with an incomplete table (a recursive call) | Consume the answers so far, and leave a **consumer**: the branch's obligation, store, continuations, and deferred proofs |
-| A generator's success | A new answer, with the generator's completed proof; scheduled to every consumer as a choice point of the consumer's own machine state |
+| A generator's success | A new answer, naming only its call's rigid parameters, with the generator's completed proof; scheduled to every consumer as a choice point of the consumer's own machine state |
 | `naf A`, `A` ground | Refuted over the universe (below): proved, the node carrying the universe. With an answer `A` in its table: fails. Otherwise its table first: with no table, the table is created; complete, `A` is an open atom (`GapReason.opened`); incomplete, the NAF **waits** |
 | The top generators have nothing left, and none depends on a table below the lowest of theirs | They form a strongly connected component: their tables complete together and their generators are popped. A NAF waiting on one of them is resolved: it fails if an answer came, and is an open atom otherwise |
 | A data equation `s = t` | Matched by the S05 matcher, the node `equalRefl` |
@@ -36,8 +39,48 @@ invariants hold for every generator unchanged.
 
 A loop through NAF is delayed and resolved when its component completes, as in
 SLG; under the completion a NAF that no refutation proves and no answer
-refutes stays open, not true. Fuel bounds the run's transitions; running out
-is `interrupted`, never an answer.
+refutes stays open, not true. A P2 run is bounded by fuel; running out is
+`interrupted`, never an answer. A P1 run is bounded by its data and ends
+without fuel (below).
+
+## Termination: bounded runs without fuel
+
+A **bounded run** (`Engine.bounds`) is the run of a P1 query. Its bounds
+(`Setup.bounds`) are the symbols the program and the query apply, the data
+terms (the universe, and the subterms of the query's arguments, rigid
+parameters included), the most arguments an application has, and the
+assumptions (the query's context and every antecedent the program or the
+query assumes). Three runtime checks keep it within them (decided with the
+user, 2026-11-08):
+
+| Check | What a bounded run does |
+| --- | --- |
+| A call's predicate, inputs, and context drawn from the bounds, the context without repeats (`admits`) | Otherwise the call is not tabled, and is a gap |
+| An answer within the bounds (`inSpace`) | Scheduled to the consumers waiting; otherwise recorded for consumers still to come, and each consumer waiting is a gap |
+| A candidate lighter than its focus (`fit`): its premises weigh less than the goal (`Fits`), a generator's root more than every clause body (`rootWeight`) | Otherwise dropped, and the focus is a gap (`incomplete`) |
+
+The **rank** of a run (`Engine.rank`) falls at every transition
+(`Engine.step_rank`), lexicographically:
+
+| Component | Falls when |
+| --- | --- |
+| The calls of the bounds with no table (`openCalls`) | A table is opened |
+| Every table's answers of the bounds still to come (`openAnswers`) | An answer is recorded and scheduled to consumers |
+| Every generator's branch weights (`branches`), in the multiset order | Every machine transition (`step_lower`): one branch is replaced by lighter ones. A delayed goal is weighed once, in the store, and its waking moves the weight into the branch |
+| The generators and their choice points (`points`) | A component completes and its generators are popped; an empty choice point is dropped |
+
+The multiset order handles a call consuming a complete table: one alternative
+per answer, however many, each lighter than the call. Consumers waiting on an
+incomplete table get only answers within the bounds, so at most the
+answers of the bounds are ever scheduled. So the run is a total function with
+no fuel (`Engine.runToEnd`), never interrupted (`runToEnd_ended`), equal to the
+run with some fuel (`runToEnd_fuel`), and opens at most the calls of its
+bounds: the predicates, the input lists of at most `arity` data terms, and the
+contexts of at most `|assumptions|` assumptions (`Bounds.calls`), S23's count
+of distinct calls. The termination proof needs no invariant of the run and
+holds for every program: the checks, not the program, bound it. For a P1
+query, S23's theorems (`calls_bounded`, `outputs_bounded`, `calls_decrease`)
+say the checks never fire; that lifting is S15's, with completeness.
 
 ## Invariants and reconstruction
 
@@ -70,7 +113,11 @@ with complement NAF that realize the admission signature (`Setup.meaning`).
 | **Yes** | The run succeeds | The proof exported as an S08 term, each table answer expanded from its own proof (`exportWith`), and checked (`checks`). NAF evidence is a universe over which the operand is refuted, checked by computing the refutation again (`nafCheck`) |
 | **No** | The run completed, and the goal is refuted over the universe | The universe (`refutesIn`) |
 | **Unknown** | The run completed, and two witnesses check | `greatest` and `least` for a positive program, two `assignment`s for a ground one |
-| **Undecided** | Admission's blockers; a denial's body proved or unsettled; fuel exhausted, naming the call being evaluated; no witness, naming the run's gaps; a ground program none of whose assignments is a model, the KB's consistency | Blockers |
+| **Undecided** | Admission's blockers; a denial's body proved or unsettled; fuel exhausted (P2), naming the call being evaluated; no witness, naming the run's gaps; a ground program none of whose assignments is a model, the KB's consistency | Blockers |
+
+A P1 query runs bounded, without fuel (`Setup.decided`), its denials too
+(`denialCheckBounded`); a P2 query with the fuel (`Setup.runOf`). Every answer's
+evidence is checked independently of the run, so soundness holds for both.
 
 ### No: the Kripke–Kleene iteration over abstract values
 
@@ -121,6 +168,10 @@ realizes a separated admission signature (`realizes`).
 | Every answer is sound | `Setup.answer_sound`, `answerFrom_sound`, `witnesses_sound`, `refutesIn_sound`, `proved_sound` |
 | Unknown only after a completed run | `Setup.answer_unknown` |
 | Only Undecided changes with more fuel | `Setup.answer_mono`, `Engine.run_more` |
+| Every machine step, with alternatives lighter than the focus, lowers the branch weights | `step_lower` |
+| Every transition of a bounded run lowers its rank; the rank is well-founded | `Engine.step_rank`, `RunLower.wellFounded`, `Lower.wellFounded` |
+| A bounded run ends without fuel, is never interrupted, and is the run with some fuel | `Engine.runToEnd`, `Engine.runToEnd_ended`, `Engine.runToEnd_fuel` |
+| A P1 answer is the same for every fuel; its run is never interrupted | `Setup.answer_p1`, `Setup.decided_ended` |
 
 ## Traces
 
@@ -135,7 +186,12 @@ realizes a separated admission signature (`realizes`).
 | `p :- ¬p.` | Undecided: the KB's consistency |
 | `p :- ¬q.`; with the fact `q` | Yes, the refutation of `q` checked again; No |
 | `p(X) :- p(succ(X))`, `p(zero)` with fuel 300 | Undecided, lacking a termination argument, naming a call `p(succ(…))` |
-| `path(a, b)` with fuel 5; 300; 9000 | Undecided; Yes; Yes |
+| `path(a, b)`, P1, with fuel 0; 9000 | Yes; Yes: no fuel needed |
+| `p :- ¬q. q :- ¬p.`, P2, with fuel 5; 300; 9000 | Undecided; Unknown; Unknown |
+| The bounded run of `p(X) :- p(succ(X))` from `p(zero)` | Ends, abandoned: the growing call leaves the bounds |
+| `∃Y. path(a, Y)` over the cycle, bounded | Four tables, among the bounds' calls |
+| `path(X, c)`, `X` a rigid parameter, left recursion over the cycle | P1; the run ends (plain SLD on the call looped); No |
+| `path(X, a)`, `X` rigid | The run ends; Undecided: neither derived for every `X` nor refuted, and witnesses with parameters are S26's |
 | `q(a) :- unknown`: `q(a)`; `¬q(a)` | Unknown; Unknown, with no refutation run |
 | `r(X) :- r(X). q(X) :- r(X). p(X). s :- q(Y), p(Y).`, goal `s` | Unknown: the fresh value supports `s` in the greatest fixpoint |
 | A denial `⊥ :- p` with the fact `p`; with no `p` | Every answer Undecided, the KB's consistency; the query answered |
@@ -143,26 +199,34 @@ realizes a separated admission signature (`realizes`).
 
 ## Boundaries
 
-- **Termination without fuel.** S23 bounds a complete predicate's distinct
-  calls (`calls_bounded`) and answers (`outputs_bounded`, `calls_decrease`);
-  the run's tables are keyed by exactly these calls. That every P1 run ends
-  within a bound computed from them, with no fuel, is not yet proved: the run
-  is given fuel, and only Undecided depends on it (`answer_mono`).
-- **Exactness.** The decision between No, Unknown, and Undecided is exact
+- **The checks never fire for P1.** A bounded run ends for every program, but
+  a call, an answer, or a candidate outside the bounds is a gap, so the answer
+  may be Undecided. S23 bounds a complete predicate's calls
+  (`calls_bounded`) and answers (`outputs_bounded`, `calls_decrease`); that
+  every call and scheduled answer of a P1 run is within the bounds, and every
+  candidate fits (clause bodies weighed by their connectives, goals without
+  formula variables), is S15's, with the completeness below (decided with the
+  user, 2026-11-08; noted there).
+- **Completeness and exactness.** An atom in the least fixpoint of a P1
+  program answering Yes (the engine's completeness), and the cases in which
+  the answer is never Undecided, are S15's ("P1 decisions are total, sound,
+  and complete"). The decision between No, Unknown, and Undecided is exact
   where the abstract and the concrete greatest fixpoints agree on the goal,
   and the abstract least fixpoint is exact on it. Abstraction can still leave
   a goal between them: `s :- r(X), r(Y), g(X, Y)` with `g(f(Z), Z)` needs two
-  related fresh values. Then the answer is Undecided, never a wrong one. No
-  theorem yet states the cases in which the answer is never Undecided.
+  related fresh values. Then the answer is Undecided, never a wrong one.
 - **Export.** A Yes is exported and checked; a run whose export does not
   check is Undecided. That every successful run's export checks is S15/S16's,
   as for S06 runs ([S08](proof-checking.md)).
 - **Witness classes.** Positive covered programs (no NAF, no implication, data
   arguments), with unknown markers, and ground programs with NAF. A non-ground
   program with NAF has no witnesses: an open goal there is Undecided.
-  Contexts: a query with assumptions has no witnesses (S26).
-- **Tabled calls.** Inputs and contexts closed as read. A call with a rigid
-  parameter or a flexible name at an input, and NAF on a non-ground operand,
-  run by the positive strategy or are gaps: constructive negation is S21's.
-- **Calls through `ho_apply`** are not tabled; they run by the positive
-  strategy.
+  Contexts: a query with assumptions has no witnesses (S26). Neither has a
+  goal with rigid parameters.
+- **Tabled calls.** Inputs with no flexible name as read, rigid parameters
+  included, and contexts closed. A call with a flexible name at an input, or a
+  context with a rigid parameter, and NAF on a non-ground operand, run by the
+  positive strategy, or are gaps in a bounded run: constructive negation is
+  S21's, contexts S26's.
+- **Calls through `ho_apply`** are not tabled themselves: a concrete
+  `ho_apply(p, args)` is read as `p(args)`, which is.

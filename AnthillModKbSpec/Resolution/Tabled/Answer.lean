@@ -1,4 +1,5 @@
-import AnthillModKbSpec.Resolution.Tabled.EngineSound
+import AnthillModKbSpec.Resolution.Tabled.Termination
+import AnthillModKbSpec.Resolution.Tabled.Calls
 import AnthillModKbSpec.Resolution.P1.Answer
 
 /-! # The fast fragment's answers (S24)
@@ -51,6 +52,57 @@ the refutation's universe), Unknown two witnesses. -/
 abbrev TabledAnswer (Variable Literal Symbol : Type) :=
   Answer (Term Variable Literal Symbol) (Term Variable Literal Symbol) (Witness Variable Literal Symbol)
     (Blocker Variable Literal Symbol)
+
+/-! ## What a query's bounds collect -/
+
+mutual
+/-- The symbols applied in a term, at any depth. -/
+def appliedSymbols : Term Variable Literal Symbol → List Symbol
+  | .app symbol args => symbol :: appliedSymbolsAll args
+  | .conj left right | .disj left right | .imp left right | .equal left right =>
+      appliedSymbols left ++ appliedSymbols right
+  | .defaultNeg body | .forallVar _ body | .existsVar _ body => appliedSymbols body
+  | .dictionaryCall dictionary _ _ args => appliedSymbols dictionary ++ appliedSymbolsAll args
+  | _ => []
+
+def appliedSymbolsAll : List (Term Variable Literal Symbol) → List Symbol
+  | [] => []
+  | term :: rest => appliedSymbols term ++ appliedSymbolsAll rest
+end
+
+mutual
+/-- The most arguments an application in a term has. -/
+def widest : Term Variable Literal Symbol → Nat
+  | .app _ args => max args.length (widestAll args)
+  | .conj left right | .disj left right | .imp left right | .equal left right => max (widest left) (widest right)
+  | .defaultNeg body | .forallVar _ body | .existsVar _ body => widest body
+  | .dictionaryCall dictionary _ _ args => max (widest dictionary) (widestAll args)
+  | _ => 0
+
+def widestAll : List (Term Variable Literal Symbol) → Nat
+  | [] => 0
+  | term :: rest => max (widest term) (widestAll rest)
+end
+
+/-- The arguments of a goal's atoms and their subterms. -/
+def argumentTerms : Term Variable Literal Symbol → List (Term Variable Literal Symbol)
+  | .app _ args => subtermsAll args
+  | .conj left right | .disj left right | .imp left right => argumentTerms left ++ argumentTerms right
+  | .defaultNeg body | .forallVar _ body | .existsVar _ body => argumentTerms body
+  | .equal left right => subterms left ++ subterms right
+  | _ => []
+
+/-- The antecedents a goal assumes. -/
+def antecedents : Term Variable Literal Symbol → List (Term Variable Literal Symbol)
+  | .imp premise conclusion => premise :: antecedents conclusion
+  | .conj left right | .disj left right => antecedents left ++ antecedents right
+  | .defaultNeg body | .forallVar _ body | .existsVar _ body => antecedents body
+  | _ => []
+
+/-- A P1 profile. -/
+def Profile.isP1 : Profile Variable Literal Symbol → Bool
+  | .p1 => true
+  | _ => false
 
 /-- A program of the fast fragment with what its answers need: the S08
 vocabulary, the unknown marker, the admission signature with its guard symbols
@@ -326,18 +378,69 @@ blocks every answer. -/
 def denialCheck (fuel : Nat) : Option (Blocker Variable Literal Symbol) :=
   setup.denials.findSome? (setup.denialBlocker fuel)
 
+/-! ## Bounded runs: P1 without fuel -/
+
+/-- The bounds of a query's run: the symbols the program and the query apply,
+the universe and the subterms of the query's arguments (rigid parameters
+included), the most arguments an application has, and the query's context
+with the antecedents the program and the query assume. -/
+def bounds (context : ProofContext Variable Literal Symbol) (goal : Formula Variable Literal Symbol) :
+    Bounds Variable Literal Symbol :=
+  let terms := setup.clauses.flatMap HornClause.terms ++ goal :: context
+  { predicates := (appliedSymbolsAll terms).eraseDups
+    data := (setup.space context goal ++ (goal :: context).flatMap argumentTerms).eraseDups
+    arity := (terms.map widest).foldr max 0
+    assumptions := (context ++ terms.flatMap antecedents).eraseDups }
+
+/-- The bounded engine of a query. -/
+def boundedEngine (context : ProofContext Variable Literal Symbol) (goal : Formula Variable Literal Symbol) :
+    Engine Variable Literal Symbol :=
+  { setup.engine (setup.space context goal) with bounds := some (setup.bounds context goal) }
+
+/-- The tabled run of a query's goal, bounded and without fuel: it always ends
+(`Engine.runToEnd`). -/
+def decided (context : ProofContext Variable Literal Symbol) (goal : Formula Variable Literal Symbol) :
+    Engine.Outcome Variable Literal Symbol :=
+  (setup.boundedEngine context goal).runToEnd (bounds := setup.bounds context goal) rfl (Engine.start context goal)
+
+/-- What a denial's bounded run says about the KB: a proved body makes it
+inconsistent. -/
+def denialBounded (body : List (Term Variable Literal Symbol)) : Option (Blocker Variable Literal Symbol) :=
+  match setup.decided [] (.conjunction body) with
+  | .success proof resume =>
+      if (setup.proved proof resume [] (.conjunction body)).isSome then
+        some ⟨.site .goal, [], .conjunction body, .consistency body⟩
+      else none
+  | _ => none
+
+/-- The runtime consistency check of a P1 query's KB, without fuel. -/
+def denialCheckBounded : Option (Blocker Variable Literal Symbol) :=
+  setup.denials.findSome? setup.denialBounded
+
+/-- The tabled run of a query: bounded and without fuel for a P1 query, with
+the fuel otherwise. -/
+def runFor (fuel : Nat) (query : Tabled.Query Variable Literal Symbol) : Engine.Outcome Variable Literal Symbol :=
+  if (setup.fragment.admit query).isP1 then setup.decided query.context (query.answers.foldr Term.existsVar query.goal)
+  else setup.runOf fuel query.context (query.answers.foldr Term.existsVar query.goal)
+
+/-- The consistency check of a query's KB: bounded for a P1 query, with the
+fuel otherwise. -/
+def denialsFor (fuel : Nat) (query : Tabled.Query Variable Literal Symbol) : Option (Blocker Variable Literal Symbol) :=
+  if (setup.fragment.admit query).isP1 then setup.denialCheckBounded else setup.denialCheck fuel
+
 /-- The module's answer to a query of the fast fragment: its admission's
 blockers, the KB's consistency, or the answer of its run, for its goal with
-the answer names existentially closed. -/
+the answer names existentially closed. A P1 query runs bounded, without
+fuel; a P2 query with the fuel. -/
 def answer (fuel : Nat) (query : Tabled.Query Variable Literal Symbol) : TabledAnswer Variable Literal Symbol :=
   match setup.fragment.answer? query with
   | some blocked => blocked
   | none =>
-      match setup.denialCheck fuel with
+      match setup.denialsFor fuel query with
       | some blocker => .undecided [blocker]
       | none =>
           let goal := query.answers.foldr Term.existsVar query.goal
-          setup.answerFrom query.context goal (setup.runOf fuel query.context goal)
+          setup.answerFrom query.context goal (setup.runFor fuel query)
 
 end Setup
 
@@ -554,7 +657,7 @@ theorem answer_sound (fuel : Nat) (query : Tabled.Query Variable Literal Symbol)
 completed with no answer, and two witnesses. -/
 theorem answer_unknown {fuel : Nat} {query : Tabled.Query Variable Literal Symbol} {holds fails : Witness Variable Literal Symbol}
     (answered : setup.answer fuel query = .unknown holds fails) :
-    ∃ outcome, setup.runOf fuel query.context (goalOf query) = .finished outcome := by
+    ∃ outcome, setup.runFor fuel query = .finished outcome := by
   unfold answer at answered
   split at answered
   · rename_i blocked found
@@ -565,11 +668,11 @@ theorem answer_unknown {fuel : Nat} {query : Tabled.Query Variable Literal Symbo
   · split at answered
     · cases answered
     dsimp only at answered
-    cases ran : setup.runOf fuel query.context (query.answers.foldr Term.existsVar query.goal) with
+    cases ran : setup.runFor fuel query with
     | interrupted run => rw [ran] at answered; simp [answerFrom] at answered
     | success proof resume =>
         rw [ran] at answered; simp only [answerFrom] at answered; split at answered <;> cases answered
-    | finished outcome => exact ⟨outcome, ran⟩
+    | finished outcome => exact ⟨outcome, rfl⟩
 
 end Setup
 
@@ -624,20 +727,35 @@ theorem answer_mono {fuel : Nat} {query : Tabled.Query Variable Literal Symbol}
   · rename_i notBlocked
     rw [notBlocked] at decided
     dsimp only at decided ⊢
-    cases checked : setup.denialCheck fuel with
-    | some blocker => rw [checked] at decided; simp [Answer.decided] at decided
-    | none =>
-        rw [checked] at decided
-        rw [setup.denialCheck_more checked extra]
-        dsimp only at decided ⊢
-        have ended : ∀ final, setup.runOf fuel query.context (query.answers.foldr Term.existsVar query.goal) ≠ .interrupted final := by
-          intro final ran
-          rw [ran] at decided
-          simp [answerFrom, Answer.decided] at decided
-        have more := (setup.engine (setup.space query.context (query.answers.foldr Term.existsVar query.goal))).run_more fuel extra
-          (Engine.start query.context (query.answers.foldr Term.existsVar query.goal)) ended
-        unfold runOf
-        rw [more]
+    cases p1 : (setup.fragment.admit query).isP1 with
+    | true => simp only [denialsFor, runFor, p1, ↓reduceIte]
+    | false =>
+        simp only [denialsFor, runFor, p1, Bool.false_eq_true, ↓reduceIte] at decided ⊢
+        cases checked : setup.denialCheck fuel with
+        | some blocker => rw [checked] at decided; simp [Answer.decided] at decided
+        | none =>
+            rw [checked] at decided
+            rw [setup.denialCheck_more checked extra]
+            dsimp only at decided ⊢
+            have ended : ∀ final, setup.runOf fuel query.context (query.answers.foldr Term.existsVar query.goal) ≠ .interrupted final := by
+              intro final ran
+              rw [ran] at decided
+              simp [answerFrom, Answer.decided] at decided
+            have more := (setup.engine (setup.space query.context (query.answers.foldr Term.existsVar query.goal))).run_more fuel extra
+              (Engine.start query.context (query.answers.foldr Term.existsVar query.goal)) ended
+            unfold runOf
+            rw [more]
+
+/-- **A P1 query needs no fuel**: its run is bounded and never interrupted
+(`decided_ended`), and its answer is the same whatever the fuel. -/
+theorem answer_p1 {query : Tabled.Query Variable Literal Symbol} (p1 : (setup.fragment.admit query).isP1 = true)
+    (fuel other : Nat) : setup.answer fuel query = setup.answer other query := by
+  unfold answer
+  simp only [denialsFor, runFor, p1, ↓reduceIte]
+
+theorem decided_ended (context : ProofContext Variable Literal Symbol) (goal : Formula Variable Literal Symbol) :
+    ∀ final, setup.decided context goal ≠ .interrupted final :=
+  (setup.boundedEngine context goal).runToEnd_ended (bounds := setup.bounds context goal) rfl _
 
 end Setup
 

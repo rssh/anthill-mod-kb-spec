@@ -1,5 +1,6 @@
 import AnthillModKbSpec.Resolution.Tabled.Witness
 import AnthillModKbSpec.Resolution.Tabled.Admission
+import AnthillModKbSpec.Resolution.Tabled.Weight
 import AnthillModKbSpec.Resolution.P1.Negation
 
 /-! # Tabled backtracking on the shared machine (S24)
@@ -10,7 +11,8 @@ ordinary machine state (`Machine.State`) whose transitions are the machine's
 `step` with the engine's strategy:
 
 - **Tables.** One per distinct call: a predicate, its input values as read,
-  and the context (`Call`). A table holds its answers, each with the
+  with no flexible name (rigid parameters are fixed for the run), and the
+  closed context (`Call`). A table holds its answers, each with the
   generator's completed proof, and the branches waiting on it.
 - **A new call** creates a table and pushes its generator: a machine state
   for the call with its outputs as fresh answer names, which resolves the call
@@ -31,8 +33,12 @@ ordinary machine state (`Machine.State`) whose transitions are the machine's
   makes the NAF wait: a loop through NAF is delayed, and resolved when its
   component completes, where the NAF is an open atom (`GapReason.opened`)
   unless an answer made it fail.
-- **Fuel** bounds the transitions; running out is `interrupted`, never an
-  answer.
+- **Fuel** bounds the transitions of a P2 run; running out is `interrupted`,
+  never an answer.
+- **Bounds.** A bounded run (P1) tables only calls drawn from its bounds,
+  schedules only answers drawn from them, and keeps only the alternatives
+  lighter than their focus (`fit`); it ends without fuel
+  (`Tabled/Termination`).
 
 The machine's invariants and reconstruction carry over to every generator,
 and the tables' answers are derivable (`Tabled/EngineSound`). -/
@@ -100,10 +106,21 @@ structure Run (Variable Literal Symbol : Type) where
   stack : List (Generator Variable Literal Symbol)
   gaps : List (Gap Variable Literal Symbol)
 
+/-- The bounds of a bounded run (P1): the predicates, data terms, and
+assumptions its calls are drawn from, and the most arguments an atom has. A
+call outside them is a gap, and only answers within them are scheduled to
+consumers, so the run's tables and the answers it schedules are finitely many
+(`Tabled/Termination`). -/
+structure Bounds (Variable Literal Symbol : Type) where
+  predicates : List Symbol
+  data : List (Term Variable Literal Symbol)
+  arity : Nat
+  assumptions : List (Term Variable Literal Symbol)
+
 /-- What the engine needs: the `ho_apply` symbol, the fragment's program with
 its modes, the clauses calls are resolved against, the unknown markers, the
-rule name of table answers, and the refutation of ground NAF operands with
-its evidence. -/
+rule name of table answers, the refutation of ground NAF operands with its
+evidence, and, for a bounded run, its bounds. -/
 structure Engine (Variable Literal Symbol : Type) where
   hoApplySymbol : Symbol
   fragment : Tabled.Program Variable Literal Symbol
@@ -112,6 +129,7 @@ structure Engine (Variable Literal Symbol : Type) where
   tableSymbol : Symbol
   refutes : Term Variable Literal Symbol → Bool
   evidence : Term Variable Literal Symbol → Term Variable Literal Symbol
+  bounds : Option (Bounds Variable Literal Symbol) := none
 
 /-- A machine state with nothing left to try. -/
 def State.done (state : State Variable Literal Symbol (Term Variable Literal Symbol) Unit) : Bool :=
@@ -122,28 +140,63 @@ def State.done (state : State Variable Literal Symbol (Term Variable Literal Sym
 /-- A closed term: no free name. -/
 def closedTerm (term : Term Variable Literal Symbol) : Bool := term.freeVars.isEmpty
 
+/-- A term with no flexible name as read: every free name a rigid parameter
+of the store. -/
+def rigidTerm (store : Store Variable Literal Symbol) (term : Term Variable Literal Symbol) : Bool :=
+  term.freeVars.all fun name => decide (store.info? name = some .rigid)
+
+/-- The free names of a call: its inputs' and its context's. -/
+def Call.names (call : Call Variable Literal Symbol) : List Variable :=
+  (call.inputs ++ call.context).flatMap Term.freeVars
+
 namespace Engine
 
 variable (engine : Engine Variable Literal Symbol)
 
 /-! ## The strategy -/
 
+/-- A bounded run's check of a call: its predicate, inputs, and context drawn
+from the bounds, the context without repeats. An unbounded run admits every
+call. -/
+def admits (symbol : Symbol) (inputs : List (Term Variable Literal Symbol)) (context : ProofContext Variable Literal Symbol) :
+    Bool :=
+  match engine.bounds with
+  | none => true
+  | some bounds =>
+      bounds.predicates.contains symbol && decide (inputs.length ≤ bounds.arity) && inputs.all (· ∈ bounds.data) &&
+        context.all (· ∈ bounds.assumptions) && decide context.Nodup
+
 /-- The call an atom makes in a context, when it is tabled: a predicate with
-a declared mode at its arity, its inputs and the context closed. -/
-def callOfAtom (symbol : Symbol) (args : List (Term Variable Literal Symbol)) (context : ProofContext Variable Literal Symbol) :
-    Option (Call Variable Literal Symbol) :=
+a declared mode at its arity, its inputs with no flexible name as read (rigid
+parameters are fixed for the run), the context closed, within the bounds of a
+bounded run. -/
+def callOfAtom (store : Store Variable Literal Symbol) (symbol : Symbol) (args : List (Term Variable Literal Symbol))
+    (context : ProofContext Variable Literal Symbol) : Option (Call Variable Literal Symbol) :=
   if symbol = engine.hoApplySymbol ∨ engine.fragment.guard symbol = true ∨ engine.unknownMarker symbol = true then none
   else
     match engine.fragment.io? symbol args with
-    | some (inputs, _) => if (inputs ++ context).all closedTerm then some ⟨symbol, inputs, context⟩ else none
+    | some (inputs, _) =>
+        if inputs.all (rigidTerm store) && context.all closedTerm && engine.admits symbol inputs context then
+          some ⟨symbol, inputs, context⟩
+        else none
     | none => none
 
 /-- The call a focused obligation makes, as read. -/
 def call? (obligation : Obligation Variable Literal Symbol) (store : Store Variable Literal Symbol) :
     Option (Call Variable Literal Symbol) :=
   match store.resolve obligation.goal with
-  | .app symbol args => engine.callOfAtom symbol args obligation.scope.assumptions
+  | .app symbol args => engine.callOfAtom store symbol args obligation.scope.assumptions
   | _ => none
+
+/-- An answer a bounded run schedules to consumers: an atom of the bounds'
+predicates over its data terms. -/
+def inSpace (atom : Term Variable Literal Symbol) : Bool :=
+  match engine.bounds with
+  | none => true
+  | some bounds =>
+      match atom with
+      | .app symbol args => bounds.predicates.contains symbol && decide (args.length ≤ bounds.arity) && args.all (· ∈ bounds.data)
+      | _ => false
 
 /-- The table of a call. -/
 def findTable (tables : List (Table Variable Literal Symbol)) (call : Call Variable Literal Symbol) :
@@ -168,13 +221,41 @@ def equation (obligation : Obligation Variable Literal Symbol) (store : Store Va
 def base : Strategy Variable Literal Symbol (Term Variable Literal Symbol) :=
   Strategy.withOpenGoals engine.unknownMarker (positive engine.hoApplySymbol engine.resolution)
 
+/-- The alternatives of a response that fit a focus of weight `top`; a
+response that loses any is incomplete (`Tabled/Weight`). -/
+def fitTo (top : Nat) : Response Variable Literal Symbol (Term Variable Literal Symbol) →
+    Response Variable Literal Symbol (Term Variable Literal Symbol)
+  | .candidates alternatives =>
+      if alternatives.all (fun expansion => decide (Fits engine.hoApplySymbol top expansion)) then .candidates alternatives
+      else .incomplete (alternatives.filter fun expansion => decide (Fits engine.hoApplySymbol top expansion))
+  | .incomplete alternatives => .incomplete (alternatives.filter fun expansion => decide (Fits engine.hoApplySymbol top expansion))
+  | response => response
+
+/-- A bounded run keeps only the alternatives lighter than the focus, so that
+every machine step lowers the branches' weights (`step_lower`); an unbounded
+run keeps every one. -/
+def fit (top : Nat) (response : Response Variable Literal Symbol (Term Variable Literal Symbol)) :
+    Response Variable Literal Symbol (Term Variable Literal Symbol) :=
+  match engine.bounds with
+  | none => response
+  | some _ => engine.fitTo top response
+
+/-- The weight of a generator's root, which resolves a call against the
+clauses: more than any clause body's. -/
+def rootWeight : Nat :=
+  (engine.resolution.clauses.map fun entry =>
+    match entry.clause with
+    | .definite _ body => goalSize engine.hoApplySymbol (Term.conjunction body)
+    | .goal _ => 0).foldr max 0 + 3
+
 /-- A generator's root: the call resolved against the clauses. -/
-def rootStrategy : Strategy Variable Literal Symbol (Term Variable Literal Symbol) := engine.base
+def rootStrategy : Strategy Variable Literal Symbol (Term Variable Literal Symbol) :=
+  fun obligation store => engine.fit engine.rootWeight (engine.base obligation store)
 
 /-- What the engine answers for a focus inside a generator or the query: a
 tabled call's answers, a ground NAF by its refutation or its table, a data
 equation, otherwise the positive strategy. -/
-def strategy (tables : List (Table Variable Literal Symbol)) : Strategy Variable Literal Symbol (Term Variable Literal Symbol) :=
+def strategyCore (tables : List (Table Variable Literal Symbol)) : Strategy Variable Literal Symbol (Term Variable Literal Symbol) :=
   fun obligation store =>
     match engine.call? obligation store with
     | some call =>
@@ -189,7 +270,7 @@ def strategy (tables : List (Table Variable Literal Symbol)) : Strategy Variable
               else
                 match operand with
                 | .app symbol args =>
-                    match engine.callOfAtom symbol args obligation.scope.assumptions with
+                    match engine.callOfAtom store symbol args obligation.scope.assumptions with
                     | some call =>
                         match findTable tables call with
                         | some (_, table) =>
@@ -202,6 +283,10 @@ def strategy (tables : List (Table Variable Literal Symbol)) : Strategy Variable
             else engine.base obligation store
         | _, .equal left right => respond [engine.equation obligation store left right]
         | _, _ => engine.base obligation store
+
+/-- The engine's strategy, fitted to the focused goal's size in a bounded run. -/
+def strategy (tables : List (Table Variable Literal Symbol)) : Strategy Variable Literal Symbol (Term Variable Literal Symbol) :=
+  fun obligation store => engine.fit (goalSize engine.hoApplySymbol obligation.goal) (engine.strategyCore tables obligation store)
 
 /-! ## Run transitions -/
 
@@ -216,7 +301,7 @@ as fresh answer names. -/
 def generator (symbol : Symbol) (args : List (Term Variable Literal Symbol)) (call : Call Variable Literal Symbol) :
     State Variable Literal Symbol (Term Variable Literal Symbol) Unit :=
   let modes := (engine.fragment.modes symbol).getD []
-  let names := freshNames [] (modes.filter (· = .output)).length
+  let names := freshNames call.names (modes.filter (· = .output)).length
   State.init () names call.context (.app symbol (withOutputs modes args names))
 
 /-- Create the table of a call and push its generator. -/
@@ -269,16 +354,21 @@ def schedule (stack : List (Generator Variable Literal Symbol)) (call : Call Var
     | some none => (stack, [])
     | none => (stack, [⟨.unsupported, waiter.obligation, trailOf waiter.frames⟩])
 
-/-- Record a generator's answer, if new, and schedule it to the table's consumers. -/
+/-- Record a generator's answer, if new, and schedule it to the table's
+consumers. A bounded run schedules only answers within its bounds; another one
+is recorded, for consumers still to come, and each consumer waiting is a gap. -/
 def answer (run : Run Variable Literal Symbol) (index : Nat) (atom : Term Variable Literal Symbol)
     (proof : CompletedProof Variable Literal Symbol (Term Variable Literal Symbol) Unit) : Run Variable Literal Symbol :=
   match run.tables[index]? with
   | some table =>
       if table.answers.any (fun found => decide (found.atom = atom)) then run
       else
-        let scheduled := table.waiters.foldl (fun (acc : List (Generator Variable Literal Symbol) × List (Gap Variable Literal Symbol)) waiter =>
-          let next := engine.schedule acc.1 table.call atom waiter
-          (next.1, next.2 ++ acc.2)) (run.stack, [])
+        let scheduled := if engine.inSpace atom then
+            table.waiters.foldl (fun (acc : List (Generator Variable Literal Symbol) × List (Gap Variable Literal Symbol)) waiter =>
+              let next := engine.schedule acc.1 table.call atom waiter
+              (next.1, next.2 ++ acc.2)) (run.stack, [])
+          else (run.stack, table.waiters.filterMap fun waiter =>
+            if waiter.negative then none else some ⟨.unsupported, waiter.obligation, trailOf waiter.frames⟩)
         { tables := updateTable run.tables index fun table => { table with answers := table.answers ++ [⟨atom, proof⟩] }
           stack := scheduled.1
           gaps := scheduled.2 ++ run.gaps }
@@ -311,6 +401,13 @@ def complete? (run : Run Variable Literal Symbol) (count : Nat) : Option (Run Va
       else none
   | none => none
 
+/-- An answer's free names are among its call's: rigid parameters of every
+consumer. -/
+def withinCall (tables : List (Table Variable Literal Symbol)) (index : Nat) (atom : Term Variable Literal Symbol) : Bool :=
+  match tables[index]? with
+  | some table => atom.freeVars.all (· ∈ table.call.names)
+  | none => false
+
 /-- The outcome of a run whose query has nothing left: its gaps, as the
 machine reports them. -/
 def outcomeOf (gaps : List (Gap Variable Literal Symbol)) :
@@ -334,21 +431,22 @@ def advance (run : Run Variable Literal Symbol) (position : Nat) (generator : Ge
       | none => .success proof resumed
       | some index =>
           let atom := proof.store.resolve proof.root.goal
-          if closedTerm atom then .running (engine.answer resumed index atom proof)
+          if withinCall run.tables index atom then .running (engine.answer resumed index atom proof)
           else .running { resumed with gaps := ⟨.unsupported, proof.root, []⟩ :: resumed.gaps }
   | .finished _ => .running run
 
-/-- Step the generator at a stack position: open a table for a new call,
-leave a recursive call or a NAF on an incomplete table waiting, and make the
-machine transition. -/
+/-- Step the generator at a stack position: its first step resolves its root
+against the clauses; later ones open a table for a new call, leave a recursive
+call or a NAF on an incomplete table waiting, and make the machine
+transition. -/
 def stepAt (run : Run Variable Literal Symbol) (position : Nat) (generator : Generator Variable Literal Symbol) :
     Status Variable Literal Symbol :=
+  if !generator.started then
+    engine.advance { run with stack := updateAt run.stack position fun generator => { generator with started := true } }
+      position { generator with started := true } engine.rootStrategy
+  else
   match generator.state.focus with
   | .solve obligation =>
-      if !generator.started then
-        engine.advance { run with stack := updateAt run.stack position fun generator => { generator with started := true } }
-          position { generator with started := true } engine.rootStrategy
-      else
         match engine.call? obligation generator.state.store with
         | some call =>
             match findTable run.tables call with
@@ -363,7 +461,7 @@ def stepAt (run : Run Variable Literal Symbol) (position : Nat) (generator : Gen
             match generator.state.store.resolve obligation.goal with
             | .defaultNeg (.app symbol args) =>
                 if closedTerm (.app symbol args) && !engine.refutes (.app symbol args) then
-                  match engine.callOfAtom symbol args obligation.scope.assumptions with
+                  match engine.callOfAtom generator.state.store symbol args obligation.scope.assumptions with
                   | some call =>
                       match findTable run.tables call with
                       | none => .running (engine.open_ run symbol args call)

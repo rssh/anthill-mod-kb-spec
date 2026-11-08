@@ -68,3 +68,7 @@ Correction to the S13 note after review: the consistency check is Snapshot.WellF
 
 From S24 (2026-11-08): a tabled Yes is exported as an S08 term with every table answer expanded from its own proof (Setup.exportWith) and filtered by the S08 checker, whose NAF evidence is a universe the checker refutes the operand over again (Setup.nafCheck). That every successful tabled run's export checks is S15/S16's, as for S06 runs.
 
+### 2026-11-08T19:59:34Z — feedback — user
+
+From S24 (2026-11-08, decided with the user): (1) P1 completeness of the tabled route (an atom in the least fixpoint answers Yes) and the exactness theorem (the cases where the answer is never Undecided) are S15's, as part of 'P1 decisions are total, sound, and complete'. (2) A P1 query runs bounded and without fuel (Tabled.Setup.decided, Engine.runToEnd, which ends for every program); S15 shows the bounds never cut a P1 run short: every tabled call's inputs lie in Setup.bounds' data and its context in the assumptions without repeats (S23's calls_bounded lifted to runs: the tables' calls are Makes chains from the query's calls, with derivable answers bounded by outputs_bounded); every answer scheduled to a consumer lies in the data (consumers wait only within data-output components, by calls_decrease); and every candidate fits its focus (goalSize unchanged by renaming and by reading formula-variable-free goals through the store, clause bodies below Engine.rootWeight). Until then a cut is a gap, and the answer may be Undecided, never wrong.
+
