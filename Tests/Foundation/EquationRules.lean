@@ -1,4 +1,5 @@
 import AnthillModKbSpec.Models.OrderDictionaries
+import AnthillModKbSpec.Models.KeyModel
 import AnthillModKbSpec.Foundation.ClauseInstantiation
 
 open AnthillModKbSpec AnthillModKbSpec.Semantics AnthillModKbSpec.OrderDictionaries
@@ -46,7 +47,7 @@ theorem fact_valid (environment : Environment String Value) :
   apply (model.holds_implication _ _).mpr
   intro _
   simp [isNat, three, Model.eval, model, OperationDictionaries.Extension.withDictionaryCalls,
-    baseModel, application, primitive, predicateTruth, operationValue, holds, NatDomain]
+    baseModel, application, primitive, predicateTruth, holds, NatDomain]
 
 theorem equation_body_valid (environment : Environment String Value) :
     model.Satisfies environment equationBodyRule.toFormula := by
@@ -167,6 +168,25 @@ example : ¬ model.holds (boolean true) ∧ model.holds (.proposition True) ∧
   refine ⟨id, True.intro, ?_⟩
   rw [model.satisfies_equal]
   simp [Model.eval, model, OperationDictionaries.Extension.withDictionaryCalls, baseModel]
+
+-- The same truth status does not make values equal: the Boolean literals both
+-- fail to hold in the order model and are distinct.
+example : ¬ model.holds (boolean true) ∧ ¬ model.holds (boolean false) ∧ boolean true ≠ boolean false :=
+  ⟨id, id, by simp [boolean]⟩
+
+-- Truth equivalence does not identify distinct values. In the constructor-key
+-- model with every atom true, isNat(3) and isBool(3) both hold, yet their
+-- values are distinct constructor trees, so the equality between them is
+-- false. This model is no model of `kb`: isNat(x) holds everywhere, while
+-- natEqual(x, x) is a constructor tree there, never the literal true.
+def allTrue := Model.keys (Literal := Data) Symbol.hoApply (fun _ _ => True)
+def nowhere : Environment String (Key Data Symbol) := fun _ => allTrue.inhabitant
+
+example : allTrue.Satisfies nowhere (isNat three) ∧ allTrue.Satisfies nowhere (.app .isBool [three]) ∧
+    ¬ allTrue.Satisfies nowhere (.equal (isNat three) (.app .isBool [three])) := by
+  refine ⟨(Model.keys_atom _ _ (by decide) _).mpr trivial, (Model.keys_atom _ _ (by decide) _).mpr trivial, ?_⟩
+  rw [allTrue.satisfies_equal]
+  simp [allTrue, isNat, three, Model.eval, Model.keys]
 
 -- Substitution and binder checks traverse both sides of equality.
 example : (Term.forallVar "y" (.equal (.var "x") (.var "y")) : T).instantiate?

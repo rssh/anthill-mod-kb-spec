@@ -95,7 +95,14 @@ The soundness theorem establishes equality of these returned values for every
 dictionary assignment. The same model supplies a consistency proof for the KB.
 A counterexample shows that removing `isNat(x)` invalidates the equation on
 non-Nat values. Further checks cover symmetry, transitivity, capture rejection,
-and the distinction between value equality and truth equivalence.
+and the distinction between value equality and truth equivalence. In the
+constructor-key model (`Model.keys`) with every atom true, `isNat(3)` and
+`isBool(3)` both hold and are still unequal values; that model is a separate
+check, not a model of the KB. The order model shows values that both fail to
+hold and are unequal, such as the Boolean literals, but not values that both
+hold: only logical values hold there, and holding propositions are equal. A
+further check shows that the Boolean `true` is data in the order model: it
+does not hold, and it is not the value of the formula `true`.
 
 ```sh
 lake build

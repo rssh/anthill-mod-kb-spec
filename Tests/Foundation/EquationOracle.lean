@@ -25,7 +25,7 @@ theorem kb_valid : model.Models kb := by
   apply (model.holds_implication _ _).mpr
   intro _
   simp [conclusion, Model.eval, model, OperationDictionaries.Extension.withDictionaryCalls,
-    baseModel, application, primitive, predicateTruth, operationValue, holds, BoolDomain]
+    baseModel, application, primitive, predicateTruth, holds, BoolDomain]
 
 theorem accepted : oracle.certifies [] left right := by
   refine ⟨rfl, ?_, ?_, ?_⟩
