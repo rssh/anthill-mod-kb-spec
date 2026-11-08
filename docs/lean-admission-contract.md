@@ -282,11 +282,12 @@ names answers with a disequality constraint (constructive negation, S21) when
 its operand has finitely many answers. Its runs are tabled
 backtracking on the shared machine, bounded by fuel, and answer Yes, No,
 Unknown (with witnesses), or Undecided with blockers. Answers are monotone in
-the fuel: only Undecided can change with more fuel. A predicate whose recursion
-grows no terms, with no NAF or denial over a predicate on a cycle, is in P1:
-its run ends without needing fuel, in time polynomial in the data, and its
-Unknown is exact by the least and greatest fixpoints. P2 is planned in
-S22–S26.
+the fuel: only Undecided can change with more fuel. A complete predicate,
+whose recursive calls take data terms and whose answers are data terms or
+whose recursion decreases, with no NAF or denial over a predicate on a cycle,
+is in P1: its run ends without needing fuel, and its Unknown is exact by the
+least and greatest fixpoints. S23 implements the admission
+([fast admission](fast-admission.md)); the rest of P2 is planned in S24–S26.
 
 ## P3: scoped proof strategies with Undecided
 

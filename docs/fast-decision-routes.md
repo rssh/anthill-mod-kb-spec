@@ -52,16 +52,27 @@ bound, so a delayed NAF on it would flounder.
 
 | Class | Condition | Guarantee |
 | --- | --- | --- |
-| **Complete** | Every recursive call's arguments are subterms of the head's inputs or data constants | Finitely many distinct calls: the run ends without needing fuel, in time O(nᵏ) for n data terms, with the degree k from the program (roughly the free variables a clause joins), reported per predicate |
-| **Budgeted** | Some recursion grows terms (`p(x) :- p(succ(x))`) | Bounded by the fuel; may answer Undecided, naming the growing call |
+| **Complete** | Every recursive call's inputs are data terms (subterms of the head's inputs, ground terms of the program, or outputs of a predicate whose outputs are data terms), and the component's outputs are data terms or every recursive call decreases | Finitely many distinct calls, and finitely many answers: the run ends without needing fuel. Where outputs are data terms, in time O(nᵏ) for n data terms, with the degree k from the program (the free variables a clause joins), reported per predicate |
+| **Budgeted** | Some recursion grows terms (`p(x) :- p(succ(x))`), or grows answers without decreasing (`count(x, succ(Y)) :- count(x, Y)`) | Bounded by the fuel; may answer Undecided, naming the growing call or answer |
+
+Bounding the calls alone does not bound the answers: `count(+, −)` makes one
+call and has infinitely many answers. So the complete class also asks that
+answers stay data terms, or that no call repeats because every recursive call
+decreases (`append(+, +, −)`; decided with the user, 2026-11-07). Decreasing
+recursion with constructed outputs terminates without a polynomial bound:
+`subset(+, −)` has exponentially many answers.
 
 Non-overlapping input patterns refine the complete class: at most one clause
 applies to each call, so the run has no choice points there.
 
+S23 implements this admission ([fast admission](fast-admission.md)): modes,
+safety, the cost classes with each predicate's degree and determinism, the
+profiles, and blockers, with the call bound S24 runs on.
+
 | Profile | Predicates |
 | --- | --- |
 | **P1** | Complete, with no NAF or denial over a predicate on a cycle: answers Yes, No, or Unknown, never Undecided |
-| **P2** | The rest of the fragment: budgeted predicates, NAF or denials over a predicate on a cycle, splits or hypotheses that depend on the data |
+| **P2** | The rest of the fragment: budgeted predicates, NAF or denials over a predicate on a cycle, splits or hypotheses that depend on the data, generic universal goals (a failure is Undecided) |
 | **P3** | Proof search beyond clause selection (S09's left rules, S12's induction run, S14's law search): proof producers, whose results enter as checked proofs |
 
 ## Answers

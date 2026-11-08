@@ -74,6 +74,12 @@ inductive Construct where
   | openPredicate
   /-- A dictionary call the registry does not declare (S13), and why. -/
   | dictionary (miss : DictionaryMiss)
+  /-- A data symbol that is no declared constructor: a defined operation,
+  which the fast fragment neither matches nor evaluates (S14 evaluates
+  operations). -/
+  | operation
+  /-- A KB clause concluding an open marker: a marker has no clauses. -/
+  | markerDefinition
   deriving DecidableEq, Repr
 
 /-- What a blocker lacks. Supplying it may settle the goal. -/
@@ -82,8 +88,9 @@ inductive Missing (Variable Literal Symbol : Type) where
   goal implication, or a goal the search did not prove or refute. A checked
   proof term, a lemma, or a failure certificate settles it. -/
   | proof
-  /-- A mode: a name the formula needs bound before it runs, or a goal still
-  waiting for a binding when its branch ended (floundering). -/
+  /-- A mode: a name the formula needs bound before it runs, a goal still
+  waiting for a binding when its branch ended (floundering), or a predicate
+  without a mode declaration at its arity (S23). -/
   | mode
   /-- A termination argument: a dependency cycle, or a run interrupted by its fuel. -/
   | termination

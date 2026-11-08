@@ -2,6 +2,7 @@
 import AnthillModKbSpec.Resolution.P0
 import AnthillModKbSpec.Resolution.P1
 import AnthillModKbSpec.Resolution.P3
+import AnthillModKbSpec.Resolution.Tabled
 import AnthillModKbSpec.Resolution.ProofLayer
 import AnthillModKbSpec.Resolution.Miller
 import AnthillModKbSpec.Resolution.MillerCertificates

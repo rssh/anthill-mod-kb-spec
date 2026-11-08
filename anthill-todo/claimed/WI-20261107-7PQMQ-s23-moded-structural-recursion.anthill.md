@@ -3,9 +3,9 @@
 - id: WI-20261107-7PQMQ-s23-moded-structural-recursion
 - created: 2026-11-07T13:58:00Z
 
-- status: Open
+- status: Claimed
 - status_agent: user
-- status_at: 2026-11-07T13:58:00Z
+- status_at: 2026-11-07T21:32:59Z
 
 - acceptance: lake build
 
@@ -32,3 +32,4 @@ Acceptance:
 
 Validation: lake build and focused Lean tests/examples appropriate to the changed definitions and proofs.
 Design references: docs/fast-decision-routes.md, docs/lean-admission-contract.md (profiles), docs/machine-p0.md.
+

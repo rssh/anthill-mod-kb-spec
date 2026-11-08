@@ -52,3 +52,7 @@ Design references: docs/fast-decision-routes.md, docs/machine-delay.md (Restrict
 ### 2026-11-07T14:55:34Z — feedback — user
 
 Moved to the backlog (2026-11-07 reorganization): not needed for the fast fragment (docs/fast-decision-routes.md). Constructive negation would later relax the fragment's ground-NAF safety condition, and constraints would then need to live in S24's tables; disequality is a candidate first solver there.
+### 2026-11-07T22:34:08Z — feedback — claude
+
+From S23 (2026-11-08): the relaxed NAF rule is in S23's admission. A NAF with a flexible or rigid name is admitted when its operand, scanned with those names unbound, is safe and calls only complete predicates; a rigid name at an operand input is a blocker (mode), and an operand that is not complete lacks a termination argument. S21 runs constructive negation for what S23 admits.
+
