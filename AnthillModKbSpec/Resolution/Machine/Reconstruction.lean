@@ -86,7 +86,7 @@ def attempt (result : Unification Variable Literal Symbol)
 
 /-- The candidates of the attempts; any gap makes the response incomplete. -/
 def respond (attempts : List (Attempt Variable Literal Symbol Certificate)) : Response Variable Literal Symbol Certificate :=
-  if attempts.any Option.isNone then .incomplete (attempts.filterMap Option.join)
+  if attempts.any Option.isNone then .incomplete (attempts.filterMap Option.join) [.unsupported]
   else .candidates (attempts.filterMap Option.join)
 
 section Candidates
@@ -405,11 +405,11 @@ theorem step_sound (strategy : Strategy Variable Literal Symbol Certificate)
         fun other member => candidates other (List.mem_cons_of_mem _ member)
     · cases stepped; exact ⟨branch.fail, sound.choices⟩
     · cases stepped; exact ⟨branch.fail, sound.choices⟩
-    · rename_i expansion rest responseEq
+    · rename_i expansion rest reasons responseEq
       cases stepped
       have candidates := strategySound obligation state.store validBranch.storeScoped validBranch.declared
       rw [responseEq] at candidates
-      exact State.enter_sound (state := { state with gaps := _ :: state.gaps }) branch sound.choices
+      exact State.enter_sound (state := { state with gaps := _ ++ state.gaps }) branch sound.choices
         (candidates expansion List.mem_cons_self) fun other member => candidates other (List.mem_cons_of_mem _ member)
     · split at stepped
       · cases stepped

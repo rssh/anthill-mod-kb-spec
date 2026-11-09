@@ -183,6 +183,25 @@ def tuples {α : Type} (choices : List α) : Nat → List (List α)
 
 end Evaluation
 
+/-! ## Iterating until stable -/
+
+/-- Apply `step` at most `count` times, stopping once a round changes
+nothing (`same`): the iteration's later rounds would only repeat it. -/
+def untilStable {α : Type} (same : α → α → Bool) (step : α → α) : Nat → α → α
+  | 0, current => current
+  | count + 1, current => if same (step current) current then current else untilStable same step count (step current)
+
+/-- Stopping early gives one of the rounds, whatever `same` compares. -/
+theorem untilStable_round {α : Type} (same : α → α → Bool) (step : α → α) (rounds : Nat → α)
+    (succ : ∀ n, rounds (n + 1) = step (rounds n)) :
+    ∀ (count n : Nat), ∃ m, untilStable same step count (rounds n) = rounds m
+  | 0, n => ⟨n, rfl⟩
+  | count + 1, n => by
+      simp only [untilStable]
+      split
+      · exact ⟨n, rfl⟩
+      · rw [← succ]; exact untilStable_round same step rounds succ count (n + 1)
+
 /-! ## Definitely and possibly true -/
 
 section Kleene
@@ -281,6 +300,15 @@ def kk : Nat → List (GAtom Variable Literal Symbol) × List (AAtom Variable Li
       ((stepDefinite signature space clauses previous.1 previous.2).eraseDups,
         (stepPossible signature space clauses previous.1 previous.2).eraseDups)
 
+/-- One round of the Kripke–Kleene iteration. -/
+def kkStep (previous : List (GAtom Variable Literal Symbol) × List (AAtom Variable Literal Symbol)) :
+    List (GAtom Variable Literal Symbol) × List (AAtom Variable Literal Symbol) :=
+  ((stepDefinite signature space clauses previous.1 previous.2).eraseDups,
+    (stepPossible signature space clauses previous.1 previous.2).eraseDups)
+
+theorem kk_succ (n : Nat) : kk signature space clauses (n + 1) = kkStep signature space clauses (kk signature space clauses n) :=
+  rfl
+
 /-- Enough rounds: one per abstract atom that may change. -/
 def rounds : Nat := (allAtoms signature space).length + 1
 
@@ -302,6 +330,14 @@ definitely true (positive programs read no NAF). -/
 def leastOver : Nat → List (AAtom Variable Literal Symbol)
   | 0 => []
   | n + 1 => (stepPossible signature space clauses [] (leastOver n)).eraseDups
+
+/-- One round of the abstract least fixpoint. -/
+def leastStep (low : List (AAtom Variable Literal Symbol)) : List (AAtom Variable Literal Symbol) :=
+  (stepPossible signature space clauses [] low).eraseDups
+
+theorem leastOver_succ (n : Nat) :
+    leastOver signature space clauses (n + 1) = leastStep signature space clauses (leastOver signature space clauses n) :=
+  rfl
 
 /-- The abstract least fixpoint is closed under one more round. -/
 def closedLeast (found : List (AAtom Variable Literal Symbol)) : Bool :=
@@ -371,6 +407,16 @@ def greatestOver (marked : Symbol → Bool) : Nat → List (AAtom Variable Liter
   | n + 1 =>
       let previous := greatestOver marked n
       previous.filter (supported signature space clauses marked previous)
+
+/-- One round of the greatest post-fixpoint. -/
+def greatestStep (marked : Symbol → Bool) (previous : List (AAtom Variable Literal Symbol)) :
+    List (AAtom Variable Literal Symbol) :=
+  previous.filter (supported signature space clauses marked previous)
+
+theorem greatestOver_succ (marked : Symbol → Bool) (n : Nat) :
+    greatestOver signature space clauses marked (n + 1) =
+      greatestStep signature space clauses marked (greatestOver signature space clauses marked n) :=
+  rfl
 
 /-- A post-fixpoint: every atom is supported inside the set. -/
 def postGreatest (marked : Symbol → Bool) (found : List (AAtom Variable Literal Symbol)) : Bool :=

@@ -425,7 +425,7 @@ theorem step_lower (strategy : Strategy Variable Literal Symbol Certificate)
       | unsupported =>
           simp only [step, hfocus, hresponse] at stepped; cases stepped
           exact drop_lower _ _ live rfl (List.Sublist.refl _)
-      | incomplete alternatives =>
+      | incomplete alternatives reasons =>
           cases alternatives with
           | nil =>
               simp only [step, hfocus, hresponse] at stepped; cases stepped
@@ -433,8 +433,10 @@ theorem step_lower (strategy : Strategy Variable Literal Symbol Certificate)
           | cons expansion rest =>
               simp only [step, hfocus, hresponse] at stepped; cases stepped
               left
+              let added : List (Gap Variable Literal Symbol) :=
+                reasons.map fun reason => ⟨reason, obligation, trailOf state.frames⟩
               let gapped : State Variable Literal Symbol Certificate Snapshot :=
-                { state with focus := .solve obligation, gaps := ⟨.unsupported, obligation, trailOf state.frames⟩ :: state.gaps }
+                { state with focus := .solve obligation, gaps := added ++ state.gaps }
               have lower := enter_lower (hoApplySymbol := hoApplySymbol) gapped obligation expansion rest rfl
                 (by simpa [hresponse, Response.alternatives] using fits) _ rfl
               unfold weightsWith at lower ⊢

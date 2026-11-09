@@ -63,8 +63,12 @@ runtime checks keep a run within the bounds (decided with the user,
 | An answer within the bounds (`inSpace`) | Scheduled to the consumers waiting; otherwise recorded for consumers still to come, and each consumer waiting that it would serve is a gap |
 | A candidate lighter than its focus (`fit`): its premises weigh less than the goal (`Fits`), a generator's root more than every clause body (`rootWeight`) | Otherwise dropped, and the focus is a gap (`incomplete`) |
 
-A cut is recorded with `GapReason.bounded` (`Engine.mark`), and its blocker is
-a termination limit (`Missing.termination`), not a construct.
+A cut is recorded where it happens, with `GapReason.bounded`: the strategy's
+response carries it (`Response.incomplete kept [.bounded, …]`, from `fit`,
+beside any gap the response already had, and from a NAF whose call the bounds
+leave out), and so does an answer the run does not schedule to a consumer it
+would serve. Its blocker is a termination limit (`Missing.termination`), not a
+construct. A NAF on an unknown marker meets an open atom (`opened`).
 
 The **rank** of a run (`Engine.rank`) falls at every transition
 (`Engine.step_rank`), lexicographically:
@@ -127,8 +131,18 @@ fuel (`Setup.runOf`). Beside a P1 query each denial body is admitted as a
 query of its own (`denialQuery`, decided with the user, 2026-11-09): a P1 body
 runs bounded, any other with the fuel (`denialFor`), so a bounded run is only
 ever given a P1 goal, and a P1 answer depends on the fuel only through its
-KB's denials that are not P1. Every answer's evidence is checked
-independently of the run, so soundness holds for both.
+KB's denials that are not P1. A denial run that met open atoms is unsettled,
+since denials checked one at a time miss a joint inconsistency, unless a
+checked model of the KB shows it consistent (`modelShown`: a ground program's
+assignment that is a fixpoint, or a positive program's closed least fixpoint,
+every denial body failing; decided with the user, 2026-11-09). Every answer's
+evidence is checked independently of the run, so soundness holds for both.
+
+The Kripke–Kleene iteration and the two fixpoints stop once a round changes
+nothing (`untilStable`, at most `rounds`); every round is sound, so the round
+they stop at is (`kleene_round`, `untilStable_round`). The engine computes the
+iteration once, when a refutation first needs it, and the checker once per
+query's universe for all the NAF nodes of a proof.
 
 ### No: the Kripke–Kleene iteration over abstract values
 
@@ -206,6 +220,9 @@ realizes a separated admission signature (`realizes`).
 | The bounded run of `p(X) :- p(succ(X))` from `p(zero)`, its terms cut at six nodes | Ends, abandoned: the growing call leaves the bounds; the blocker is a termination limit |
 | `∃Y. path(a, Y)` over the cycle, bounded | Four tables, one per distinct call |
 | `p(X) :- ¬q(succ⁶(X)). q(Y).`, its terms cut at six nodes | The NAF is cut: a termination limit, not a construct |
+| A call cut beside an unsupported match (an `ho_apply` datum in a head); an answer outside the bounds with a consumer waiting | Both name the termination limit |
+| `p :- naf unknown` | An open atom: witnesses missing, not a construct |
+| `p :- ¬q. q :- ¬p. ⊥ :- ¬p. ⊥ :- ¬q.` with `r`; `q(a) :- unknown. ⊥ :- q(a).` with `r` | Undecided, the KB's consistency: no model shown; Yes: an assignment is a model |
 | Beside a P1 query: a growing denial `⊥ :- p(zero)` over `p(X) :- p(succ(X))`; `⊥ :- (∀X. q(X)), t.` with `q(Y)`; `⊥ :- (s → (s → s)), t.` | Undecided by the fuel, naming the growing call; Yes; Yes: each denial body checked as its own profile says |
 | `path(X, c)`, `X` a rigid parameter, left recursion over the cycle | P1; the run ends (plain SLD on the call looped); No |
 | `path(X, a)`, `X` rigid | The run ends; Undecided: neither derived for every `X` nor refuted, and witnesses with parameters are S26's |

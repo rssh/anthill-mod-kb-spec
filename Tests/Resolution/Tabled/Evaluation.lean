@@ -423,4 +423,35 @@ def denialModes : Modes Sym
 -- the bounds but answered by its assumption, so nothing is cut: `r` is Yes.
 #guard kindOf (answerOf [.goal [.imp (k .s) (.imp (k .s) (k .s)), k .t], fact (k .r)] (k .r) (declared := denialModes)) == "yes"
 
+-- A cut inside a response already incomplete is recorded too: the call
+-- `q(succ⁶(zero))` leaves the bounds, the `ho_apply` datum in a head is an
+-- unsupported match, and both are named.
+#guard (smallBlockers [rule (atom .p [v 0]) [atom .q [succ (succ (succ (succ (succ (succ (v 0))))))]],
+  rule (atom .q [succ (v 1)]) [atom .q [v 1]], fact (atom .q [atom .ha [v 2, v 3]])] (atom .p [k .zero]) 6
+  (declared := oneInput)).contains "termination"
+
+open Mode in
+def countModes : Modes Sym
+  | .q => some [output]
+  | _ => none
+
+-- An answer outside the bounds is recorded, not scheduled: the consumer
+-- waiting on the table is a gap of the bound's.
+#guard (smallBlockers [fact (atom .q [k .zero]), rule (atom .q [succ (v 1)]) [atom .q [v 1]]]
+  (.existsVar 0 (.conj (atom .q [v 0]) (.equal (v 0) (k .c)))) 3 (declared := countModes)).contains "termination"
+
+-- `naf unknown` meets an open atom: a witness is what is missing, not a construct.
+#guard (smallBlockers [rule (k .p) [naf (k .unknown)]] (k .p) 50 (declared := nullary)).contains "witnesses"
+#guard !(smallBlockers [rule (k .p) [naf (k .unknown)]] (k .p) 50 (declared := nullary)).contains "construct"
+
+-- Denials whose bodies meet open atoms, checked one at a time, can miss a joint
+-- inconsistency: `p :- ¬q. q :- ¬p. ⊥ :- ¬p. ⊥ :- ¬q.` has no model, and no
+-- assignment shows one, so every answer is Undecided, the KB's consistency.
+#guard missingKinds (answerOf [rule (k .p) [naf (k .q)], rule (k .q) [naf (k .p)], .goal [naf (k .p)], .goal [naf (k .q)],
+  fact (k .r)] (k .r) (declared := nullary)) == ["consistency"]
+-- `q(a) :- unknown. ⊥ :- q(a).`: the denial's run meets the open atom, and the
+-- assignment with `unknown` false is a model in which the body fails: `r` is Yes.
+#guard kindOf (answerOf [rule (atom .q [k .a]) [k .unknown], .goal [atom .q [k .a]], fact (k .r)] (k .r)
+  (declared := denialModes)) == "yes"
+
 end TabledEvaluationTests

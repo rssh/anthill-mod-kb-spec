@@ -38,7 +38,8 @@ ordinary machine state (`Machine.State`) whose transitions are the machine's
 - **Bounds.** A bounded run (P1) tables only calls drawn from its bounds,
   schedules only answers drawn from them, and keeps only the alternatives
   lighter than their focus (`fit`); it ends without fuel
-  (`Tabled/Termination`).
+  (`Tabled/Termination`). Where it leaves something out, the gap is the
+  bound's (`GapReason.bounded`).
 
 The machine's invariants and reconstruction carry over to every generator,
 and the tables' answers are derivable (`Tabled/EngineSound`). -/
@@ -110,9 +111,9 @@ structure Run (Variable Literal Symbol : Type) where
 data terms its inputs and answers are, built from the constructors, literals,
 and names listed, every application with at most `arity` arguments, at most
 `size` nodes; and the assumptions its contexts are drawn from. A call outside
-them is a gap, and only answers within them are scheduled to consumers, so the
-run's tables and the answers it schedules are finitely many
-(`Tabled/Termination`). -/
+them is not tabled: it runs by the positive strategy, cut where `fit` drops a
+candidate. Only answers within them are scheduled to consumers. So the run's
+tables and the answers it schedules are finitely many (`Tabled/Termination`). -/
 structure Bounds (Variable Literal Symbol : Type) where
   predicates : List Symbol
   constructors : List Symbol
@@ -261,14 +262,18 @@ def equation (obligation : Obligation Variable Literal Symbol) (store : Store Va
 def base : Strategy Variable Literal Symbol (Term Variable Literal Symbol) :=
   Strategy.withOpenGoals engine.unknownMarker (positive engine.hoApplySymbol engine.resolution)
 
-/-- The alternatives of a response that fit a focus of weight `top`; a
-response that loses any is incomplete (`Tabled/Weight`). -/
+/-- The alternatives of a response that fit a focus of weight `top`
+(`Tabled/Weight`): a response that loses any is incomplete, with the bound's
+gap (`GapReason.bounded`) beside any it already had. -/
 def fitTo (top : Nat) : Response Variable Literal Symbol (Term Variable Literal Symbol) →
     Response Variable Literal Symbol (Term Variable Literal Symbol)
   | .candidates alternatives =>
-      if alternatives.all (fun expansion => decide (Fits engine.hoApplySymbol top expansion)) then .candidates alternatives
-      else .incomplete (alternatives.filter fun expansion => decide (Fits engine.hoApplySymbol top expansion))
-  | .incomplete alternatives => .incomplete (alternatives.filter fun expansion => decide (Fits engine.hoApplySymbol top expansion))
+      let kept := alternatives.filter fun expansion => decide (Fits engine.hoApplySymbol top expansion)
+      if kept.length = alternatives.length then .candidates alternatives else .incomplete kept [.bounded]
+  | .incomplete alternatives reasons =>
+      let kept := alternatives.filter fun expansion => decide (Fits engine.hoApplySymbol top expansion)
+      if kept.length = alternatives.length then .incomplete alternatives reasons
+      else .incomplete kept (.bounded :: reasons)
   | response => response
 
 /-- A bounded run keeps only the alternatives lighter than the focus, so that
@@ -318,7 +323,12 @@ def strategyCore (tables : List (Table Variable Literal Symbol)) : Strategy Vari
                             else if table.complete then .opened
                             else .candidates []
                         | none => .candidates []
-                    | none => .unsupported
+                    | none =>
+                        if engine.unknownMarker symbol then .opened
+                        else if engine.bounds.isSome &&
+                            ({ engine with bounds := none }.callOfAtom store symbol args obligation.scope.assumptions).isSome
+                        then .incomplete [] [.bounded]
+                        else .unsupported
                 | _ => .unsupported
             else engine.base obligation store
         | _, .equal left right => respond [engine.equation obligation store left right]
@@ -520,40 +530,6 @@ def stepAt (run : Run Variable Literal Symbol) (position : Nat) (generator : Gen
             | _ => engine.advance run position generator (engine.strategy run.tables)
   | _ => engine.advance run position generator (engine.strategy run.tables)
 
-/-- A bounded run's cut at a focus, weighed `top`: an alternative of the
-unfitted strategy that does not fit, which `fit` drops; or a ground NAF whose
-operand's call would be tabled but for the bounds, which the strategy leaves
-unsupported. A call outside the bounds runs untabled, and is cut only where
-`fit` drops one of its candidates. -/
-def cut (strategy : Strategy Variable Literal Symbol (Term Variable Literal Symbol)) (top : Nat)
-    (obligation : Obligation Variable Literal Symbol) (store : Store Variable Literal Symbol) : Bool :=
-  engine.bounds.isSome &&
-    ((strategy obligation store).alternatives.any (fun expansion => !decide (Fits engine.hoApplySymbol top expansion)) ||
-      match store.resolve obligation.goal with
-      | .defaultNeg (.app symbol args) =>
-          closedTerm (.app symbol args) && !engine.refutes (.app symbol args) &&
-            (engine.callOfAtom store symbol args obligation.scope.assumptions).isNone &&
-            ({ engine with bounds := none }.callOfAtom store symbol args obligation.scope.assumptions).isSome
-      | _ => false)
-
-/-- The cut at a generator's focus: its root weighed above every clause body
-before its first step, its goal's size after. -/
-def cutAt (run : Run Variable Literal Symbol) (generator : Generator Variable Literal Symbol)
-    (obligation : Obligation Variable Literal Symbol) : Bool :=
-  if generator.started then
-    engine.cut (engine.strategyCore run.tables) (goalSize engine.hoApplySymbol obligation.goal) obligation generator.state.store
-  else engine.cut engine.base engine.rootWeight obligation generator.state.store
-
-/-- Record where a bounded run is about to cut a generator's focus, so that
-the blocker names the bound rather than the gap the machine records. -/
-def mark (run : Run Variable Literal Symbol) (generator : Generator Variable Literal Symbol) : Run Variable Literal Symbol :=
-  match generator.state.focus with
-  | .solve obligation =>
-      if engine.cutAt run generator obligation then
-        { run with gaps := ⟨.bounded, obligation, trailOf generator.state.frames⟩ :: run.gaps }
-      else run
-  | _ => run
-
 /-- One transition of the run: complete the component on top when it has
 nothing left, otherwise step the topmost generator with something left. The
 query finishing with nothing left ends the run. -/
@@ -565,7 +541,7 @@ def step (run : Run Variable Literal Symbol) : Status Variable Literal Symbol :=
       | some completed => .running completed
       | none =>
           match run.stack[position]? with
-          | some generator => engine.stepAt (engine.mark run generator) position generator
+          | some generator => engine.stepAt run position generator
           | none => .finished (outcomeOf run.gaps)
 
 /-- The outcome of a tabled run. `interrupted` keeps the run, whose top

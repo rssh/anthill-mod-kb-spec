@@ -171,10 +171,17 @@ def space (context : ProofContext Variable Literal Symbol) (goal : Formula Varia
     List (Term Variable Literal Symbol) :=
   universeOf setup.signature.constructors setup.clauses (goal :: context)
 
-/-- The Kripke–Kleene iteration over a universe: definitely and possibly true atoms. -/
+/-- The Kripke–Kleene iteration over a universe: definitely and possibly true
+atoms, stopped once a round changes nothing (`untilStable`), at most `rounds`
+rounds. Every round is sound, so the round it stops at is (`kleene_round`). -/
 def kleene (space : List (Term Variable Literal Symbol)) :
     List (GAtom Variable Literal Symbol) × List (AAtom Variable Literal Symbol) :=
-  kk setup.signature space setup.clauses (rounds setup.signature space)
+  untilStable (fun next current => decide (next.1 = current.1) && decide (next.2 = current.2))
+    (kkStep setup.signature space setup.clauses) (rounds setup.signature space) (kk setup.signature space setup.clauses 0)
+
+theorem kleene_round (space : List (Term Variable Literal Symbol)) :
+    ∃ round, setup.kleene space = kk setup.signature space setup.clauses round :=
+  untilStable_round _ _ _ (kk_succ _ _ _) _ 0
 
 /-- A ground operand refuted over a universe, the iteration's result given. -/
 def refutesInWith (space : List (Term Variable Literal Symbol))
@@ -206,7 +213,9 @@ theorem refutesIn_sound {space : List (Term Variable Literal Symbol)} {operand :
     (models : model.Models setup.snapshot.kb) (negation : model.ComplementNAF) (environment : Environment Variable Value) :
     ¬ model.Satisfies environment operand := by
   simp only [refutesIn, refutesInWith, Bool.and_eq_true] at refuted
-  exact refutes_sound (Completes.of_models (signature := setup.signature) (clauses := setup.clauses) models)
+  obtain ⟨round, roundEq⟩ := setup.kleene_round space
+  rw [roundEq] at refuted
+  exact refutes_sound (count := round) (Completes.of_models (signature := setup.signature) (clauses := setup.clauses) models)
     refuted.1 negation refuted.2 environment
 
 /-- NAF evidence by refutation: the operand fails in every model. -/
@@ -220,25 +229,36 @@ theorem refutesIn_naf {space : List (Term Variable Literal Symbol)} {operand : T
 variable (setup)
 
 /-- The check of NAF evidence: a universe over which the operand is refuted. -/
-def nafCheck : NafCheck setup.checkSnapshot semanticNaf where
-  check := fun _ operand evidence =>
-    match evidence with
-    | .app symbol space => decide (symbol = setup.tableSymbol) && setup.refutesIn space operand
-    | _ => false
+def nafCheck (space : List (Term Variable Literal Symbol)) : NafCheck setup.checkSnapshot semanticNaf where
+  check :=
+    let cached : Thunk _ := Thunk.mk fun _ => setup.kleene space
+    fun _ operand evidence =>
+      match evidence with
+      | .app symbol evidenceSpace =>
+          decide (symbol = setup.tableSymbol) &&
+            (if evidenceSpace = space then setup.refutesInWith space cached.get operand else setup.refutesIn evidenceSpace operand)
+      | _ => false
   sound := by
     intro context operand evidence accepted
+    dsimp only at accepted
     split at accepted
     · simp only [Bool.and_eq_true] at accepted
-      exact refutesIn_naf accepted.2 context
+      split at accepted
+      · rename_i same
+        subst same
+        exact refutesIn_naf accepted.2 context
+      · exact refutesIn_naf accepted.2 context
     · cases accepted
 
-/-- The checker of the fast fragment's proofs: NAF evidence by refutation. -/
-def checker : Checker Variable Literal Symbol := ⟨setup.checkSnapshot, semanticNaf, some setup.nafCheck, []⟩
+/-- The checker of the fast fragment's proofs: NAF evidence by refutation, the
+iteration over the query's universe run once for all its NAF nodes. -/
+def checker (space : List (Term Variable Literal Symbol)) : Checker Variable Literal Symbol :=
+  ⟨setup.checkSnapshot, semanticNaf, some (setup.nafCheck space), []⟩
 
 /-- A proof term of the goal under the context, checked. -/
 def checks (context : ProofContext Variable Literal Symbol) (goal : Formula Variable Literal Symbol)
     (proof : Term Variable Literal Symbol) : Bool :=
-  decide (checkProof setup.vocab setup.checker [] context goal proof = .accept)
+  decide (checkProof setup.vocab (setup.checker (setup.space context goal)) [] context goal proof = .accept)
 
 /-- The answer of a table with an atom in a context. -/
 def findAnswer (tables : List (Table Variable Literal Symbol)) (atom : Term Variable Literal Symbol)
@@ -306,9 +326,12 @@ denial body failing in both. -/
 def positiveWitnesses (space : List (Term Variable Literal Symbol)) (goal : Formula Variable Literal Symbol) :
     Option (Witness Variable Literal Symbol × Witness Variable Literal Symbol) :=
   let count := rounds setup.signature space
-  let fixed := kk setup.signature space setup.clauses count
-  let low := leastOver setup.signature space setup.clauses count
-  let high := greatestOver setup.signature space setup.clauses setup.fragment.unknownMarker count
+  let fixed := setup.kleene space
+  let low := untilStable (fun next current => decide (next = current)) (leastStep setup.signature space setup.clauses) count
+    (leastOver setup.signature space setup.clauses 0)
+  let high := untilStable (fun next current => decide (next = current))
+    (greatestStep setup.signature space setup.clauses setup.fragment.unknownMarker) count
+    (greatestOver setup.signature space setup.clauses setup.fragment.unknownMarker 0)
   if !setup.fragment.unknownMarker setup.hoApplySymbol && setup.covered && setup.positive &&
       positiveGoal setup.hoApplySymbol goal &&
       closedLeast setup.signature space setup.clauses low && failsLeast setup.signature space low goal &&
@@ -397,22 +420,21 @@ def inconsistentWith (kleene : List (GAtom Variable Literal Symbol) × List (AAt
   groundProgram setup.hoApplySymbol setup.signature setup.fragment.unknownMarker setup.clauses &&
     decide ((setup.undecidedWith kleene goal).length ≤ 8) && !(setup.assignmentsWith kleene goal).any setup.groundModel
 
-/-- The same obligation, at the same place: goal, scope, and trail. -/
-def sameClause : Option (HornClause Variable Literal Symbol) → Option (HornClause Variable Literal Symbol) → Bool
-  | none, none => true
-  | some (.definite head body), some (.definite head' body') => decide (head = head') && decide (body = body')
-  | some (.goal body), some (.goal body') => decide (body = body')
-  | _, _ => false
-
-def sameOrigin (first second : Origin Variable Literal Symbol) : Bool :=
-  decide (first.rule = second.rule) && decide (first.premise = second.premise) && sameClause first.clause second.clause
-
-def sameSite (gap other : Gap Variable Literal Symbol) : Bool :=
-  decide (gap.obligation.goal = other.obligation.goal) &&
-    decide (gap.obligation.scope.assumptions = other.obligation.scope.assumptions) &&
-    decide (gap.obligation.scope.rigids = other.obligation.scope.rigids) &&
-    decide (gap.trail.length = other.trail.length) &&
-    (gap.trail.zip other.trail).all fun pair => sameOrigin pair.1 pair.2
+/-- A checked model of the KB in which every denial body fails: an
+assignment of a ground program that is a fixpoint of its clauses
+(`groundModel`), or the closed abstract least fixpoint of a positive covered
+one (the `least` witness's check). Only for denials written `⊥ :- body`, which
+these checks read. -/
+def modelShown : Bool :=
+  let space := setup.space [] .truth
+  let low := untilStable (fun next current => decide (next = current)) (leastStep setup.signature space setup.clauses)
+    (rounds setup.signature space) (leastOver setup.signature space setup.clauses 0)
+  decide (setup.constraints.length = setup.denials.length) && validUniverse setup.signature.constructors space &&
+    ((groundProgram setup.hoApplySymbol setup.signature setup.fragment.unknownMarker setup.clauses &&
+        (setup.assignmentsWith (setup.kleene space) .truth).any setup.groundModel) ||
+      (!setup.fragment.unknownMarker setup.hoApplySymbol && setup.covered && setup.positive &&
+        closedLeast setup.signature space setup.clauses low &&
+        setup.denials.all fun body => failsLeast setup.signature space low (.conjunction body)))
 
 /-! ## The answer -/
 
@@ -424,18 +446,11 @@ def growing (run : Run Variable Literal Symbol) (context : ProofContext Variable
   | some generator => ⟨.reached generator.state.root.context [], [], generator.state.root.goal, .termination⟩
   | none => Blocker.interrupted context goal
 
-/-- The gaps worth naming: a bounded run's cut names its bound, and the
-unsupported gap the machine records for the same obligation at the same place
-is left out. -/
-def namedGaps (gaps : List (Gap Variable Literal Symbol)) : List (Gap Variable Literal Symbol) :=
-  let cuts := gaps.filter fun gap => gap.reason == .bounded
-  gaps.filter fun gap => !(gap.reason == .unsupported && cuts.any fun cut => sameSite cut gap)
-
 /-- The blockers of a completed run that answered nothing. -/
 def blockersOf (outcome : Machine.Outcome Variable Literal Symbol (Term Variable Literal Symbol) Unit)
     (goal : Formula Variable Literal Symbol) : List (Blocker Variable Literal Symbol) :=
   match outcome with
-  | .opened gaps | .abandoned gaps => (namedGaps gaps).map (Blocker.ofGap fun formula => [formula])
+  | .opened gaps | .abandoned gaps => gaps.map (Blocker.ofGap fun formula => [formula])
   | _ => [Blocker.unproved goal]
 
 /-- The answer after the tabled run, from its outcome. -/
@@ -467,12 +482,16 @@ def runOf (fuel : Nat) (context : ProofContext Variable Literal Symbol) (goal : 
 /-- What a denial's run says about the KB, its body closed existentially
 (`violation`): a proved body makes it inconsistent, whether or not its export
 checks; a run out of fuel, or one that abandoned a path, leaves its
-consistency open. -/
+consistency open, and so does one that met open atoms, unless a checked model
+of the KB shows it consistent (`modelShown`; decided with the user,
+2026-11-09): denials checked one at a time miss a joint inconsistency through
+open atoms. -/
 def denialBlocker (fuel : Nat) (body : List (Term Variable Literal Symbol)) : Option (Blocker Variable Literal Symbol) :=
   match setup.runOf fuel [] (violation body) with
   | .success _ _ => some ⟨.site .goal, [], .conjunction body, .consistency body⟩
   | .interrupted run => some (growing run [] (violation body))
   | .finished (.abandoned _) => some ⟨.site .goal, [], .conjunction body, .consistency body⟩
+  | .finished (.opened _) => if setup.modelShown then none else some ⟨.site .goal, [], .conjunction body, .consistency body⟩
   | .finished _ => none
 
 /-- The runtime consistency check (S23's boundary): every answer assumes a
@@ -518,10 +537,12 @@ def decided (context : ProofContext Variable Literal Symbol) (goal : Formula Var
 
 /-- What a denial's bounded run says about the KB, its body closed
 existentially: a proved body makes it inconsistent; a run that abandoned a
-path, its bounds among the reasons, leaves its consistency open. -/
+path, its bounds among the reasons, leaves its consistency open, and so does
+one that met open atoms unless a checked model shows the KB consistent. -/
 def denialBounded (body : List (Term Variable Literal Symbol)) : Option (Blocker Variable Literal Symbol) :=
   match setup.decided [] (violation body) with
   | .success _ _ | .finished (.abandoned _) => some ⟨.site .goal, [], .conjunction body, .consistency body⟩
+  | .finished (.opened _) => if setup.modelShown then none else some ⟨.site .goal, [], .conjunction body, .consistency body⟩
   | _ => none
 
 /-- A denial body admitted as a query of its own: its body closed
@@ -615,7 +636,8 @@ theorem checks_sound {context : ProofContext Variable Literal Symbol} {goal : Fo
     {model : Model Literal Symbol Value setup.hoApplySymbol} (models : model.Models setup.checkSnapshot.kb)
     (negation : model.ComplementNAF) : ∀ environment, model.ContextHolds environment context → model.Satisfies environment goal :=
   model.sound models (semanticNaf_adequate model models negation)
-    (checked_toDerives setup.vocab setup.checker ((checkProof_accept_iff setup.vocab setup.checker).mp (of_decide_eq_true checked)))
+    (checked_toDerives setup.vocab (setup.checker (setup.space context goal))
+      ((checkProof_accept_iff setup.vocab (setup.checker (setup.space context goal))).mp (of_decide_eq_true checked)))
 
 theorem proved_sound {proof : CompletedProof Variable Literal Symbol (Term Variable Literal Symbol) Unit}
     {resume : Run Variable Literal Symbol} {context : ProofContext Variable Literal Symbol} {goal : Formula Variable Literal Symbol}
@@ -735,8 +757,15 @@ theorem witnesses_sound {query : Tabled.Query Variable Literal Symbol}
         have markedTrue : ∀ symbol keys, setup.fragment.unknownMarker symbol = true → setup.highBase symbol keys := by
           intro symbol keys marker
           exact .inr ⟨setup.markers symbol marker, marker⟩
+        obtain ⟨highRound, highEq⟩ := untilStable_round _ _ _
+          (greatestOver_succ setup.signature (setup.space query.context (goalOf query)) setup.clauses setup.fragment.unknownMarker)
+          (rounds setup.signature (setup.space query.context (goalOf query))) 0
+        obtain ⟨fixedRound, fixedEq⟩ := setup.kleene_round (setup.space query.context (goalOf query))
         obtain ⟨highModels, highHolds⟩ := greatest_witness (base := setup.highBase) covered positive valid notMarker markedTrue
-          post (greatestOver_atoms _) (fun body member => denialsG body (mem_denials member)) goalPositive holdsG
+          post (by rw [highEq]; exact greatestOver_atoms _) (count := fixedRound)
+          (fun body member => by
+            show refutesWith _ _ _ _ = true
+            rw [← fixedEq]; exact denialsG body (mem_denials member)) goalPositive holdsG
         obtain ⟨lowModels, lowFails⟩ := least_witness (base := setup.lowBase) covered positive valid closedL
           (fun body member => denialsL body (mem_denials member)) failsL
         refine ⟨⟨_, _, ⟨highModels, Model.keys_complement _, realizes fun symbol keys isGuard => ?_⟩, _, contextHolds _, highHolds⟩,

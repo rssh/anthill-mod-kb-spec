@@ -106,7 +106,7 @@ A strategy maps the focused obligation and the store to a `Response`:
 | `candidates (e :: rest)` | OR alternatives. `e` is tried now; `rest` is saved with the current store, continuations, and deferred proofs |
 | `candidates []` | A miss on this path. The newest choice point resumes |
 | `unsupported` | No capability for this focus. The path is abandoned and recorded as a gap, never as failure |
-| `incomplete alternatives` | Both: the alternatives are tried as for `candidates`, and the focus is recorded as an unsupported gap for the candidates the strategy could not build (S06), so the run never reports exhaustion |
+| `incomplete alternatives reasons` | Both: the alternatives are tried as for `candidates`, and the focus is recorded as a gap for each reason, so the run never reports exhaustion: `unsupported` for candidates the strategy could not build (S06), `bounded` for those a bounded run left out (S24). The reasons are explicit, never defaulted |
 | `delay names` | The obligation waits until one of `names`, declared unbound flexible names, is bound ([delayed goals](machine-delay.md)) |
 | `negate certificate` | Negation as failure for a goal written `naf operand`, ground as read (`Store.groundNegation`): the operand runs in the same run behind a barrier; exhausted with no new gap and no delay, the obligation is proved by `defaultNegIntro certificate`; proved, the obligation fails; any delay in the operand's search makes it a gap ([S07](machine-p0.md#naf-in-the-machine)) |
 
@@ -162,7 +162,7 @@ freshening every template name is the strategy's responsibility.
 | `solve ob` | committed, premises `p :: ps` | push frame, focus `solve (ob.premise p)` |
 | `solve ob` | committed, suspensions woken | they run first, oldest first, each under a `woken` continuation; then the focus above |
 | `solve ob` | `unsupported` | `failed`, unsupported gap |
-| `solve ob` | `incomplete alternatives` | unsupported gap, then as for `candidates alternatives` |
+| `solve ob` | `incomplete alternatives reasons` | a gap per reason, then as for `candidates alternatives` |
 | `solve ob` | `delay names` | suspend `ob`, focus `proved (deferred id ob)`; an invalid delay is a contract gap |
 | `solve ob` | `negate c`, goal `naf operand`, ground as read | focus the operand under `ob`'s scope above a NAF entry; save a barrier focused on `ob` with the NAF node; another goal, or an operand or assumption that is not closed as read, is a contract gap |
 | `proved t` | no continuation, nothing pending | finished: `success` with `t`'s references filled by the deferred proofs, and a resume state |

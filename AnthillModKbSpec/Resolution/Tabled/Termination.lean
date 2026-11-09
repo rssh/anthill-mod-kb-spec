@@ -610,14 +610,16 @@ theorem fit_fits {bounds : Bounds Variable Literal Symbol} (bounded : engine.bou
   cases response with
   | candidates alternatives =>
       simp only [fitTo] at member
-      by_cases all : (alternatives.all fun expansion => decide (Fits engine.hoApplySymbol top expansion)) = true
-      · simp only [all, ↓reduceIte] at member
-        exact of_decide_eq_true (List.all_eq_true.mp all expansion member)
-      · simp only [all, Bool.false_eq_true, ↓reduceIte] at member
-        exact of_decide_eq_true (List.mem_filter.mp member).2
-  | incomplete alternatives =>
-      unfold fitTo at member
-      exact of_decide_eq_true (List.mem_filter.mp member).2
+      split at member
+      · rename_i whole
+        exact of_decide_eq_true (List.length_filter_eq_length_iff.mp whole expansion member)
+      · exact of_decide_eq_true (List.mem_filter.mp member).2
+  | incomplete alternatives reasons =>
+      simp only [fitTo] at member
+      split at member
+      · rename_i whole
+        exact of_decide_eq_true (List.length_filter_eq_length_iff.mp whole expansion member)
+      · exact of_decide_eq_true (List.mem_filter.mp member).2
   | negate certificate =>
       simp only [fitTo, Response.alternatives, List.mem_singleton] at member
       subst member
@@ -819,13 +821,7 @@ theorem step_rank {bounds : Bounds Variable Literal Symbol} (bounded : engine.bo
           rw [List.getElem?_eq_getElem bound] at found; exact Option.some.inj found
         have liveGenerator : State.done generator.state = false := by
           rw [← same]; simpa using live
-        obtain ⟨sameTables, sameStack⟩ := mark_same engine run generator
-        have rankEq : engine.rank bounds (engine.mark run generator) = engine.rank bounds run := by
-          simp only [rank, branches, points, sameStack]
-          rw [openCalls_congr (run := run) (other := engine.mark run generator) (by rw [sameTables]),
-            openAnswers_congr (run := run) (other := engine.mark run generator) (by rw [sameTables])]
-        rw [← rankEq]
-        exact engine.stepAt_rank bounded (by rw [sameStack]; exact found) liveGenerator stepped
+        exact engine.stepAt_rank bounded found liveGenerator stepped
       · cases stepped
 
 /-- The rank, ordered by `RunLower`. -/

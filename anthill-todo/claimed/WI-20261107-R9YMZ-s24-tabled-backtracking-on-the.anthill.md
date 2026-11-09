@@ -66,3 +66,11 @@ Review fixes (claude, 2026-11-08, after /code-review of the two S24 commits): gu
 
 Second review fixes (claude, 2026-11-09): beside a P1 query each denial body is admitted as its own query (denialQuery) and checked bounded only when P1, with the fuel otherwise (denialFor; decided with the user), so a bounded run is only ever given a P1 goal: a growing or universal denial no longer hangs or falsely blocks; answer_p1 takes the hypothesis that the KB's denials are P1. mark records a cut only where fit drops a candidate, or for a ground NAF cut by the bounds; an unsupported match of an out-of-bounds answer keeps its gap; namedGaps compares the whole obligation and trail. The Kripke-Kleene iteration is lazy per engine (Thunk) and shared by the refutation, the run's NAF, and the consistency path (refutesInWith, assignmentsWith, inconsistentWith). Not done: recording .bounded inside the machine instead of mark (needs a Response variant), and mark re-runs the strategy per bounded step.
 
+### 2026-11-09T15:49:38Z — feedback — user
+
+Bounded gaps in the machine (claude, 2026-11-09, decided with the user): Response.incomplete carries its gap reason (default unsupported); fit records what it drops as GapReason.bounded, a NAF whose call the bounds leave out answers incomplete [] bounded, and the machine records the gap where the cut happens. Engine.mark, cutAt, cut, and Setup.namedGaps are gone, with the per-step strategy rerun.
+
+### 2026-11-09T16:28:56Z — feedback — user
+
+Third review fixes (claude, 2026-11-09): Response.incomplete carries an explicit list of reasons (no default), so fit adds .bounded beside an unsupported match and no wrapper can lose it; NAF on an unknown marker answers opened; a denial run that met open atoms blocks unless a checked model shows the KB consistent (modelShown; decided with the user); the Kripke-Kleene iteration and the two fixpoints stop once a round changes nothing (untilStable, kleene_round), the engine computes it once on first use and the checker once per query universe. Correction to the earlier note: the iteration was not shared by the checker before this. Left: the duplicated NAF decision in stepAt and strategyCore, and answer's copy of schedule's consume match; Tests/ is outside lake build.
+

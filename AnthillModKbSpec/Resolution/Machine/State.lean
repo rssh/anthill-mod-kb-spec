@@ -20,13 +20,35 @@ structure Expansion (Variable Literal Symbol Certificate : Type) where
 def Expansion.rigids (expansion : Expansion Variable Literal Symbol Certificate) : List Variable :=
   expansion.premises.flatMap (fun premise => premise.discharge.rigids)
 
+/-- Why a path was abandoned without evidence either way. -/
+inductive GapReason where
+  /-- The strategy had no capability for the focus. -/
+  | unsupported
+  /-- A candidate or a delay broke the machine's name or binding contract. -/
+  | contract
+  /-- A delayed goal or an unresolved constraint was still pending when the
+  branch would have succeeded, or a goal running while the branch closed
+  needed a binding. -/
+  | floundered
+  /-- The obligation meets an open atom (`Response.opened`, S22). Not a missing
+  capability: the KB leaves the obligation open. It is recorded with the gaps,
+  so it blocks exhaustion and NAF barriers, and the outcome reports it apart. -/
+  | opened
+  /-- A bounded run's limit (S24): a candidate heavier than its focus, a NAF
+  whose call is outside the bounds, or an answer outside them left unscheduled
+  for a consumer. Not a missing capability: the run stopped short there. -/
+  | bounded
+  deriving DecidableEq, Repr
+
 /-- What a strategy answers for a focused obligation and the current store.
 `candidates []` is a miss for this path. `unsupported` means the strategy has no
 capability for this focus: the path is abandoned and recorded as a gap, and is
-never treated as failure of the goal. `incomplete alternatives` is both: the
-alternatives are tried as for `candidates`, and the focus is recorded as an
-`unsupported` gap for the candidates the strategy could not build, so the run
-never reports exhaustion. `delay names` means the obligation cannot
+never treated as failure of the goal. `incomplete alternatives reasons` is
+both: the alternatives are tried as for `candidates`, and the focus is
+recorded as a gap for each reason the strategy did not offer every candidate,
+so the run never reports exhaustion: `unsupported` for candidates it could not
+build, `bounded` for those a bounded run left out (S24). The reasons are
+explicit, never defaulted, so no wrapper rebuilding a response can lose one. `delay names` means the obligation cannot
 proceed until one of `names` is bound: it is suspended and the enclosing frame
 continues as if it were proved. Every name must be a declared, unbound flexible
 name, and there must be one; otherwise the answer breaks the contract.
@@ -47,7 +69,7 @@ the contract. -/
 inductive Response (Variable Literal Symbol Certificate : Type) where
   | candidates (alternatives : List (Expansion Variable Literal Symbol Certificate))
   | unsupported
-  | incomplete (alternatives : List (Expansion Variable Literal Symbol Certificate))
+  | incomplete (alternatives : List (Expansion Variable Literal Symbol Certificate)) (reasons : List GapReason)
   | delay (names : List Variable)
   | negate (certificate : Certificate)
   | opened
@@ -60,7 +82,7 @@ def Expansion.negation (certificate : Certificate) : Expansion Variable Literal 
 /-- The candidates a response offers: those of `candidates` and `incomplete`,
 and for `negate` the node its barrier builds after the operand is exhausted. -/
 def Response.alternatives : Response Variable Literal Symbol Certificate → List (Expansion Variable Literal Symbol Certificate)
-  | .candidates alternatives | .incomplete alternatives => alternatives
+  | .candidates alternatives | .incomplete alternatives _ => alternatives
   | .unsupported | .delay _ | .opened => []
   | .negate certificate => [Expansion.negation certificate]
 
@@ -82,25 +104,6 @@ structure Frame (Variable Literal Symbol Certificate : Type) where
   done : List (ProofTree Variable Literal Symbol Certificate)
   current : Premise Variable Literal Symbol
   pending : List (Premise Variable Literal Symbol)
-
-inductive GapReason where
-  /-- The strategy had no capability for the focus. -/
-  | unsupported
-  /-- A candidate or a delay broke the machine's name or binding contract. -/
-  | contract
-  /-- A delayed goal or an unresolved constraint was still pending when the
-  branch would have succeeded, or a goal running while the branch closed
-  needed a binding. -/
-  | floundered
-  /-- The obligation meets an open atom (`Response.opened`, S22). Not a missing
-  capability: the KB leaves the obligation open. It is recorded with the gaps,
-  so it blocks exhaustion and NAF barriers, and the outcome reports it apart. -/
-  | opened
-  /-- A bounded run's limit (S24): a call, an answer, or a candidate outside
-  the bounds that make the run end. Not a missing capability: the run stopped
-  short there. -/
-  | bounded
-  deriving DecidableEq, Repr
 
 /-- One step of an obligation's provenance: a frame on the way from the root,
 by its rule, the clause it selects if it is a clause node, and the position of
@@ -768,10 +771,15 @@ def step (strategy : Strategy Variable Literal Symbol Certificate) (state : Stat
       match strategy obligation state.store with
       | .candidates [] => .running { state with focus := .failed }
       | .candidates (expansion :: rest) => .running (state.enter obligation expansion rest)
-      | .unsupported | .incomplete [] =>
+      | .unsupported =>
           .running { state with focus := .failed, gaps := ⟨.unsupported, obligation, trailOf state.frames⟩ :: state.gaps }
-      | .incomplete (expansion :: rest) =>
-          .running ({ state with gaps := ⟨.unsupported, obligation, trailOf state.frames⟩ :: state.gaps }.enter
+      | .incomplete [] reasons =>
+          .running
+            { state with
+              focus := .failed
+              gaps := reasons.map (fun reason => (⟨reason, obligation, trailOf state.frames⟩ : Gap Variable Literal Symbol)) ++ state.gaps }
+      | .incomplete (expansion :: rest) reasons =>
+          .running ({ state with gaps := reasons.map (fun reason => (⟨reason, obligation, trailOf state.frames⟩ : Gap Variable Literal Symbol)) ++ state.gaps }.enter
             obligation expansion rest)
       | .delay names =>
           if state.store.delayable names then
@@ -1398,7 +1406,7 @@ theorem step_valid (strategy : Strategy Variable Literal Symbol Certificate)
     · cases stepped; exact ⟨⟨branch.fail, valid.choices⟩, rfl⟩
     · cases stepped; exact ⟨⟨branch.fail, valid.choices⟩, rfl⟩
     · cases stepped
-      exact ⟨State.enter_valid (state := { state with gaps := _ :: state.gaps }) branch valid.choices,
+      exact ⟨State.enter_valid (state := { state with gaps := _ ++ state.gaps }) branch valid.choices,
         State.enter_root _ _ _ _⟩
     · split at stepped
       · rename_i delayable
@@ -1775,13 +1783,13 @@ theorem step_gaps (strategy : Strategy Variable Literal Symbol Certificate)
     · cases stepped; exact ⟨[], rfl⟩
     · cases stepped; exact State.enter_gaps _ _ _ _
     · cases stepped; exact ⟨[_], rfl⟩
-    · cases stepped; exact ⟨[_], rfl⟩
+    · cases stepped; exact ⟨_, rfl⟩
     · cases stepped
-      rename_i obligation _ _ expansion rest _
+      rename_i obligation _ _ expansion rest reasons _
       obtain ⟨added, addedEq⟩ :=
-        State.enter_gaps { state with gaps := ⟨.unsupported, obligation, trailOf state.frames⟩ :: state.gaps }
+        State.enter_gaps { state with gaps := reasons.map (fun reason => (⟨reason, obligation, trailOf state.frames⟩ : Gap Variable Literal Symbol)) ++ state.gaps }
           obligation expansion rest
-      exact ⟨added ++ [⟨.unsupported, obligation, trailOf state.frames⟩], by rw [addedEq]; simp⟩
+      exact ⟨added ++ reasons.map (fun reason => ⟨reason, obligation, trailOf state.frames⟩), by rw [addedEq]; simp⟩
     · split at stepped
       · cases stepped; exact ⟨[], rfl⟩
       · cases stepped; exact ⟨[_], rfl⟩
