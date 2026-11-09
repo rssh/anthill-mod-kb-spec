@@ -3,9 +3,9 @@
 - id: WI-20261103-2QMVP-s20-use-checked-lemmas-inside
 - created: 2026-11-03T12:17:57Z
 
-- status: Claimed
+- status: Delivered
 - status_agent: claude
-- status_at: 2026-11-09T17:51:54Z
+- status_at: 2026-11-09T18:28:05Z
 
 - acceptance: lake build
 
