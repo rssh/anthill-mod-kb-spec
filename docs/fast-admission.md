@@ -224,6 +224,7 @@ deterministic when they are.
 - **Consistency.** P1 answers are Yes, No, or Unknown for a consistent KB. A
   denial (`⊥ :- body` or `false :- body`) with an instance of its body proved,
   or its run unsettled, makes every answer Undecided; S24 checks it at run time
-  (`Setup.denialCheckBounded` for a P1 query, `Setup.denialCheck` with fuel
-  for a P2 one).
+  (beside a P1 query, each denial body as its own profile says: bounded when
+  it is P1, with fuel otherwise, `Setup.denialFor`; with fuel beside a P2
+  query, `Setup.denialCheck`).
 - **Dictionary operations** are blockers until S14 evaluates them.

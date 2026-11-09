@@ -413,7 +413,8 @@ def answer (run : Run Variable Literal Symbol) (index : Nat) (atom : Term Variab
             else
               match engine.consume waiter.obligation waiter.store table.call atom with
               | some (some _) => some ⟨.bounded, waiter.obligation, trailOf waiter.frames⟩
-              | _ => none)
+              | some none => none
+              | none => some ⟨.unsupported, waiter.obligation, trailOf waiter.frames⟩)
         { tables := updateTable run.tables index fun table => { table with answers := table.answers ++ [⟨atom, proof⟩] }
           stack := scheduled.1
           gaps := scheduled.2 ++ run.gaps }
@@ -519,15 +520,19 @@ def stepAt (run : Run Variable Literal Symbol) (position : Nat) (generator : Gen
             | _ => engine.advance run position generator (engine.strategy run.tables)
   | _ => engine.advance run position generator (engine.strategy run.tables)
 
-/-- A bounded run's cut at a focus, weighed `top`: a call outside its bounds,
-or an alternative of the unfitted strategy that does not fit. -/
+/-- A bounded run's cut at a focus, weighed `top`: an alternative of the
+unfitted strategy that does not fit, which `fit` drops; or a ground NAF whose
+operand's call would be tabled but for the bounds, which the strategy leaves
+unsupported. A call outside the bounds runs untabled, and is cut only where
+`fit` drops one of its candidates. -/
 def cut (strategy : Strategy Variable Literal Symbol (Term Variable Literal Symbol)) (top : Nat)
     (obligation : Obligation Variable Literal Symbol) (store : Store Variable Literal Symbol) : Bool :=
   engine.bounds.isSome &&
     ((strategy obligation store).alternatives.any (fun expansion => !decide (Fits engine.hoApplySymbol top expansion)) ||
       match store.resolve obligation.goal with
-      | .app symbol args =>
-          (engine.callOfAtom store symbol args obligation.scope.assumptions).isNone &&
+      | .defaultNeg (.app symbol args) =>
+          closedTerm (.app symbol args) && !engine.refutes (.app symbol args) &&
+            (engine.callOfAtom store symbol args obligation.scope.assumptions).isNone &&
             ({ engine with bounds := none }.callOfAtom store symbol args obligation.scope.assumptions).isSome
       | _ => false)
 

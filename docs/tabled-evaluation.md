@@ -59,7 +59,7 @@ runtime checks keep a run within the bounds (decided with the user,
 
 | Check | What a bounded run does |
 | --- | --- |
-| A call's predicate, inputs, and context drawn from the bounds, the context without repeats (`admits`) | Otherwise the call is not tabled, and is a gap (`GapReason.bounded`) |
+| A call's predicate, inputs, and context drawn from the bounds, the context without repeats (`admits`) | Otherwise the call is not tabled: it runs by the positive strategy, and is cut where `fit` drops one of its candidates; a ground NAF on it is cut too (`GapReason.bounded`) |
 | An answer within the bounds (`inSpace`) | Scheduled to the consumers waiting; otherwise recorded for consumers still to come, and each consumer waiting that it would serve is a gap |
 | A candidate lighter than its focus (`fit`): its premises weigh less than the goal (`Fits`), a generator's root more than every clause body (`rootWeight`) | Otherwise dropped, and the focus is a gap (`incomplete`) |
 
@@ -122,9 +122,13 @@ with complement NAF that realize the admission signature (`Setup.meaning`).
 | **Unknown** | The run completed, and two witnesses check | `greatest` and `least` for a positive program, two `assignment`s for a ground one |
 | **Undecided** | Admission's blockers; a denial (`⊥ :- body` or `false :- body`) with an instance of its body proved, or its run unsettled (`constraints`, `violation`); fuel exhausted (P2), naming the call being evaluated; no witness, naming the run's gaps; a ground program none of whose assignments of its undecided atoms is a model, all of them tried, the KB's consistency naming those atoms | Blockers |
 
-A P1 query runs bounded, without fuel (`Setup.decided`), its denials too
-(`denialCheckBounded`); a P2 query with the fuel (`Setup.runOf`). Every answer's
-evidence is checked independently of the run, so soundness holds for both.
+A P1 query runs bounded, without fuel (`Setup.decided`); a P2 query with the
+fuel (`Setup.runOf`). Beside a P1 query each denial body is admitted as a
+query of its own (`denialQuery`, decided with the user, 2026-11-09): a P1 body
+runs bounded, any other with the fuel (`denialFor`), so a bounded run is only
+ever given a P1 goal, and a P1 answer depends on the fuel only through its
+KB's denials that are not P1. Every answer's evidence is checked
+independently of the run, so soundness holds for both.
 
 ### No: the Kripke–Kleene iteration over abstract values
 
@@ -178,7 +182,7 @@ realizes a separated admission signature (`realizes`).
 | Every machine step, with alternatives lighter than the focus, lowers the branch weights | `step_lower` |
 | Every transition of a bounded run lowers its rank; the rank is well-founded | `Engine.step_rank`, `RunLower.wellFounded`, `Lower.wellFounded` |
 | A bounded run ends without fuel, is never interrupted, and is the run with some fuel | `Engine.runToEnd`, `Engine.runToEnd_ended`, `Engine.runToEnd_fuel` |
-| A P1 answer is the same for every fuel; its run is never interrupted | `Setup.answer_p1`, `Setup.decided_ended` |
+| A P1 answer is the same for every fuel when its KB's denials are P1 too; its run is never interrupted | `Setup.answer_p1`, `Setup.decided_ended` |
 
 ## Traces
 
@@ -200,7 +204,9 @@ realizes a separated admission signature (`realizes`).
 | `path(a, b)`, P1, with fuel 0; 9000 | Yes; Yes: no fuel needed |
 | `p :- ¬q. q :- ¬p.`, P2, with fuel 5; 300; 9000 | Undecided; Unknown; Unknown |
 | The bounded run of `p(X) :- p(succ(X))` from `p(zero)`, its terms cut at six nodes | Ends, abandoned: the growing call leaves the bounds; the blocker is a termination limit |
-| `∃Y. path(a, Y)` over the cycle, bounded | Four tables, among the bounds' calls |
+| `∃Y. path(a, Y)` over the cycle, bounded | Four tables, one per distinct call |
+| `p(X) :- ¬q(succ⁶(X)). q(Y).`, its terms cut at six nodes | The NAF is cut: a termination limit, not a construct |
+| Beside a P1 query: a growing denial `⊥ :- p(zero)` over `p(X) :- p(succ(X))`; `⊥ :- (∀X. q(X)), t.` with `q(Y)`; `⊥ :- (s → (s → s)), t.` | Undecided by the fuel, naming the growing call; Yes; Yes: each denial body checked as its own profile says |
 | `path(X, c)`, `X` a rigid parameter, left recursion over the cycle | P1; the run ends (plain SLD on the call looped); No |
 | `path(X, a)`, `X` rigid | The run ends; Undecided: neither derived for every `X` nor refuted, and witnesses with parameters are S26's |
 | `q(a) :- unknown`: `q(a)`; `¬q(a)` | Unknown; Unknown, with no refutation run |

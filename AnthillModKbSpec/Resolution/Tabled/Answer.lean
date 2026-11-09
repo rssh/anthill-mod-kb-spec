@@ -171,10 +171,20 @@ def space (context : ProofContext Variable Literal Symbol) (goal : Formula Varia
     List (Term Variable Literal Symbol) :=
   universeOf setup.signature.constructors setup.clauses (goal :: context)
 
+/-- The Kripke–Kleene iteration over a universe: definitely and possibly true atoms. -/
+def kleene (space : List (Term Variable Literal Symbol)) :
+    List (GAtom Variable Literal Symbol) × List (AAtom Variable Literal Symbol) :=
+  kk setup.signature space setup.clauses (rounds setup.signature space)
+
+/-- A ground operand refuted over a universe, the iteration's result given. -/
+def refutesInWith (space : List (Term Variable Literal Symbol))
+    (fixed : List (GAtom Variable Literal Symbol) × List (AAtom Variable Literal Symbol))
+    (operand : Term Variable Literal Symbol) : Bool :=
+  validUniverse setup.signature.constructors space && refutesWith setup.signature space fixed operand
+
 /-- A ground operand refuted over a universe. -/
 def refutesIn (space : List (Term Variable Literal Symbol)) (operand : Term Variable Literal Symbol) : Bool :=
-  validUniverse setup.signature.constructors space &&
-    refutes setup.signature space setup.clauses (rounds setup.signature space) operand
+  setup.refutesInWith space (setup.kleene space) operand
 
 /-- The engine of a query, its refutations over the query's universe. -/
 def engine (space : List (Term Variable Literal Symbol)) : Engine Variable Literal Symbol where
@@ -184,8 +194,8 @@ def engine (space : List (Term Variable Literal Symbol)) : Engine Variable Liter
   unknownMarker := setup.fragment.unknownMarker
   tableSymbol := setup.tableSymbol
   refutes :=
-    let fixed := kk setup.signature space setup.clauses (rounds setup.signature space)
-    fun operand => validUniverse setup.signature.constructors space && refutesWith setup.signature space fixed operand
+    let fixed : Thunk _ := Thunk.mk fun _ => setup.kleene space
+    fun operand => setup.refutesInWith space fixed.get operand
   evidence := fun _ => .app setup.tableSymbol space
 
 variable {setup}
@@ -195,7 +205,7 @@ theorem refutesIn_sound {space : List (Term Variable Literal Symbol)} {operand :
     (refuted : setup.refutesIn space operand = true) {Value : Type} {model : Model Literal Symbol Value setup.hoApplySymbol}
     (models : model.Models setup.snapshot.kb) (negation : model.ComplementNAF) (environment : Environment Variable Value) :
     ¬ model.Satisfies environment operand := by
-  simp only [refutesIn, Bool.and_eq_true] at refuted
+  simp only [refutesIn, refutesInWith, Bool.and_eq_true] at refuted
   exact refutes_sound (Completes.of_models (signature := setup.signature) (clauses := setup.clauses) models)
     refuted.1 negation refuted.2 environment
 
@@ -334,19 +344,24 @@ def undecidedWith (kleene : List (GAtom Variable Literal Symbol) × List (AAtom 
 /-- The ground atoms the Kripke–Kleene iteration leaves undecided. -/
 def undecidedAtoms (space : List (Term Variable Literal Symbol)) (goal : Formula Variable Literal Symbol) :
     List (GAtom Variable Literal Symbol) :=
-  setup.undecidedWith (kk setup.signature space setup.clauses (rounds setup.signature space)) goal
+  setup.undecidedWith (setup.kleene space) goal
 
-/-- Assignments of a ground program's open atoms: the definitely true ones
-with the others, every way when there are few, otherwise all, none, or one. -/
-def assignments (space : List (Term Variable Literal Symbol)) (goal : Formula Variable Literal Symbol) :
-    List (List (GAtom Variable Literal Symbol)) :=
-  let kleene := kk setup.signature space setup.clauses (rounds setup.signature space)
+/-- Assignments of a ground program's open atoms, the iteration's result
+given: the definitely true ones with the others, every way when there are few,
+otherwise all, none, or one. -/
+def assignmentsWith (kleene : List (GAtom Variable Literal Symbol) × List (AAtom Variable Literal Symbol))
+    (goal : Formula Variable Literal Symbol) : List (List (GAtom Variable Literal Symbol)) :=
   let atoms := setup.groundAtoms goal
   let definitely := atoms.filter fun atom => decide (atom ∈ kleene.1)
   let undecided := setup.undecidedWith kleene goal
   let choices := if undecided.length ≤ 8 then subsets undecided
     else [undecided, []] ++ undecided.map (fun atom => [atom]) ++ undecided.map (fun atom => undecided.erase atom)
   choices.map (definitely ++ ·)
+
+/-- Assignments of a ground program's open atoms over a universe. -/
+def assignments (space : List (Term Variable Literal Symbol)) (goal : Formula Variable Literal Symbol) :
+    List (List (GAtom Variable Literal Symbol)) :=
+  setup.assignmentsWith (setup.kleene space) goal
 
 /-- An assignment of a ground program that is a fixpoint with every denial
 body false. -/
@@ -377,9 +392,27 @@ def witnesses (context : ProofContext Variable Literal Symbol) (goal : Formula V
 /-- A ground program none of whose assignments of the undecided atoms is a
 model, every assignment tried (at most eight undecided atoms): its completion
 may be inconsistent (`p :- ¬p`). -/
-def inconsistent (space : List (Term Variable Literal Symbol)) (goal : Formula Variable Literal Symbol) : Bool :=
+def inconsistentWith (kleene : List (GAtom Variable Literal Symbol) × List (AAtom Variable Literal Symbol))
+    (goal : Formula Variable Literal Symbol) : Bool :=
   groundProgram setup.hoApplySymbol setup.signature setup.fragment.unknownMarker setup.clauses &&
-    decide ((setup.undecidedAtoms space goal).length ≤ 8) && !(setup.assignments space goal).any setup.groundModel
+    decide ((setup.undecidedWith kleene goal).length ≤ 8) && !(setup.assignmentsWith kleene goal).any setup.groundModel
+
+/-- The same obligation, at the same place: goal, scope, and trail. -/
+def sameClause : Option (HornClause Variable Literal Symbol) → Option (HornClause Variable Literal Symbol) → Bool
+  | none, none => true
+  | some (.definite head body), some (.definite head' body') => decide (head = head') && decide (body = body')
+  | some (.goal body), some (.goal body') => decide (body = body')
+  | _, _ => false
+
+def sameOrigin (first second : Origin Variable Literal Symbol) : Bool :=
+  decide (first.rule = second.rule) && decide (first.premise = second.premise) && sameClause first.clause second.clause
+
+def sameSite (gap other : Gap Variable Literal Symbol) : Bool :=
+  decide (gap.obligation.goal = other.obligation.goal) &&
+    decide (gap.obligation.scope.assumptions = other.obligation.scope.assumptions) &&
+    decide (gap.obligation.scope.rigids = other.obligation.scope.rigids) &&
+    decide (gap.trail.length = other.trail.length) &&
+    (gap.trail.zip other.trail).all fun pair => sameOrigin pair.1 pair.2
 
 /-! ## The answer -/
 
@@ -392,11 +425,11 @@ def growing (run : Run Variable Literal Symbol) (context : ProofContext Variable
   | none => Blocker.interrupted context goal
 
 /-- The gaps worth naming: a bounded run's cut names its bound, and the
-unsupported gap the machine records for the same goal is left out. -/
+unsupported gap the machine records for the same obligation at the same place
+is left out. -/
 def namedGaps (gaps : List (Gap Variable Literal Symbol)) : List (Gap Variable Literal Symbol) :=
   let cuts := gaps.filter fun gap => gap.reason == .bounded
-  gaps.filter fun gap =>
-    !(gap.reason == .unsupported && cuts.any fun cut => decide (cut.obligation.goal = gap.obligation.goal))
+  gaps.filter fun gap => !(gap.reason == .unsupported && cuts.any fun cut => sameSite cut gap)
 
 /-- The blockers of a completed run that answered nothing. -/
 def blockersOf (outcome : Machine.Outcome Variable Literal Symbol (Term Variable Literal Symbol) Unit)
@@ -414,14 +447,16 @@ def answerFrom (context : ProofContext Variable Literal Symbol) (goal : Formula 
       | some term => .yes term
       | none => .undecided [Blocker.unproved goal]
   | .finished outcome =>
-      if setup.refutesIn (setup.space context goal) goal then .no (.app setup.tableSymbol (setup.space context goal))
+      if setup.refutesInWith (setup.space context goal) (setup.kleene (setup.space context goal)) goal then
+        .no (.app setup.tableSymbol (setup.space context goal))
       else
         match setup.witnesses context goal with
         | some (holds, fails) => .unknown holds fails
         | none =>
-            if context.isEmpty && setup.inconsistent (setup.space context goal) goal then
+            if context.isEmpty && setup.inconsistentWith (setup.kleene (setup.space context goal)) goal then
               .undecided [⟨.site .goal, [], goal,
-                .consistency ((setup.undecidedAtoms (setup.space context goal) goal).map fun atom => .app atom.1 atom.2)⟩]
+                .consistency ((setup.undecidedWith (setup.kleene (setup.space context goal)) goal).map
+                  fun atom => .app atom.1 atom.2)⟩]
             else .undecided (blockersOf outcome goal)
 
 /-- The tabled run of a query's goal, with fuel. -/
@@ -489,9 +524,16 @@ def denialBounded (body : List (Term Variable Literal Symbol)) : Option (Blocker
   | .success _ _ | .finished (.abandoned _) => some ⟨.site .goal, [], .conjunction body, .consistency body⟩
   | _ => none
 
-/-- The runtime consistency check of a P1 query's KB, without fuel. -/
-def denialCheckBounded : Option (Blocker Variable Literal Symbol) :=
-  setup.constraints.findSome? setup.denialBounded
+/-- A denial body admitted as a query of its own: its body closed
+existentially, no assumption. -/
+def denialQuery (body : List (Term Variable Literal Symbol)) : Tabled.Query Variable Literal Symbol :=
+  ⟨[], violation body, []⟩
+
+/-- A denial's check beside a P1 query (decided with the user, 2026-11-09):
+bounded and without fuel when its body is P1 itself, with the fuel otherwise.
+A bounded run is only ever given a P1 goal. -/
+def denialFor (fuel : Nat) (body : List (Term Variable Literal Symbol)) : Option (Blocker Variable Literal Symbol) :=
+  if (setup.fragment.admit (denialQuery body)).isP1 then setup.denialBounded body else setup.denialBlocker fuel body
 
 /-- The goal a query answers: its answer names existentially closed. -/
 def goalOf (query : Tabled.Query Variable Literal Symbol) : Formula Variable Literal Symbol :=
@@ -506,7 +548,7 @@ def runFor (fuel : Nat) (query : Tabled.Query Variable Literal Symbol) : Engine.
 /-- The consistency check of a query's KB: bounded for a P1 query, with the
 fuel otherwise. -/
 def denialsFor (fuel : Nat) (query : Tabled.Query Variable Literal Symbol) : Option (Blocker Variable Literal Symbol) :=
-  if (setup.fragment.admit query).isP1 then setup.denialCheckBounded else setup.denialCheck fuel
+  if (setup.fragment.admit query).isP1 then setup.constraints.findSome? (setup.denialFor fuel) else setup.denialCheck fuel
 
 /-- The module's answer to a query of the fast fragment: its admission's
 blockers, the KB's consistency, or the answer of its run, for its goal with
@@ -802,6 +844,26 @@ theorem denialCheck_more {fuel : Nat} (none_ : setup.denialCheck fuel = none) (e
   rw [List.findSome?_eq_none_iff] at none_ ⊢
   exact fun body member => setup.denialBlocker_more (none_ body member) extra
 
+theorem findSome?_congr {α β : Type} {items : List α} {first second : α → Option β}
+    (same : ∀ item ∈ items, first item = second item) : items.findSome? first = items.findSome? second := by
+  induction items with
+  | nil => rfl
+  | cons item rest ih =>
+      simp only [List.findSome?_cons, same item List.mem_cons_self,
+        ih fun other member => same other (List.mem_cons_of_mem _ member)]
+
+theorem denialFor_more {fuel : Nat} {body : List (Term Variable Literal Symbol)}
+    (none_ : setup.denialFor fuel body = none) (extra : Nat) : setup.denialFor (fuel + extra) body = none := by
+  unfold denialFor at none_ ⊢
+  split
+  · rename_i p1; simp only [p1, ↓reduceIte] at none_; exact none_
+  · rename_i notP1; simp only [notP1, Bool.false_eq_true, ↓reduceIte] at none_; exact setup.denialBlocker_more none_ extra
+
+theorem denialsFor_more {fuel : Nat} (none_ : setup.constraints.findSome? (setup.denialFor fuel) = none) (extra : Nat) :
+    setup.constraints.findSome? (setup.denialFor (fuel + extra)) = none := by
+  rw [List.findSome?_eq_none_iff] at none_ ⊢
+  exact fun body member => setup.denialFor_more (none_ body member) extra
+
 /-- **Answers are monotone in the fuel**: Yes, No, and Unknown never change
 with more fuel; only Undecided can. -/
 theorem answer_mono {fuel : Nat} {query : Tabled.Query Variable Literal Symbol}
@@ -814,7 +876,11 @@ theorem answer_mono {fuel : Nat} {query : Tabled.Query Variable Literal Symbol}
     rw [notBlocked] at decided
     dsimp only at decided ⊢
     cases p1 : (setup.fragment.admit query).isP1 with
-    | true => simp only [denialsFor, runFor, p1, ↓reduceIte]
+    | true =>
+        simp only [denialsFor, runFor, p1, ↓reduceIte] at decided ⊢
+        cases checked : setup.constraints.findSome? (setup.denialFor fuel) with
+        | some blocker => rw [checked] at decided; simp [Answer.decided] at decided
+        | none => rw [setup.denialsFor_more checked extra]
     | false =>
         simp only [denialsFor, runFor, p1, Bool.false_eq_true, ↓reduceIte] at decided ⊢
         cases checked : setup.denialCheck fuel with
@@ -833,11 +899,15 @@ theorem answer_mono {fuel : Nat} {query : Tabled.Query Variable Literal Symbol}
             rw [more]
 
 /-- **A P1 query needs no fuel**: its run is bounded and never interrupted
-(`decided_ended`), and its answer is the same whatever the fuel. -/
+(`decided_ended`), and, when its KB's denials are P1 too, its answer is the
+same whatever the fuel. A denial that is not P1 is checked with the fuel. -/
 theorem answer_p1 {query : Tabled.Query Variable Literal Symbol} (p1 : (setup.fragment.admit query).isP1 = true)
+    (denials : ∀ body ∈ setup.constraints, (setup.fragment.admit (denialQuery body)).isP1 = true)
     (fuel other : Nat) : setup.answer fuel query = setup.answer other query := by
   unfold answer
   simp only [denialsFor, runFor, p1, ↓reduceIte]
+  rw [findSome?_congr fun body member => show setup.denialFor fuel body = setup.denialFor other body by
+    simp only [denialFor, denials body member, ↓reduceIte]]
 
 theorem decided_ended (context : ProofContext Variable Literal Symbol) (goal : Formula Variable Literal Symbol) :
     ∀ final, setup.decided context goal ≠ .interrupted final :=

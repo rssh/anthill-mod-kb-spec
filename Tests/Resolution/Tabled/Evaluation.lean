@@ -101,10 +101,14 @@ def witnessKinds : TabledAnswer Nat Nat Sym → List String
       | .assignment _ => "assignment"
   | _ => []
 
+/-- What each blocker lacks. -/
+def blockerKinds (blockers : List (Blocker Nat Nat Sym)) : List String :=
+  blockers.map fun blocker => match blocker.missing with
+    | .proof => "proof" | .mode => "mode" | .termination => "termination"
+    | .construct _ => "construct" | .witnesses _ => "witnesses" | .consistency _ => "consistency"
+
 def missingKinds : TabledAnswer Nat Nat Sym → List String
-  | .undecided blockers => blockers.map fun blocker => match blocker.missing with
-      | .proof => "proof" | .mode => "mode" | .termination => "termination"
-      | .construct _ => "construct" | .witnesses _ => "witnesses" | .consistency _ => "consistency"
+  | .undecided blockers => blockerKinds blockers
   | _ => []
 
 /-- The formulas an Undecided answer's blockers name. -/
@@ -249,8 +253,8 @@ def loopNaf : List Clause := [rule (k .p) [naf (k .q)], rule (k .q) [naf (k .p)]
 /-- A query's bounded run with its data terms cut at `size` nodes: the setup's
 own limit is generous, so that a P1 run never meets it; a growing program
 reaches any limit, and these traces use a small one. -/
-def smallRun (clauses : List Clause) (goal : T) (size : Nat) : Engine.Outcome Nat Nat Sym :=
-  let setup := setupOf clauses goal
+def smallRun (clauses : List Clause) (goal : T) (size : Nat) (declared : Modes Sym := modes) : Engine.Outcome Nat Nat Sym :=
+  let setup := setupOf clauses goal declared
   let engine : Engine Nat Nat Sym := { setup.engine (setup.space [] goal) with bounds := some { setup.bounds [] goal with size } }
   engine.runToEnd (bounds := { setup.bounds [] goal with size }) rfl (Engine.start [] goal)
 
@@ -264,13 +268,7 @@ def outcomeKind : Engine.Outcome Nat Nat Sym → String
 
 /-- The outcome of a query's bounded run. -/
 def decidedKind (clauses : List Clause) (goal : T) : String :=
-  match (setupOf clauses goal).decided [] goal with
-  | .success _ _ => "success"
-  | .interrupted _ => "interrupted"
-  | .finished .exhausted => "exhausted"
-  | .finished (.opened _) => "opened"
-  | .finished (.abandoned _) => "abandoned"
-  | .finished _ => "finished"
+  outcomeKind ((setupOf clauses goal).decided [] goal)
 
 /-- The tables a bounded run opens. -/
 def decidedTables (clauses : List Clause) (goal : T) : Nat :=
@@ -387,16 +385,42 @@ def fiveLoops : List Clause :=
 
 /-! ## A bounded run's cut names its bound -/
 
-def smallBlockers (clauses : List Clause) (goal : T) (size : Nat) : List String :=
-  match smallRun clauses goal size with
-  | .finished outcome => (Tabled.Setup.blockersOf outcome goal).map fun blocker => match blocker.missing with
-      | .proof => "proof" | .mode => "mode" | .termination => "termination"
-      | .construct _ => "construct" | .witnesses _ => "witnesses" | .consistency _ => "consistency"
+def smallBlockers (clauses : List Clause) (goal : T) (size : Nat) (declared : Modes Sym := modes) : List String :=
+  match smallRun clauses goal size declared with
+  | .finished outcome => blockerKinds (Tabled.Setup.blockersOf outcome goal)
   | _ => []
 
 -- The growing call `p(succ(…))` leaves the bounds: the blocker is a
 -- termination limit, not a construct.
 #guard (smallBlockers grow (atom .p [k .zero]) 6).contains "termination"
 #guard !(smallBlockers grow (atom .p [k .zero]) 6).contains "construct"
+
+-- A NAF cut by the bounds names the bound too.
+#guard (smallBlockers [rule (atom .p [v 0]) [naf (atom .q [succ (succ (succ (succ (succ (succ (v 0))))))])],
+  fact (atom .q [v 1])] (atom .p [k .zero]) 6 (declared := oneInput)).contains "termination"
+#guard !(smallBlockers [rule (atom .p [v 0]) [naf (atom .q [succ (succ (succ (succ (succ (succ (v 0))))))])],
+  fact (atom .q [v 1])] (atom .p [k .zero]) 6 (declared := oneInput)).contains "construct"
+
+/-! ## Denials beside a P1 query -/
+
+open Mode in
+def denialModes : Modes Sym
+  | .p | .q => some [input]
+  | .r | .s | .t => some []
+  | _ => none
+
+-- A denial whose body is not P1 is checked with the fuel, not bounded: a
+-- growing denial body ends with the fuel, naming its growing call.
+#guard profileKind [rule (atom .p [v 0]) [atom .p [succ (v 0)]], .goal [atom .p [k .zero]], fact (k .r)] (k .r)
+  (declared := denialModes) == "p1"
+#guard missingKinds (answerOf [rule (atom .p [v 0]) [atom .p [succ (v 0)]], .goal [atom .p [k .zero]], fact (k .r)] (k .r)
+  (fuel := 300) (declared := denialModes)) == ["termination"]
+-- `⊥ :- (∀X. q(X)), t.` with `q(Y)`: the universal makes the body P2, run with
+-- the fuel; `t` fails, so the KB is consistent and `r` is Yes.
+#guard kindOf (answerOf [.goal [.forallVar 3 (atom .q [v 3]), k .t], fact (atom .q [v 4]), fact (k .r)] (k .r)
+  (declared := denialModes)) == "yes"
+-- `⊥ :- (s → (s → s)), t.`: the call `s` in the context `[s, s]` is outside
+-- the bounds but answered by its assumption, so nothing is cut: `r` is Yes.
+#guard kindOf (answerOf [.goal [.imp (k .s) (.imp (k .s) (k .s)), k .t], fact (k .r)] (k .r) (declared := denialModes)) == "yes"
 
 end TabledEvaluationTests
