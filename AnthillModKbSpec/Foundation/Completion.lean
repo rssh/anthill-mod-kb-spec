@@ -31,8 +31,10 @@ symbol that has no clauses and no completion: the case it adds to `p`'s
 completion is never refuted. Only predicates whose clauses all have atomic
 heads are closed (`Signature.of`): one an S09 compound head or a `ho_apply`
 head may conclude stays open. The equality theory separates only declared
-constructors and literals: a defined operation, such as one given by
-equations, is not free. Consistency is part of the model hypothesis and is
+constructors and literals: a defined operation is not free. Its value comes
+from its implementation (in Anthill, a runnable body, a builtin, or a host
+mapping), and the KB may state laws about it as equations, which a free
+reading would contradict. Consistency is part of the model hypothesis and is
 not proved here: cycles through NAF in clause bodies, or a program equation
 between declared constructors, can make the completion inconsistent, and then
 no model satisfies it. -/
@@ -287,8 +289,8 @@ theory separates, for clauses and further formulas such as a query.
 
 Constructors are declared, never inferred: an application symbol is a free
 constructor when `free` says so, as the data signature's constructors are; a
-defined operation, such as one with equations, is not. Literals are always
-free. A predicate is closed unless it is an `unknownMarker` (an unknown marker such as
+defined operation, whose laws the KB may state as equations, is not.
+Literals are always free. A predicate is closed unless it is an `unknownMarker` (an unknown marker such as
 `UNKNOWN`), the `ho_apply` symbol, or a predicate some head may conclude other
 than as a defining clause (`headOpens`); a head that applies a predicate
 variable closes none. -/

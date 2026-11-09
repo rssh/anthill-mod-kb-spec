@@ -60,3 +60,7 @@ From S23 (2026-11-08): the relaxed NAF rule is in S23's admission. A NAF with a 
 
 From S24 (2026-11-08): the tabled run tables only calls whose inputs and context are closed as read; NAF on a non-ground operand (a flexible name, an eigenvariable, a rigid parameter) is not tabled: it reaches the positive strategy and is a gap (Engine.strategy). Constructive negation runs there: the operand's table answers become equations whose negation is the disequality constraint. The Kripke-Kleene refutation already quantifies over every abstract value of a goal's free names (Tabled/Abstract refutes, refutes_sound), which the falsity side can reuse.
 
+### 2026-11-09T13:31:57Z — feedback — user
+
+Correction to the 2026-11-08 S24 note: a call is now tabled when its inputs hold no flexible name as read, rigid parameters included (the context still closed); NAF is tabled only on a closed operand, so NAF on a flexible name, an eigenvariable, or a rigid parameter still reaches the positive strategy, or is a gap in a bounded run.
+

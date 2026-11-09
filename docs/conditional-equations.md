@@ -1,13 +1,13 @@
 # Conditional equation rules
 
-An operation equation
+A conditional equation
 
 ```text
 left <=> right :- C1, ..., Cn
 ```
 
-states that the two expressions return the same value whenever the condition
-body holds. Both expressions can contain ordinary applications, dictionary
+is a law: it states that the two expressions return the same value whenever
+the condition body holds. Both expressions can contain ordinary applications, dictionary
 calls, and variables. The syntax remains untyped.
 
 `HornClause.equation left right body` represents this as an ordinary definite
@@ -64,6 +64,16 @@ also requires every equation clause to satisfy its model condition.
 The equation is symmetric. Choosing a reduction direction, automating matching,
 or establishing termination of a conditional rewriter are separate operational
 questions; the declarative rule does not require termination.
+
+An equation describes operations; it does not define or implement one. In
+Anthill an operation is backed by something executable: a runnable body, a
+builtin, or a host mapping (kernel-language §8.7, WI-818). A rule
+`lhs <=> rhs` about it is a law, which proofs resolve against and cite, and an
+operation's equational view is derived from its body (WI-580). `@[simp]`
+(proposal 043) uses a law as a one-way rewrite of values: one choice of the
+direction above. Here the logic reads every such equation symmetrically, and
+an operation's value is the evaluator's (S14), the equations checked laws
+about it.
 
 [The equation-oracle theorem](equation-oracle.md) permits a sound oracle to
 certify additional conditional equations. Their clauses extend the same KB;

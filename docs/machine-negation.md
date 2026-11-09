@@ -60,8 +60,8 @@ predicates are closed and which constructors are free is `Signature.of`'s:
 
 - **Constructors are declared, never inferred.** An application symbol is a
   free constructor only when the caller declares it so, as the data
-  signature's constructors are. A defined operation is not free: with
-  `plus(zero) = zero`, a clash clause `false :- plus(x) = zero` would
+  signature's constructors are. A defined operation is not free: with the
+  law `plus(zero) = zero`, a clash clause `false :- plus(x) = zero` would
   contradict the program and refute anything. Literals are always free.
 - **Only predicates with atomic defining heads are closed.** A predicate that
   an S09 compound head (`p(a) ∧ q(a)`, `∀x. p(x)`, `r → p(a)`) or a `ho_apply`
