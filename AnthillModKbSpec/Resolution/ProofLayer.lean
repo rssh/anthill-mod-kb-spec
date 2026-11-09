@@ -1,5 +1,5 @@
 import AnthillModKbSpec.Resolution.P0.Admission
-import AnthillModKbSpec.Resolution.Machine.LeftStrategy
+import AnthillModKbSpec.Resolution.Machine.Lemma
 
 /-! # Proof-layer capabilities beside P0 admission (S09)
 
@@ -17,7 +17,14 @@ also marks a name inside a NAF operand with S10's refutation route, and an
 application by `ho_apply` outside data with S11's conversion. `diagnose` annotates
 P0's own answer, so a proof-layer capability is reported only for an input P0
 does not admit (`diagnose_not_ready`), and diagnosing changes no admission
-result. -/
+result.
+
+A formula P0 asks evidence for at a goal may also be concluded by a checked
+lemma (S20). `diagnoseLemmas` lists, for each such request, the lemmas whose
+statement may conclude it and the command that would use each
+(`lemmaCommand`). That too is a proof-layer capability: P0 admission takes no
+lemma, so a lemma never makes an input P0-Ready (`diagnoseLemmas_not_ready`);
+a lemma enters a P0 program only as an imported clause (`P1.admitImports`). -/
 
 namespace AnthillModKbSpec.Admission
 
@@ -187,6 +194,140 @@ theorem diagnose_not_ready {hoApplySymbol : Symbol} {input : Input Domain Variab
     {entry : Request Variable Literal Symbol × ProofLayer} (member : entry ∈ diagnose hoApplySymbol input)
     (plan : Plan Domain Variable Literal Symbol hoApplySymbol) : check hoApplySymbol input ≠ .ready plan := by
   obtain ⟨request, more, checked, _, _⟩ := diagnose_requests member
+  rw [checked]
+  exact fun same => by cases same
+
+/-! ## Formulas a checked lemma may conclude (S20) -/
+
+/-- The path, through conjunctions only, ends at a goal of the formula: not
+inside a NAF operand, where proving the operand refutes the goal, nor in an
+atom's arguments. -/
+def atGoal : List Nat → Term Variable Literal Symbol → Bool
+  | [], _ => true
+  | 0 :: rest, .conj left _ => atGoal rest left
+  | 1 :: rest, .conj _ right => atGoal rest right
+  | _, _ => false
+
+/-- The formula and the goals its introduction rules leave: through
+conjunctions, disjunctions, implication conclusions, and quantifier bodies. -/
+def subgoals : Term Variable Literal Symbol → List (Term Variable Literal Symbol)
+  | .conj left right => .conj left right :: (subgoals left ++ subgoals right)
+  | .disj left right => .disj left right :: (subgoals left ++ subgoals right)
+  | .imp premise conclusion => .imp premise conclusion :: subgoals conclusion
+  | .forallVar binder body => .forallVar binder body :: subgoals body
+  | .existsVar binder body => .existsVar binder body :: subgoals body
+  | goal => [goal]
+
+/-- A simple conclusion that may conclude the goal, as the machine compares
+them (`compareLemma`): the same head, a head that differs only by `ho_apply`,
+or the same connective. -/
+def mayConcludeAs (hoApplySymbol : Symbol) (goal conclusion : Term Variable Literal Symbol) : Bool :=
+  simpleConclusion conclusion && (mayMatch hoApplySymbol goal conclusion || sameConnective goal conclusion)
+
+/-- A component of a lemma's conclusion concludes the formula: the formula is
+an instance of it over the names a use may instantiate (`universal`), or it is
+simple with the formula's head. A component naming a name bound by an
+enclosing existential (`existential`) concludes nothing: the cut opens the
+existential at a fresh rigid name, which no goal names. -/
+def componentConcludes (hoApplySymbol : Symbol) (formula : Term Variable Literal Symbol)
+    (universal existential : List Variable) (component : Term Variable Literal Symbol) : Bool :=
+  !(component.freeVars.any fun name => decide (name ∈ existential)) &&
+    ((extract universal component formula []).isSome || mayConcludeAs hoApplySymbol formula component)
+
+/-- Some component of a conclusion a cut leaves to the left commands concludes
+the formula: the conclusion itself, then through conjunctions, disjunctions,
+implication conclusions, and quantifier bodies, a universal's binder one a use
+may instantiate and an existential's one it may not. -/
+def lemmaReaches (hoApplySymbol : Symbol) (formula : Term Variable Literal Symbol) :
+    List Variable → List Variable → Term Variable Literal Symbol → Bool
+  | universal, existential, .imp premise conclusion =>
+      componentConcludes hoApplySymbol formula universal existential (.imp premise conclusion) ||
+        lemmaReaches hoApplySymbol formula universal existential conclusion
+  | universal, existential, .forallVar binder body =>
+      componentConcludes hoApplySymbol formula universal existential (.forallVar binder body) ||
+        lemmaReaches hoApplySymbol formula (binder :: universal) (existential.filter (· ≠ binder)) body
+  | universal, existential, .existsVar binder body =>
+      componentConcludes hoApplySymbol formula universal existential (.existsVar binder body) ||
+        lemmaReaches hoApplySymbol formula (universal.filter (· ≠ binder)) (binder :: existential) body
+  | universal, existential, .conj left right =>
+      componentConcludes hoApplySymbol formula universal existential (.conj left right) ||
+        lemmaReaches hoApplySymbol formula universal existential left ||
+        lemmaReaches hoApplySymbol formula universal existential right
+  | universal, existential, .disj left right =>
+      componentConcludes hoApplySymbol formula universal existential (.disj left right) ||
+        lemmaReaches hoApplySymbol formula universal existential left ||
+        lemmaReaches hoApplySymbol formula universal existential right
+  | universal, existential, component => componentConcludes hoApplySymbol formula universal existential component
+
+/-- How a lemma's statement may conclude a requested formula, at the formula or
+at a goal its introduction rules leave, as the machine would use it: the
+statement itself, or an instance of its simple matrix, by `lemmaUse`; the simple
+conclusion of its implication by `lemmaRule`; a component of a compound
+conclusion through a cut on an instance (`lemmaCut`), the S09 commands then
+using it. -/
+def lemmaCommand (hoApplySymbol : Symbol) (formula statement : Term Variable Literal Symbol) : Option RuleId :=
+  if identical formula statement then some .lemmaUse
+  else
+    let binders := leadingBinders statement
+    let goals := subgoals formula
+    let cut := fun (matrix : Term Variable Literal Symbol) =>
+      if goals.any fun goal => lemmaReaches hoApplySymbol goal binders [] matrix then some RuleId.lemmaCut else none
+    match stripLeading binders.length statement with
+    | .imp premise conclusion =>
+        if goals.any fun goal => mayConcludeAs hoApplySymbol goal conclusion then some .lemmaRule
+        else cut (.imp premise conclusion)
+    | matrix => if goals.any fun goal => mayConcludeAs hoApplySymbol goal matrix then some .lemmaUse else cut matrix
+
+/-- The lemmas that may conclude a requested formula, with their commands. -/
+def lemmasConcluding (hoApplySymbol : Symbol) (statements : List (Symbol × Term Variable Literal Symbol))
+    (formula : Term Variable Literal Symbol) : List (Symbol × RuleId) :=
+  statements.filterMap fun entry => (lemmaCommand hoApplySymbol formula entry.2).map (entry.1, ·)
+
+/-- P0's requests at a goal of the query or of a clause body that lemmas may
+conclude, each with those lemmas and their commands. A request inside a NAF
+operand or inside an atom's arguments is no goal a lemma could close. An input
+P0 admits, or declares invalid, gets none. -/
+def diagnoseLemmas (hoApplySymbol : Symbol) (statements : List (Symbol × Term Variable Literal Symbol))
+    (input : Input Domain Variable Literal Symbol) : List (Request Variable Literal Symbol × List (Symbol × RuleId)) :=
+  match check hoApplySymbol input with
+  | .needsEvidence request more =>
+      (request :: more).filterMap fun found =>
+        if (input.goalAt? found.site).any (atGoal found.path) then
+          match lemmasConcluding hoApplySymbol statements found.formula with
+          | first :: rest => some (found, first :: rest)
+          | [] => none
+        else none
+  | _ => []
+
+/-- A lemma diagnosis is P0's answer annotated: every diagnosed formula is one
+P0 asks evidence for. -/
+theorem diagnoseLemmas_requests {hoApplySymbol : Symbol} {statements : List (Symbol × Term Variable Literal Symbol)}
+    {input : Input Domain Variable Literal Symbol} {entry : Request Variable Literal Symbol × List (Symbol × RuleId)}
+    (member : entry ∈ diagnoseLemmas hoApplySymbol statements input) :
+    ∃ request more, check hoApplySymbol input = .needsEvidence request more ∧ entry.1 ∈ request :: more ∧
+      entry.2 = lemmasConcluding hoApplySymbol statements entry.1.formula := by
+  unfold diagnoseLemmas at member
+  split at member
+  · rename_i request more checked
+    obtain ⟨found, inside, produced⟩ := List.mem_filterMap.mp member
+    refine ⟨request, more, checked, ?_⟩
+    split at produced
+    · split at produced
+      · rename_i concluding
+        cases produced
+        exact ⟨inside, concluding.symm⟩
+      · cases produced
+    · cases produced
+  all_goals cases member
+
+/-- A formula usable through a checked lemma is a proof-layer capability,
+reported only for an input P0 does not admit: a lemma never makes an input
+P0-Ready. -/
+theorem diagnoseLemmas_not_ready {hoApplySymbol : Symbol} {statements : List (Symbol × Term Variable Literal Symbol)}
+    {input : Input Domain Variable Literal Symbol} {entry : Request Variable Literal Symbol × List (Symbol × RuleId)}
+    (member : entry ∈ diagnoseLemmas hoApplySymbol statements input) (plan : Plan Domain Variable Literal Symbol hoApplySymbol) :
+    check hoApplySymbol input ≠ .ready plan := by
+  obtain ⟨request, more, checked, _, _⟩ := diagnoseLemmas_requests member
   rw [checked]
   exact fun same => by cases same
 

@@ -427,27 +427,65 @@ def conclusionAttempt (hoApplySymbol : Symbol) (obligation : Obligation Variable
 variable {hoApplySymbol : Symbol} {kb : LogicalKb Variable Literal Symbol} {naf : NafFailure Variable Literal Symbol}
   {obligation : Obligation Variable Literal Symbol} {store : Store Variable Literal Symbol}
 
-/-- A match-built candidate is sound when its contract holds in every store
-refining the match's where the matched sides read the same. -/
+/-- A match-built candidate is sound when its contract holds in every scoped
+store refining the match's where the matched sides read the same. -/
 theorem attempt_sound_refines (valid : store.Scoped) {flexibles : List Variable}
     {left right : Term Variable Literal Symbol}
     {make : List (Variable × Term Variable Literal Symbol) → Expansion Variable Literal Symbol Certificate}
     (shape : ∀ bindings, (make bindings).flexibles = flexibles ∧ (make bindings).rigids = [] ∧
       (make bindings).bindings = bindings)
-    (matched : ∀ bindings (later : Store Variable Literal Symbol), store.Refines later →
+    (matched : ∀ bindings (later : Store Variable Literal Symbol), store.Refines later → later.Scoped →
       later.resolve left = later.resolve right → NodeSound hoApplySymbol kb naf later obligation (make bindings).premises) :
     AttemptSound hoApplySymbol kb naf store obligation
       (attempt ((store.prepare obligation flexibles []).unify obligation.scope hoApplySymbol left right) make) := by
-  intro expansion found next woken committed later refines _
+  intro expansion found next woken committed later refines laterScoped
   unfold attempt at found
   split at found
   · rename_i final bindings computed
     cases found
     obtain ⟨sameFlexibles, noRigids, sameBindings⟩ := shape bindings
     rw [sameFlexibles, noRigids, sameBindings] at committed
-    exact matched bindings later ((Store.commit_refines committed).trans refines)
+    exact matched bindings later ((Store.commit_refines committed).trans refines) laterScoped
       (refines.resolve_eq (Store.commit_matched valid computed committed))
   all_goals cases found
+
+/-- A conclusion's candidate is sound when the candidate `make` builds is sound,
+in every scoped store refining the match's, for every goal the conclusion reads
+as: the goal itself, the view it is matched against, or the conclusion. -/
+theorem conclusionAttempt_sound_scoped (valid : store.Scoped) {flexibles : List Variable}
+    {comparison : Comparison} {conclusion : Formula Variable Literal Symbol}
+    {make : List (Variable × Term Variable Literal Symbol) → Expansion Variable Literal Symbol Certificate}
+    {intro : Bool}
+    (shape : ∀ bindings, (make bindings).flexibles = flexibles ∧ (make bindings).rigids = [] ∧
+      (make bindings).bindings = bindings)
+    (inner : ∀ bindings (later : Store Variable Literal Symbol) (target : Formula Variable Literal Symbol),
+      store.Refines later → later.Scoped → later.resolve conclusion = later.resolve target →
+        NodeSound hoApplySymbol kb naf later ⟨obligation.scope, target⟩ (make bindings).premises) :
+    AttemptSound hoApplySymbol kb naf store obligation
+      (conclusionAttempt hoApplySymbol obligation store flexibles comparison conclusion make intro) := by
+  unfold conclusionAttempt
+  split
+  · exact attempt_sound_refines valid shape fun bindings later refines laterScoped matched =>
+      inner bindings later obligation.goal refines laterScoped matched
+  · split
+    · rename_i view found
+      refine attempt_sound_refines valid (fun bindings => shape bindings)
+        fun bindings later refines laterScoped matched => ?_
+      have indirect := (Term.indirect?_spec found).resolve later
+      rw [← valid.read_refines rfl refines] at indirect
+      exact Expansion.convert_soundUnder (inner bindings later view refines laterScoped matched) (.inl indirect)
+    · intro _ found; cases found
+  · split
+    · split
+      · rename_i view found
+        refine attempt_sound_refines valid (fun bindings => shape bindings)
+          fun bindings later refines laterScoped matched => ?_
+        have indirect := (Term.indirect?_spec found).resolve later
+        rw [← valid.read_refines rfl refines, matched] at indirect
+        exact Expansion.convert_soundUnder (inner bindings later conclusion refines laterScoped rfl) (.inr indirect)
+      · intro _ found; cases found
+    · intro _ found; cases found
+  all_goals intro _ found; cases found
 
 /-- A conclusion's candidate is sound when the candidate `make` builds is sound
 for every goal the conclusion reads as: the goal itself, the view it is matched
@@ -462,27 +500,8 @@ theorem conclusionAttempt_sound (valid : store.Scoped) {flexibles : List Variabl
       later.resolve conclusion = later.resolve target →
         NodeSound hoApplySymbol kb naf later ⟨obligation.scope, target⟩ (make bindings).premises) :
     AttemptSound hoApplySymbol kb naf store obligation
-      (conclusionAttempt hoApplySymbol obligation store flexibles comparison conclusion make intro) := by
-  unfold conclusionAttempt
-  split
-  · exact attempt_sound_refines valid shape fun bindings later _ matched => inner bindings later obligation.goal matched
-  · split
-    · rename_i view found
-      refine attempt_sound_refines valid (fun bindings => shape bindings) fun bindings later refines matched => ?_
-      have indirect := (Term.indirect?_spec found).resolve later
-      rw [← valid.read_refines rfl refines] at indirect
-      exact Expansion.convert_soundUnder (inner bindings later view matched) (.inl indirect)
-    · intro _ found; cases found
-  · split
-    · split
-      · rename_i view found
-        refine attempt_sound_refines valid (fun bindings => shape bindings) fun bindings later refines matched => ?_
-        have indirect := (Term.indirect?_spec found).resolve later
-        rw [← valid.read_refines rfl refines, matched] at indirect
-        exact Expansion.convert_soundUnder (inner bindings later conclusion rfl) (.inr indirect)
-      · intro _ found; cases found
-    · intro _ found; cases found
-  all_goals intro _ found; cases found
+      (conclusionAttempt hoApplySymbol obligation store flexibles comparison conclusion make intro) :=
+  conclusionAttempt_sound_scoped valid shape fun bindings later target _ _ matched => inner bindings later target matched
 
 omit [DecidableEq Literal] in
 /-- `ho_goal` is sound: the goal reads as the indirect call in every later store. -/

@@ -18,6 +18,7 @@ externally, or exported from a machine run. Traces are in
 | [P1/Decision](../AnthillModKbSpec/Resolution/P1/Decision.lean) | `DecisionContract` and proof checking as one (`proofRoute`, `reject_says_nothing`) |
 | [P1/Export](../AnthillModKbSpec/Resolution/P1/Export.lean) | Machine trees as supplied proofs (`exportTree`, `exportProof`), P0 witnesses as terms, the checker for a P0 plan's export, `Plan.exportProof_checked`, `Plan.exportProof_derives` |
 | [P1/Import](../AnthillModKbSpec/Resolution/P1/Import.lean) | Proof imports (`ProofImport`, `Imports.Checked`, `ProofImport.checked_sound`), their operational admission (`Import.clause?`, `admitImports`, `admitImports_sound`), and admission with supplied proofs (`admit`, `admit_proved_derives`, `admit_plan`) |
+| [P1/Lemma](../AnthillModKbSpec/Resolution/P1/Lemma.lean) | Imports as checked lemmas inside machine runs (S20, [checked lemmas](machine-lemmas.md)) |
 
 ## Proof trees
 
@@ -286,11 +287,13 @@ evidence into `E(KB)` under one provider is S16's.
   `Derives`, so a lemma is not reused without re-checking under the use site's
   context. Nothing is memoized: a chain of lemmas each referencing the previous
   one twice is checked exponentially often.
-- **Imports reach execution only as closed facts and rules in the P0 classes,
-  proved under no assumptions.** A universal theorem stays in the proof layer.
-  A rule's premise must be a conjunction ending in `true`, as
-  `Term.conjunction` builds it; `a → h` with a bare atom `a` is read as a fact,
-  which P0 then does not admit.
+- **Imports reach a P0 program only as closed facts and rules in the P0
+  classes, proved under no assumptions.** A rule's premise must be a
+  conjunction ending in `true`, as `Term.conjunction` builds it; `a → h` with a
+  bare atom `a` is read as a fact, which P0 then does not admit. A universal
+  theorem, one proved under assumptions, or one outside the P0 classes is used
+  inside machine runs as a checked lemma (S20,
+  [checked lemmas](machine-lemmas.md)), re-checked at each use site.
 - **P0 NAF evidence holds only under the plan's context.** NAF under a grown or
   scoped context is S10's: refutation evidence is checked under the NAF node's
   own context (`refutationCheck`, [machine-negation](machine-negation.md)).

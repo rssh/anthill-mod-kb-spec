@@ -216,30 +216,42 @@ def leftComposite (hoApplySymbol : Symbol) (program : Program Variable Literal S
   respond (matchAttempts sameConnective hoApplySymbol obligation store goal context ++
     introductionAttempts program store context goal ++ chosen)
 
-/-- Positive execution with the S09 commands `select` chooses at each focus. A
-goal that waits on an unbound name is `positive`'s. An atomic or falsity goal
-gets `positive`'s candidates, compound assumptions left to the chosen commands
+/-- Further candidates a strategy built on the left strategy offers at a focus,
+given the obligation, the store, and the goal and context as read: the
+commands of a selection, and the checked lemmas of S20. -/
+abbrev Offers (Variable Literal Symbol Certificate : Type) :=
+  Obligation Variable Literal Symbol → Store Variable Literal Symbol → Term Variable Literal Symbol →
+    List (Term Variable Literal Symbol × Term Variable Literal Symbol) → List (Attempt Variable Literal Symbol Certificate)
+
+/-- Positive execution with further candidates `offers` at each focus. A goal
+that waits on an unbound name is `positive`'s. An atomic or falsity goal gets
+`positive`'s candidates, compound assumptions left to the offered commands
 (`localAttempt`'s `leftRules`); a compound goal closed by an exact candidate
-gets only those, as for `positive`. The selection runs only where its commands
-are offered: not at a concrete indirect call, whose one candidate is `ho_goal`,
-but at its direct form (S11). -/
+gets only those, as for `positive`. The offers are made only where they are
+candidates: not at a concrete indirect call, whose one candidate is
+`ho_goal`, but at its direct form (S11). -/
+def leftWith (hoApplySymbol : Symbol) (program : Program Variable Literal Symbol)
+    (offers : Offers Variable Literal Symbol Certificate) : Strategy Variable Literal Symbol Certificate :=
+  fun obligation store =>
+    let goal := store.resolve obligation.goal
+    let context := store.readContext obligation
+    match waiting? program store goal with
+    | some _ => positive hoApplySymbol program obligation store
+    | none =>
+        match goal with
+        | .app _ _ | .falsity =>
+            atomResponse hoApplySymbol program obligation store goal context true
+              (if (goal.call? hoApplySymbol).isSome then [] else offers obligation store goal context)
+        | _ =>
+            match exactCandidates obligation goal context with
+            | [] => leftComposite hoApplySymbol program (offers obligation store goal context) obligation store goal context
+            | first :: rest => .candidates (first :: rest)
+
+/-- Positive execution with the S09 commands `select` chooses at each focus
+(`leftWith` offering `chosenAttempts`). -/
 def left (hoApplySymbol : Symbol) (program : Program Variable Literal Symbol) (select : Selection Variable Literal Symbol) :
-    Strategy Variable Literal Symbol Certificate := fun obligation store =>
-  let goal := store.resolve obligation.goal
-  let context := store.readContext obligation
-  match waiting? program store goal with
-  | some _ => positive hoApplySymbol program obligation store
-  | none =>
-      match goal with
-      | .app _ _ | .falsity =>
-          atomResponse hoApplySymbol program obligation store goal context true
-            (if (goal.call? hoApplySymbol).isSome then []
-             else chosenAttempts hoApplySymbol program select obligation store goal context)
-      | _ =>
-          match exactCandidates obligation goal context with
-          | [] => leftComposite hoApplySymbol program (chosenAttempts hoApplySymbol program select obligation store goal context)
-              obligation store goal context
-          | first :: rest => .candidates (first :: rest)
+    Strategy Variable Literal Symbol Certificate :=
+  leftWith hoApplySymbol program (chosenAttempts hoApplySymbol program select)
 
 /-- The left strategy committed to its selection: a focus where `select`
 chooses commands gets only those, in order, and any other focus is `left`'s.
@@ -259,11 +271,13 @@ def leftCommitted (hoApplySymbol : Symbol) (program : Program Variable Literal S
 variable {hoApplySymbol : Symbol} {naf : NafFailure Variable Literal Symbol} {program : Program Variable Literal Symbol}
   {obligation : Obligation Variable Literal Symbol} {store : Store Variable Literal Symbol} {avoid : List Variable}
 
-/-- Every chosen command is sound for the program's KB: its side conditions are
-checked when it is built, and its reading holds in every later store. -/
-theorem Choice.attempt_sound (valid : store.Scoped) (declared : obligation.Declared store)
+/-- Every chosen command is sound for every KB containing the program's
+clauses: its side conditions are checked when it is built, and its reading
+holds in every later store. -/
+theorem Choice.attempt_sound_within {kb : LogicalKb Variable Literal Symbol}
+    (within : ∀ clause, program.kb clause → kb clause) (valid : store.Scoped) (declared : obligation.Declared store)
     (choice : Choice Variable Literal Symbol) :
-    AttemptSound hoApplySymbol program.kb naf store obligation
+    AttemptSound hoApplySymbol kb naf store obligation
       (choice.attempt (Certificate := Certificate) hoApplySymbol program obligation store avoid) := by
   cases choice <;> simp only [Choice.attempt] <;> repeat' split
   all_goals try (intro _ produced; cases produced; done)
@@ -288,26 +302,41 @@ theorem Choice.attempt_sound (valid : store.Scoped) (declared : obligation.Decla
     exact fixed_sound fun _ refines => Expansion.impUse_soundUnder found.1 (valid.read_refines rfl refines) computed
   · rename_i found
     intro _ produced; cases produced
-    exact fixed_sound fun _ _ => Expansion.headUse_soundUnder (Program.has_kb found)
+    exact fixed_sound fun _ _ => Expansion.headUse_soundUnder (within _ (Program.has_kb found))
   · rename_i found _ _ located
     exact conclusionAttempt_sound valid (fun _ => ⟨rfl, by simp [Expansion.rigids, Expansion.headProject], rfl⟩)
-      fun _ _ _ matched => Expansion.headProject_soundUnder (Program.has_kb found) located matched
+      fun _ _ _ matched => Expansion.headProject_soundUnder (within _ (Program.has_kb found)) located matched
   · rename_i reads found
     intro _ produced; cases produced
-    exact fixed_sound fun _ refines => Expansion.headDenial_soundUnder (Program.has_kb found)
+    exact fixed_sound fun _ refines => Expansion.headDenial_soundUnder (within _ (Program.has_kb found))
       (by rw [valid.read_refines reads refines]; exact Store.resolve_falsity _)
-  · exact clauseUse_sound valid (Program.has_kb ‹_›)
+  · exact clauseUse_sound valid (within _ (Program.has_kb ‹_›))
   · intro _ produced; cases produced
     exact fixed_sound fun _ _ => Expansion.falsityElim_soundUnder
+
+/-- Every chosen command is sound for the program's KB. -/
+theorem Choice.attempt_sound (valid : store.Scoped) (declared : obligation.Declared store)
+    (choice : Choice Variable Literal Symbol) :
+    AttemptSound hoApplySymbol program.kb naf store obligation
+      (choice.attempt (Certificate := Certificate) hoApplySymbol program obligation store avoid) :=
+  Choice.attempt_sound_within (fun _ member => member) valid declared choice
+
+theorem chosenAttempts_sound_within {kb : LogicalKb Variable Literal Symbol}
+    (within : ∀ clause, program.kb clause → kb clause) (valid : store.Scoped) (declared : obligation.Declared store)
+    (select : Selection Variable Literal Symbol) {goal : Term Variable Literal Symbol}
+    {context : List (Term Variable Literal Symbol × Term Variable Literal Symbol)} :
+    ∀ candidate ∈ chosenAttempts (Certificate := Certificate) hoApplySymbol program select obligation store goal context,
+      AttemptSound hoApplySymbol kb naf store obligation candidate := by
+  intro candidate inside
+  obtain ⟨choice, _, rfl⟩ := List.mem_map.mp inside
+  exact Choice.attempt_sound_within within valid declared choice
 
 theorem chosenAttempts_sound (valid : store.Scoped) (declared : obligation.Declared store)
     (select : Selection Variable Literal Symbol) {goal : Term Variable Literal Symbol}
     {context : List (Term Variable Literal Symbol × Term Variable Literal Symbol)} :
     ∀ candidate ∈ chosenAttempts (Certificate := Certificate) hoApplySymbol program select obligation store goal context,
-      AttemptSound hoApplySymbol program.kb naf store obligation candidate := by
-  intro candidate inside
-  obtain ⟨choice, _, rfl⟩ := List.mem_map.mp inside
-  exact Choice.attempt_sound valid declared choice
+      AttemptSound hoApplySymbol program.kb naf store obligation candidate :=
+  chosenAttempts_sound_within (fun _ member => member) valid declared select
 
 omit [DecidableEq Symbol] [DecidableEq Literal] in
 theorem introductionAttempts_sound (valid : store.Scoped) (declared : obligation.Declared store)
@@ -326,25 +355,23 @@ theorem introductionAttempts_sound (valid : store.Scoped) (declared : obligation
     subst inside
     intro _ produced; cases produced
 
-/-- The left strategy on a program whose clauses are among those of `full`, with
-chosen commands sound for `full`'s KB, is sound for `full`'s KB. -/
-theorem left_sound_within {program full : Program Variable Literal Symbol}
-    (within : ∀ entry ∈ program.clauses, entry ∈ full.clauses) (select : Selection Variable Literal Symbol)
-    (chosenSound : ∀ (obligation : Obligation Variable Literal Symbol) (store : Store Variable Literal Symbol),
+/-- The strategy `leftWith` on a program whose clauses are among those of
+`full`, with offers sound for `full`'s KB, is sound for `full`'s KB. -/
+theorem leftWith_sound_within {program full : Program Variable Literal Symbol}
+    (within : ∀ entry ∈ program.clauses, entry ∈ full.clauses) {offers : Offers Variable Literal Symbol Certificate}
+    (offersSound : ∀ (obligation : Obligation Variable Literal Symbol) (store : Store Variable Literal Symbol),
       store.Scoped → obligation.Declared store →
-      ∀ candidate ∈ chosenAttempts (Certificate := Certificate) hoApplySymbol program select obligation store
-        (store.resolve obligation.goal) (store.readContext obligation),
+      ∀ candidate ∈ offers obligation store (store.resolve obligation.goal) (store.readContext obligation),
         AttemptSound hoApplySymbol full.kb naf store obligation candidate) :
-    Strategy.Sound hoApplySymbol full.kb naf (left (Certificate := Certificate) hoApplySymbol program select) := by
+    Strategy.Sound hoApplySymbol full.kb naf (leftWith hoApplySymbol program offers) := by
   intro obligation store valid declared expansion member
-  have chosen := chosenSound obligation store valid declared
-  unfold left at member
+  have chosen := offersSound obligation store valid declared
+  unfold leftWith at member
   dsimp only at member
   split at member
   · exact positive_sound_within within obligation store valid declared expansion member
   · have unlessIndirect : ∀ candidate ∈ (if ((store.resolve obligation.goal).call? hoApplySymbol).isSome then []
-        else chosenAttempts (Certificate := Certificate) hoApplySymbol program select obligation store
-          (store.resolve obligation.goal) (store.readContext obligation)),
+        else offers obligation store (store.resolve obligation.goal) (store.readContext obligation)),
         AttemptSound hoApplySymbol full.kb naf store obligation candidate := fun candidate inside => by
       split at inside
       · cases inside
@@ -362,6 +389,18 @@ theorem left_sound_within {program full : Program Variable Literal Symbol}
       · rename_i first rest foundEq
         rw [Response.alternatives, ← foundEq] at member
         exact exactCandidates_sound rfl expansion member
+
+/-- The left strategy on a program whose clauses are among those of `full`, with
+chosen commands sound for `full`'s KB, is sound for `full`'s KB. -/
+theorem left_sound_within {program full : Program Variable Literal Symbol}
+    (within : ∀ entry ∈ program.clauses, entry ∈ full.clauses) (select : Selection Variable Literal Symbol)
+    (chosenSound : ∀ (obligation : Obligation Variable Literal Symbol) (store : Store Variable Literal Symbol),
+      store.Scoped → obligation.Declared store →
+      ∀ candidate ∈ chosenAttempts (Certificate := Certificate) hoApplySymbol program select obligation store
+        (store.resolve obligation.goal) (store.readContext obligation),
+        AttemptSound hoApplySymbol full.kb naf store obligation candidate) :
+    Strategy.Sound hoApplySymbol full.kb naf (left (Certificate := Certificate) hoApplySymbol program select) :=
+  leftWith_sound_within within chosenSound
 
 /-- The left strategy is sound for its program's KB, whatever the selection
 chooses and whatever the NAF provider: it builds no closed-world node. -/

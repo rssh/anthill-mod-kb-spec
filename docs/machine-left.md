@@ -120,6 +120,13 @@ The strategy differs from `positive` in three places:
   indirect call, whose one candidate is `ho_goal`, it runs at the direct form
   (S11).
 
+The strategy is `leftWith` offering the chosen commands: `leftWith` takes any
+further candidates (`Offers`) and offers them where the selection's commands
+would be. S20 offers checked lemmas there (`withLemmas`,
+[checked lemmas](machine-lemmas.md)). The commands are sound in every KB that
+contains the program's clauses (`Choice.attempt_sound_within`), such as a proof
+layer's.
+
 The selection is a parameter, and the library defines no automatic one. Which
 commands to try where is a search policy: an admitted P3 strategy (S15) will be
 a checked plan, with its termination argument, interpreted into a `Selection`.
@@ -181,7 +188,8 @@ A proof-layer capability is therefore reported only for an input that P0 does
 not admit (`diagnose_not_ready`). Proofs built with these commands are checked
 by the explicit-proof route, and the left strategy may try them, but neither
 admits the formula for automatic execution. A proved formula enters execution
-only through operational admission (`admitImports`, S08).
+only through operational admission (`admitImports`, S08). A formula a checked
+lemma may conclude is diagnosed the same way (`diagnoseLemmas`, S20).
 
 ## Guarantees
 

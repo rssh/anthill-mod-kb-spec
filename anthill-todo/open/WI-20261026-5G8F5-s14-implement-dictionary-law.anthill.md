@@ -36,3 +36,7 @@ Design references: docs/fast-decision-routes.md, docs/resolution-state-machine.m
 
 From S13 (dictionary registry, docs/dictionary-registry.md): the evaluator computes with S13's primitive contracts (Primitive.Holds: total on the declared argument domains, results in the declared result domain), registered per dictionary. In the Nat/Bool registry (Resolution/OrderRegistry.lean) less and equal carry contracts; compare has none, since its Ordering results lie in no declared domain. Laws are statements with a validity theorem (law_valid), not KB clauses: making them checked lemmas (S20) and the conditional-rule view are S14's. Generated clauses give I(n) and DomainMember(n, X) :- D(X) only; the converse D(x) from DomainMember(n, x) is a model theorem (domainMember_iff). A declared access evaluates by access_eval; an unknown name (aliasOrd in the example) is a blocker, never No.
 
+### 2026-11-09T17:52:26Z — feedback — user
+
+From S20 (2026-11-09): the machine side of laws as checked lemmas is in place. An equation conclusion is backchained by lemmaRule, the law's premises becoming obligations of the run in order, and exported as a reference re-checked at the use site (trace law : ∀1. (q(1) → f(1) = c) in Tests/Resolution/Lemmas.lean). The run's lemmas are sound when they give Derives (Machine.Lemmas.Sound): a law used this way is a P1.Lemma entry with a proof term checked by the run's checker; a law known only by its validity theorem (law_valid) needs its own route to Derives.
+

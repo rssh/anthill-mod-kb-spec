@@ -3,9 +3,9 @@
 - id: WI-20261103-2QMVP-s20-use-checked-lemmas-inside
 - created: 2026-11-03T12:17:57Z
 
-- status: Open
-- status_agent: user
-- status_at: 2026-11-03T12:17:57Z
+- status: Claimed
+- status_agent: claude
+- status_at: 2026-11-09T17:51:54Z
 
 - acceptance: lake build
 
@@ -40,4 +40,12 @@ Design references: docs/resolution-state-machine.md, docs/resolution-implementat
 ### 2026-11-07T14:55:39Z — feedback — user
 
 Fast fragment (2026-11-07 reorganization): in P1 and P2, a lemma shaped as a Harrop clause is used by backchaining like a local clause, and its use is tabled as any call is (S24); a lemma with a compound conclusion is used only by P3's left commands. Statements outside the fragment (induction principles, dictionary laws) enter computation through this item.
+
+### 2026-11-09T17:52:28Z — feedback — user
+
+Implementation decisions (2026-11-09): (1) a lemma is used only at a use site whose context and statement, as read, name only rigid names (Store.lemmaSite), since it is re-checked once at the focus and its contract is read in every later store; a context with an unbound flexible name is a gap, a lemma that does not hold there a miss. (2) Lemmas are offered one by one: each must be the newest with its name and checked against the older ones (its part of Imports.Checked), so one bad lemma does not hide the others; a checked table with distinct names offers all (lemmasFor_checked). (3) Compound conclusions are used by an explicit cut (LemmaSelection), then S09's commands; backchaining covers atoms, falsity, equations, and NAF formulas. (4) The tabled use of Harrop lemmas in P1/P2 is recorded on S15. (5) left is now leftWith with the chosen commands; S09's Choice.attempt_sound_within holds in any KB containing the program.
+
+### 2026-11-09T18:20:57Z — feedback — user
+
+After review (2026-11-09): a lemma whose own context is among the use site's assumptions but whose proof does not check there (context-indexed NAF evidence, or an eigenvariable of the proof that the use site's context names; S08 checks proofs as written) is now a gap, not a miss: Machine.Lemmas.applies, P1.stated. A miss is a lemma that does not apply (its context absent, or a conclusion that does not match). Lemma conclusions are compared as local rules' (compareLemma, conclusionAttempt), so a conclusion differing by ho_apply is converted. Diagnostics compare as the machine does (subgoals, universal binders instantiable, existential ones not) and only at goal positions (atGoal: not inside NAF operands or atom arguments).
 

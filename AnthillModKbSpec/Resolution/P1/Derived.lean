@@ -21,14 +21,17 @@ procedure (`nodeCheck`), and the tree reconstructs `Derives` by `Valid.derives`.
 | a conjunctive head, split | the clause node for `H'`, then `conjLeft`/`conjRight` down to the conjunct |
 | a head `A → false` | `impElim false [clause node for A' → false, A']` |
 | a node converted by `ho_apply` (S11) | the node for its conclusion, then `hoApplyElim` or `hoApplyIntro`, under implications after a cut (`convert`) |
+| a checked lemma's instance (S20) | `reference` to the lemma, then universal eliminations; for `B → H`, `impElim H [instance, B]`; for a cut, a cut on the instance |
 
 The implication command derives `B'` by `impElim`, discharges `B'` from the
 continuation by `impIntro`, and applies `impElim` to obtain the goal, all in
 the original context: no weakening or transport of context-indexed NAF
 evidence is needed. Each construction is valid whenever the premise trees are
 valid under the contexts the command gives them and its side conditions hold
-(`Unfold.*_proves`). `exportDerived` builds the construction of a machine node
-from its parameters read through the final store and its exported subproofs. -/
+(`Unfold.*_proves`). A lemma's construction also needs its reference to
+resolve under the node's context: S08 re-checks the referenced proof there.
+`exportDerived` builds the construction of a machine node from its parameters
+read through the final store and its exported subproofs. -/
 
 namespace AnthillModKbSpec.P1
 
@@ -65,11 +68,16 @@ def existsOpen (existential : Formula Variable Literal Symbol) (eigen : Variable
     Proof Variable Literal Symbol :=
   .node (.existsElim eigen opened) goal [hypothesis existential, continuation]
 
-/-- Universal eliminations from an assumption: each step a witness and the
-instance it gives. -/
+/-- Universal eliminations from a proof: each step a witness and the instance
+it gives. -/
+def eliminationsFrom (start : Proof Variable Literal Symbol)
+    (steps : List (Term Variable Literal Symbol × Formula Variable Literal Symbol)) : Proof Variable Literal Symbol :=
+  steps.foldl (fun proof step => .node (.forallElim step.1) step.2 [proof]) start
+
+/-- Universal eliminations from an assumption. -/
 def eliminations (assumption : Formula Variable Literal Symbol) (steps : List (Term Variable Literal Symbol × Formula Variable Literal Symbol)) :
     Proof Variable Literal Symbol :=
-  steps.foldl (fun proof step => .node (.forallElim step.1) step.2 [proof]) (hypothesis assumption)
+  eliminationsFrom (hypothesis assumption) steps
 
 /-- `∀x̄. A` assumed: the instance by eliminations, then the goal under it. -/
 def forallUse (assumption : Formula Variable Literal Symbol) (steps : List (Term Variable Literal Symbol × Formula Variable Literal Symbol))
@@ -156,6 +164,29 @@ def convert : Formula Variable Literal Symbol → Formula Variable Literal Symbo
       if conclusionArgs.length = goalArgs.length + 1 then .node .hoApplyElim goal [proof]
       else .node .hoApplyIntro goal [proof]
   | _, _, proof => proof
+
+/-- A reference to a checked lemma, concluding its statement (S20). -/
+def reference (name : Symbol) (statement : Formula Variable Literal Symbol) : Proof Variable Literal Symbol :=
+  .node (.reference name) statement []
+
+/-- A lemma's instance: the reference, then universal eliminations. -/
+def lemmaUse (name : Symbol) (statement : Formula Variable Literal Symbol)
+    (steps : List (Term Variable Literal Symbol × Formula Variable Literal Symbol)) : Proof Variable Literal Symbol :=
+  eliminationsFrom (reference name statement) steps
+
+/-- A lemma's instance `B → H`, then `H`, the goal, by implication elimination
+on the proof of `B`. -/
+def lemmaRule (name : Symbol) (statement : Formula Variable Literal Symbol)
+    (steps : List (Term Variable Literal Symbol × Formula Variable Literal Symbol)) (goal : Formula Variable Literal Symbol)
+    (argument : Proof Variable Literal Symbol) : Proof Variable Literal Symbol :=
+  .node .impElim goal [lemmaUse name statement steps, argument]
+
+/-- A lemma's instance, then the goal under it, by a cut. -/
+def lemmaCut (name : Symbol) (statement : Formula Variable Literal Symbol)
+    (steps : List (Term Variable Literal Symbol × Formula Variable Literal Symbol))
+    (instantiated goal : Formula Variable Literal Symbol) (continuation : Proof Variable Literal Symbol) :
+    Proof Variable Literal Symbol :=
+  cut instantiated goal (lemmaUse name statement steps) continuation
 
 end Unfold
 
@@ -250,8 +281,7 @@ theorem existsOpen_proves {binder eigen : Variable} {body opened goal : Formula 
 theorem eliminations_step {formula last : Formula Variable Literal Symbol} {proof : Proof Variable Literal Symbol}
     {steps : List (Term Variable Literal Symbol × Formula Variable Literal Symbol)}
     (proves : Proves checker refs context formula proof) (instances : Instances formula steps last) :
-    Proves checker refs context last
-      (steps.foldl (fun proof step => .node (.forallElim step.1) step.2 [proof]) proof) := by
+    Proves checker refs context last (eliminationsFrom proof steps) := by
   induction instances generalizing proof with
   | nil => exact proves
   | cons instantiation _ ih => exact ih (node₁_proves (.forallElim instantiation) proves)
@@ -416,6 +446,38 @@ theorem convert_proves {conclusion goal : Formula Variable Literal Symbol} {proo
   · exact convert_elim_proves indirect proves
   · exact convert_intro_proves indirect proves
 
+/-- A reference that resolves under the context proves the lemma's statement
+there (S20). -/
+theorem reference_proves {name : Symbol} {statement : Formula Variable Literal Symbol}
+    (resolved : refs name context statement) : Proves checker refs context statement (reference name statement) :=
+  ⟨.node (contexts := []) (.reference resolved) (by simp), rfl⟩
+
+/-- A lemma's instance: its reference resolves, and the steps are universal
+eliminations from its statement to the instance. -/
+theorem lemmaUse_proves {name : Symbol} {statement goal : Formula Variable Literal Symbol}
+    {steps : List (Term Variable Literal Symbol × Formula Variable Literal Symbol)}
+    (resolved : refs name context statement) (instances : Instances statement steps goal) :
+    Proves checker refs context goal (lemmaUse name statement steps) :=
+  eliminations_step (reference_proves resolved) instances
+
+/-- A lemma's instance `B → H` for the goal `H`, given a tree of `B` under the
+same context. -/
+theorem lemmaRule_proves {name : Symbol} {statement premise goal : Formula Variable Literal Symbol}
+    {steps : List (Term Variable Literal Symbol × Formula Variable Literal Symbol)} {argument : Proof Variable Literal Symbol}
+    (resolved : refs name context statement) (instances : Instances statement steps (.imp premise goal))
+    (argues : Proves checker refs context premise argument) :
+    Proves checker refs context goal (lemmaRule name statement steps goal argument) :=
+  node₂_proves .impElim (lemmaUse_proves resolved instances) argues
+
+/-- A cut on a lemma's instance, given a tree of the goal under the instance. -/
+theorem lemmaCut_proves {name : Symbol} {statement instantiated goal : Formula Variable Literal Symbol}
+    {steps : List (Term Variable Literal Symbol × Formula Variable Literal Symbol)}
+    {continuation : Proof Variable Literal Symbol} (resolved : refs name context statement)
+    (instances : Instances statement steps instantiated)
+    (continues : Proves checker refs (instantiated :: context) goal continuation) :
+    Proves checker refs context goal (lemmaCut name statement steps instantiated goal continuation) :=
+  cut_proves (lemmaUse_proves resolved instances) continues
+
 end Unfold
 
 end Proves
@@ -523,6 +585,24 @@ def exportDerived (store : Store Variable Literal Symbol) (goal : Formula Variab
   | .headDenial clause@(.definite (.imp premise .falsity) _) fresh, [bodyProof, argument] =>
       some (Unfold.headDenial clause (readInstantiation store fresh)
         (store.resolve (premise.instantiate (Substitution.rename fresh))) bodyProof argument)
+  | .lemmaUse name statement witnesses, [] =>
+      (leadingSteps statement witnesses).map fun steps =>
+        Unfold.lemmaUse name (store.resolve statement)
+          (steps.map fun step => (store.resolve step.1, store.resolve step.2))
+  | .lemmaRule name statement witnesses, [argument] =>
+      match leadingSteps statement witnesses with
+      | some steps =>
+          match (steps.getLast?.map Prod.snd).getD statement with
+          | .imp _ _ =>
+              some (Unfold.lemmaRule name (store.resolve statement)
+                (steps.map fun step => (store.resolve step.1, store.resolve step.2)) goal argument)
+          | _ => none
+      | none => none
+  | .lemmaCut name statement witnesses, [continuation] =>
+      (leadingSteps statement witnesses).map fun steps =>
+        let read := steps.map fun step => (store.resolve step.1, store.resolve step.2)
+        Unfold.lemmaCut name (store.resolve statement) read ((read.getLast?.map Prod.snd).getD (store.resolve statement))
+          goal continuation
   | .equalJoin first second flipFirst flipSecond, [continuation] =>
       match orient flipFirst (store.resolve first), orient flipSecond (store.resolve second) with
       | some (shared, a), some (_, b) =>

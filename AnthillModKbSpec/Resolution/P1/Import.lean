@@ -198,11 +198,16 @@ def _root_.AnthillModKbSpec.Admission.Input.admissible (hoApplySymbol : Symbol)
     (input : Input Domain Variable Literal Symbol) (clause : HornClause Variable Literal Symbol) : Bool :=
   (clauseRequests hoApplySymbol input.guard 0 clause).isEmpty
 
-/-- The checker's KB contains the input's effective program, for its
-application symbol: a proof layer over the executable program. -/
-def coversInput (hoApplySymbol : Symbol) (input : Input Domain Variable Literal Symbol) : Bool :=
+/-- The checker's KB contains the program's clauses, for its application
+symbol: a proof layer over the executable program. -/
+def coversProgram (hoApplySymbol : Symbol) (program : Program Variable Literal Symbol) : Bool :=
   decide (checker.snapshot.hoApplySymbol = hoApplySymbol) &&
-    input.program.clauses.all fun entry => decide (entry.clause ∈ checker.snapshot.clauses)
+    program.clauses.all fun entry => decide (entry.clause ∈ checker.snapshot.clauses)
+
+/-- The checker's KB contains the input's effective program, for its
+application symbol. -/
+def coversInput (hoApplySymbol : Symbol) (input : Input Domain Variable Literal Symbol) : Bool :=
+  coversProgram checker hoApplySymbol input.program
 
 /-- The checker's KB is exactly the input's effective program, for its
 application symbol. -/
@@ -236,7 +241,7 @@ theorem admitImports_sound {hoApplySymbol : Symbol} {input : Input Domain Variab
   unfold admitImports at admitted
   split at admitted
   · rename_i covers
-    simp only [coversInput, Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true] at covers
+    simp only [coversInput, coversProgram, Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true] at covers
     cases admitted
     exact ⟨covers.1, covers.2, _, rfl, fun clause member => importedClauses_sound vocab checker member⟩
   · cases admitted

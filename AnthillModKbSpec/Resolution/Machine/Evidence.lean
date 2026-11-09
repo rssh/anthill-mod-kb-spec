@@ -16,14 +16,16 @@ inductive ClosedWorld where
 
 /-- Rule identity, independent of parameters. Each name is a `Derives` rule,
 except `extension`, a derived or certificate rule added by S08-S14, the S09
-commands from `conjUse` on, compositions of `Derives` rules (`Derived`), and
-`converted`, a rule application followed by `ho_apply` conversion (S11). -/
+commands from `conjUse` on and the S20 lemma commands, compositions of
+`Derives` rules (`Derived`), and `converted`, a rule application followed by
+`ho_apply` conversion (S11). -/
 inductive RuleId where
   | assumption | truth | conjIntro | conjLeft | conjRight | disjLeft | disjRight | disjElim
   | impIntro | impElim | falsityElim | forallIntro | forallElim | existsIntro | existsElim
   | clause | goalClause | defaultNegIntro | hoApplyIntro | hoApplyElim
   | equalRefl | equalSymm | equalTrans | equalSubst | extension
   | conjUse | disjCases | existsOpen | forallUse | impUse | headUse | headProject | headDenial | onlyIfUse | equalJoin
+  | lemmaUse | lemmaRule | lemmaCut
   | converted
   deriving DecidableEq, Repr
 
@@ -47,7 +49,10 @@ the order they run, and it exports as the S08 logical nodes it stands for
 the strategy read it when it selected the command, and is read through the
 final answers like every other node parameter; the scope holds it as written.
 A clause is a program clause with the renaming of its template names to fresh
-flexible names, as for `RuleApp.clause`. -/
+flexible names, as for `RuleApp.clause`. The S20 lemma commands use a checked
+lemma, by its name and statement, where the others use an assumption; they
+export as a reference to the lemma followed by the eliminations of its
+instance. -/
 inductive Derived (Variable Literal Symbol : Type) where
   /-- `A ∧ B` assumed: the goal under both components. -/
   | conjUse (assumption : Formula Variable Literal Symbol)
@@ -75,13 +80,23 @@ inductive Derived (Variable Literal Symbol : Type) where
   /-- Two assumed equations with a shared side, oriented as `s = a` and
   `s = b` (S10): the goal under `a = b`, by symmetry and transitivity. -/
   | equalJoin (first second : Formula Variable Literal Symbol) (flipFirst flipSecond : Bool)
+  /-- A checked lemma (S20), by its name and statement, at witnesses for its
+  leading binders: the instance concludes the goal. No premise. -/
+  | lemmaUse (name : Symbol) (statement : Formula Variable Literal Symbol) (witnesses : List (Term Variable Literal Symbol))
+  /-- A checked lemma whose instance is `B → H`: `H` concludes the goal, and
+  `B` is the one premise (S20). -/
+  | lemmaRule (name : Symbol) (statement : Formula Variable Literal Symbol) (witnesses : List (Term Variable Literal Symbol))
+  /-- A checked lemma's instance assumed by the continuation, the goal under
+  it (S20): the left commands and local rules then use it. -/
+  | lemmaCut (name : Symbol) (statement : Formula Variable Literal Symbol) (witnesses : List (Term Variable Literal Symbol))
   deriving Repr
 
 def Derived.id : Derived Variable Literal Symbol → RuleId
   | .conjUse _ => .conjUse | .disjCases _ => .disjCases | .existsOpen _ _ => .existsOpen
   | .forallUse _ _ => .forallUse | .impUse _ _ => .impUse | .headUse _ _ => .headUse
   | .headProject _ _ _ => .headProject | .headDenial _ _ => .headDenial | .onlyIfUse _ _ => .onlyIfUse
-  | .equalJoin _ _ _ _ => .equalJoin
+  | .equalJoin _ _ _ _ => .equalJoin | .lemmaUse _ _ _ => .lemmaUse | .lemmaRule _ _ _ => .lemmaRule
+  | .lemmaCut _ _ _ => .lemmaCut
 
 /-- A rule application with the parameters its conclusion and premises do not
 determine: eigenvariables, witnesses, the clause and its finite instantiation,
