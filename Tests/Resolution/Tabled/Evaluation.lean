@@ -82,7 +82,7 @@ def fragmentOf (clauses : List Clause) (declared : Modes Sym) : Tabled.Program N
 
 def setupOf (clauses : List Clause) (goal : T) (declared : Modes Sym := modes) : Tabled.Setup Unit Nat Nat Sym :=
   Tabled.Setup.ofProgram vocab (fragmentOf clauses declared) admission isGuard isGuard_iff separated markers
-    (fun symbol => free symbol 0 || free symbol 1) [goal] .tab
+    (fun symbol => free symbol 0 || free symbol 1) [goal] .tab id [] (by simp)
 
 def answerOf (clauses : List Clause) (goal : T) (answers : List Nat := []) (fuel : Nat := 3000)
     (declared : Modes Sym := modes) : TabledAnswer Nat Nat Sym :=
@@ -111,6 +111,30 @@ def missingKinds : TabledAnswer Nat Nat Sym → List String
 def blockerFormulas : TabledAnswer Nat Nat Sym → List T
   | .undecided blockers => blockers.map (·.formula)
   | _ => []
+
+/-- A signature with one domain of nodes `a`, `b`, `c`: its guards `isUnit`
+and `allData` hold of them. -/
+def nodeRules : List (InductiveDomains.Rule Unit Sym) := [⟨(), .a, []⟩, ⟨(), .b, []⟩, ⟨(), .c, []⟩]
+def nodes : FiniteFamily Unit Sym := ⟨fun rule => rule ∈ nodeRules, [()], fun domain => by cases domain; simp⟩
+def guarded : SignatureSnapshot Unit Sym := ⟨0, ⟨nodes, fun _ => .isUnit, .allData, .isPred, []⟩⟩
+
+theorem guarded_isGuard_iff (symbol : Sym) : isGuard symbol = true ↔ Open.IsGuard guarded.naming symbol := by
+  cases symbol <;> simp [isGuard, Open.IsGuard, guarded, SignatureSnapshot.naming, Signature.naming]
+
+theorem guarded_separated : Open.Separated guarded.naming Sym.ha where
+  membership _ _ _ := rfl
+  predicate _ _ same := by cases same; rfl
+  dataMembership _ same := by cases same
+  predicateMembership _ _ same := by cases same
+  predicateData _ same := by cases same
+  hoApply := by simp [Open.IsGuard, guarded, SignatureSnapshot.naming, Signature.naming]
+
+def guardedSetupOf (clauses : List Clause) (goal : T) : Tabled.Setup Unit Nat Nat Sym :=
+  Tabled.Setup.ofProgram vocab (fragmentOf clauses modes) guarded isGuard guarded_isGuard_iff guarded_separated markers
+    (fun symbol => free symbol 0 || free symbol 1) [goal] .tab id nodeRules (fun _ member => member)
+
+def guardedAnswerOf (clauses : List Clause) (goal : T) : TabledAnswer Nat Nat Sym :=
+  (guardedSetupOf clauses goal).answer 3000 ⟨[], goal, []⟩
 
 /-! ## Path over a graph -/
 
@@ -222,6 +246,22 @@ def loopNaf : List Clause := [rule (k .p) [naf (k .q)], rule (k .q) [naf (k .p)]
 
 /-! ## Bounded runs end without fuel -/
 
+/-- A query's bounded run with its data terms cut at `size` nodes: the setup's
+own limit is generous, so that a P1 run never meets it; a growing program
+reaches any limit, and these traces use a small one. -/
+def smallRun (clauses : List Clause) (goal : T) (size : Nat) : Engine.Outcome Nat Nat Sym :=
+  let setup := setupOf clauses goal
+  let engine : Engine Nat Nat Sym := { setup.engine (setup.space [] goal) with bounds := some { setup.bounds [] goal with size } }
+  engine.runToEnd (bounds := { setup.bounds [] goal with size }) rfl (Engine.start [] goal)
+
+def outcomeKind : Engine.Outcome Nat Nat Sym → String
+  | .success _ _ => "success"
+  | .interrupted _ => "interrupted"
+  | .finished .exhausted => "exhausted"
+  | .finished (.opened _) => "opened"
+  | .finished (.abandoned _) => "abandoned"
+  | .finished _ => "finished"
+
 /-- The outcome of a query's bounded run. -/
 def decidedKind (clauses : List Clause) (goal : T) : String :=
   match (setupOf clauses goal).decided [] goal with
@@ -232,21 +272,18 @@ def decidedKind (clauses : List Clause) (goal : T) : String :=
   | .finished (.abandoned _) => "abandoned"
   | .finished _ => "finished"
 
-/-- The tables a bounded run opens, and the calls its bounds allow. -/
+/-- The tables a bounded run opens. -/
 def decidedTables (clauses : List Clause) (goal : T) : Nat :=
   match (setupOf clauses goal).decided [] goal with
   | .success _ resume => resume.tables.length
   | _ => 0
 
-def boundCalls (clauses : List Clause) (goal : T) : Nat := ((setupOf clauses goal).bounds [] goal).calls.length
-
 -- A bounded run ends for any program: the growing call `p(succ(…))` leaves the
 -- bounds and is abandoned, where the fuelled run is interrupted.
-#guard decidedKind grow (atom .p [k .zero]) == "abandoned"
--- `∃Y. path(a, Y)` opens four tables, among the bounds' calls.
+#guard outcomeKind (smallRun grow (atom .p [k .zero]) 6) == "abandoned"
+-- `∃Y. path(a, Y)` opens four tables, one per distinct call (the bounds'
+-- calls, `Bounds.calls`, are for the proof, never computed).
 #guard decidedTables (cyclic ++ rightRecursive) (.existsVar 7 (atom .path [k .a, v 7])) == 4
-#guard decidedTables (cyclic ++ rightRecursive) (.existsVar 7 (atom .path [k .a, v 7])) ≤
-  boundCalls (cyclic ++ rightRecursive) (.existsVar 7 (atom .path [k .a, v 7]))
 
 /-! ## Rigid parameters -/
 
@@ -291,5 +328,75 @@ def freshKb : List Clause :=
 -- A predicate without a mode is Undecided before anything runs: the goal and
 -- the clause each lack a mode.
 #guard missingKinds (answerOf [fact (atom .d [k .a])] (atom .d [k .a])) == ["mode", "mode"]
+
+/-! ## Guards -/
+
+/-- `path` lowered with its range guards first, as lowering emits it. -/
+def lowered : List Clause :=
+  [rule (atom .path [v 0, v 1]) [atom .allData [v 0], atom .allData [v 1], atom .edge [v 0, v 1]],
+   rule (atom .path [v 0, v 1]) [atom .allData [v 0], atom .allData [v 1], atom .edge [v 0, v 2], atom .path [v 2, v 1]]]
+
+-- The guards are tabled calls, decided by the signature's generated clauses,
+-- which the checker reads too: the lowered `path` answers Yes, its proof
+-- checked, and No for an unreachable target.
+#guard profileKind (acyclic ++ lowered) (atom .path [k .a, k .c]) == "p1"
+#guard kindOf (guardedAnswerOf (acyclic ++ lowered) (atom .path [k .a, k .b])) == "yes"
+#guard kindOf (guardedAnswerOf (acyclic ++ lowered) (atom .path [k .a, k .c])) == "yes"
+#guard kindOf (guardedAnswerOf (acyclic ++ lowered) (atom .path [k .a, k .d])) == "no"
+
+/-! ## Calls with computed inputs -/
+
+-- `p(X) :- q(succ(X)).  q(Y).`: the call `q(succ(a))` takes a constructed
+-- input, within the bounds' size: Yes.
+open Mode in
+def oneInput : Modes Sym
+  | .p | .q | .s => some [input]
+  | _ => none
+
+#guard profileKind [rule (atom .p [v 0]) [atom .q [succ (v 0)]], fact (atom .q [v 1])] (atom .p [k .a]) (declared := oneInput) == "p1"
+#guard kindOf (answerOf [rule (atom .p [v 0]) [atom .q [succ (v 0)]], fact (atom .q [v 1])] (atom .p [k .a])
+  (declared := oneInput)) == "yes"
+
+/-! ## Consistency -/
+
+open Mode in
+def outputs : Modes Sym
+  | .p | .q => some [output]
+  | .r => some []
+  | _ => none
+
+-- `p(a). q(a). ⊥ :- p(X), q(X).`: the denial is violated by an instance, its
+-- body closed existentially: every answer is Undecided, the KB's consistency.
+#guard missingKinds (answerOf [fact (atom .p [k .a]), fact (atom .q [k .a]), .goal [atom .p [v 0], atom .q [v 0]], fact (k .r)]
+  (k .r) (declared := outputs)) == ["consistency"]
+-- `false :- p.` is a denial too.
+#guard missingKinds (answerOf [fact (k .p), .definite .falsity [k .p], fact (k .q)] (k .q) (declared := nullary)) ==
+  ["consistency"]
+-- A denial whose body needs a constructed input: proved, so the KB is inconsistent.
+#guard missingKinds (answerOf [rule (atom .p [v 0]) [atom .q [succ (v 0)]], fact (atom .q [v 1]), .goal [atom .p [k .a]],
+  fact (atom .s [k .a])] (atom .s [k .a]) (declared := oneInput)) == ["consistency"]
+
+/-- Five independent loops through NAF: thirty-two models. -/
+def fiveLoops : List Clause :=
+  [Sym.a, Sym.b, Sym.c, Sym.d, Sym.zero].flatMap fun constant =>
+    [rule (atom .p [k constant]) [naf (atom .q [k constant])], rule (atom .q [k constant]) [naf (atom .p [k constant])]]
+
+-- Ten undecided atoms: not every assignment is tried, so no candidate model is
+-- no evidence of inconsistency.
+#guard !(missingKinds (answerOf fiveLoops (atom .p [k .a]) (declared := oneInput))).contains "consistency"
+
+/-! ## A bounded run's cut names its bound -/
+
+def smallBlockers (clauses : List Clause) (goal : T) (size : Nat) : List String :=
+  match smallRun clauses goal size with
+  | .finished outcome => (Tabled.Setup.blockersOf outcome goal).map fun blocker => match blocker.missing with
+      | .proof => "proof" | .mode => "mode" | .termination => "termination"
+      | .construct _ => "construct" | .witnesses _ => "witnesses" | .consistency _ => "consistency"
+  | _ => []
+
+-- The growing call `p(succ(…))` leaves the bounds: the blocker is a
+-- termination limit, not a construct.
+#guard (smallBlockers grow (atom .p [k .zero]) 6).contains "termination"
+#guard !(smallBlockers grow (atom .p [k .zero]) 6).contains "construct"
 
 end TabledEvaluationTests

@@ -27,7 +27,7 @@ invariants hold for every generator unchanged.
 
 | Event | What the run does |
 | --- | --- |
-| A focused atom with a declared mode, inputs with no flexible name as read (rigid parameters are fixed for the run), and a closed context | A **call**: a predicate, its input values, its context (`Call`) |
+| A focused atom with a declared mode, or a guard, inputs with no flexible name as read (rigid parameters are fixed for the run), and a closed context | A **call**: a predicate or a guard, its input values, its context (`Call`). A guard's one argument is its input; it is decided by the signature's generated clauses (`Setup.generated`) |
 | A call with no table | Create its table and push its generator: a machine state for the atom with its outputs as fresh answer names, which resolves it against the clauses. The caller stays focused on the call until the table completes |
 | A call with a complete table | Consume the table: each answer a candidate, its node a leaf naming the answer and its context |
 | A call with an incomplete table (a recursive call) | Consume the answers so far, and leave a **consumer**: the branch's obligation, store, continuations, and deferred proofs |
@@ -46,18 +46,25 @@ without fuel (below).
 ## Termination: bounded runs without fuel
 
 A **bounded run** (`Engine.bounds`) is the run of a P1 query. Its bounds
-(`Setup.bounds`) are the symbols the program and the query apply, the data
-terms (the universe, and the subterms of the query's arguments, rigid
-parameters included), the most arguments an application has, and the
-assumptions (the query's context and every antecedent the program or the
-query assumes). Three runtime checks keep it within them (decided with the
-user, 2026-11-08):
+(`Setup.bounds`) are the symbols the program and the query apply; the data
+terms built from them, the literals, and the query's free names (rigid
+parameters included), with at most the most arguments an application has and
+at most `(s + 1) ^ (p + 1)` nodes, for `s` the largest argument and `p` the
+symbols (each call from a lower component's entry can grow its inputs by a
+body's terms); and the assumptions (the query's context and every antecedent
+the program or the query assumes). The size limit is generous: a P1 run never
+comes near it, while a growing program, run bounded, would take as long. Three
+runtime checks keep a run within the bounds (decided with the user,
+2026-11-08):
 
 | Check | What a bounded run does |
 | --- | --- |
-| A call's predicate, inputs, and context drawn from the bounds, the context without repeats (`admits`) | Otherwise the call is not tabled, and is a gap |
-| An answer within the bounds (`inSpace`) | Scheduled to the consumers waiting; otherwise recorded for consumers still to come, and each consumer waiting is a gap |
+| A call's predicate, inputs, and context drawn from the bounds, the context without repeats (`admits`) | Otherwise the call is not tabled, and is a gap (`GapReason.bounded`) |
+| An answer within the bounds (`inSpace`) | Scheduled to the consumers waiting; otherwise recorded for consumers still to come, and each consumer waiting that it would serve is a gap |
 | A candidate lighter than its focus (`fit`): its premises weigh less than the goal (`Fits`), a generator's root more than every clause body (`rootWeight`) | Otherwise dropped, and the focus is a gap (`incomplete`) |
+
+A cut is recorded with `GapReason.bounded` (`Engine.mark`), and its blocker is
+a termination limit (`Missing.termination`), not a construct.
 
 The **rank** of a run (`Engine.rank`) falls at every transition
 (`Engine.step_rank`), lexicographically:
@@ -110,10 +117,10 @@ with complement NAF that realize the admission signature (`Setup.meaning`).
 
 | Answer | When | Evidence |
 | --- | --- | --- |
-| **Yes** | The run succeeds | The proof exported as an S08 term, each table answer expanded from its own proof (`exportWith`), and checked (`checks`). NAF evidence is a universe over which the operand is refuted, checked by computing the refutation again (`nafCheck`) |
+| **Yes** | The run succeeds | The proof exported as an S08 term, each table answer expanded from its own proof (`exportWith`), and checked (`checks`) against the completion and the guards' generated clauses (`checkSnapshot`), which every model realizing the admission signature satisfies (`models_checkSnapshot`). NAF evidence is a universe over which the operand is refuted, checked by computing the refutation again (`nafCheck`) |
 | **No** | The run completed, and the goal is refuted over the universe | The universe (`refutesIn`) |
 | **Unknown** | The run completed, and two witnesses check | `greatest` and `least` for a positive program, two `assignment`s for a ground one |
-| **Undecided** | Admission's blockers; a denial's body proved or unsettled; fuel exhausted (P2), naming the call being evaluated; no witness, naming the run's gaps; a ground program none of whose assignments is a model, the KB's consistency | Blockers |
+| **Undecided** | Admission's blockers; a denial (`⊥ :- body` or `false :- body`) with an instance of its body proved, or its run unsettled (`constraints`, `violation`); fuel exhausted (P2), naming the call being evaluated; no witness, naming the run's gaps; a ground program none of whose assignments of its undecided atoms is a model, all of them tried, the KB's consistency naming those atoms | Blockers |
 
 A P1 query runs bounded, without fuel (`Setup.decided`), its denials too
 (`denialCheckBounded`); a P2 query with the fuel (`Setup.runOf`). Every answer's
@@ -185,10 +192,14 @@ realizes a separated admission signature (`realizes`).
 | `p :- ¬q. q :- ¬p.` | Unknown, the assignments `{p}` and `{q}` |
 | `p :- ¬p.` | Undecided: the KB's consistency |
 | `p :- ¬q.`; with the fact `q` | Yes, the refutation of `q` checked again; No |
+| Lowered `path` with its range guards first, over `a → b → c`, nodes declared: `path(a, b)`, `path(a, c)`; `path(a, d)` | Yes, the guards decided by the generated clauses; No |
+| `p(X) :- q(succ(X)). q(Y).`, P1: `p(a)` | Yes: the constructed input `succ(a)` is within the bounds |
+| `p(a). q(a). ⊥ :- p(X), q(X).`; `false :- p.` with `p`; a denial body needing a constructed input | Every answer Undecided, the KB's consistency |
+| Five independent NAF loops | Not inconsistent: not every assignment of the ten undecided atoms is tried |
 | `p(X) :- p(succ(X))`, `p(zero)` with fuel 300 | Undecided, lacking a termination argument, naming a call `p(succ(…))` |
 | `path(a, b)`, P1, with fuel 0; 9000 | Yes; Yes: no fuel needed |
 | `p :- ¬q. q :- ¬p.`, P2, with fuel 5; 300; 9000 | Undecided; Unknown; Unknown |
-| The bounded run of `p(X) :- p(succ(X))` from `p(zero)` | Ends, abandoned: the growing call leaves the bounds |
+| The bounded run of `p(X) :- p(succ(X))` from `p(zero)`, its terms cut at six nodes | Ends, abandoned: the growing call leaves the bounds; the blocker is a termination limit |
 | `∃Y. path(a, Y)` over the cycle, bounded | Four tables, among the bounds' calls |
 | `path(X, c)`, `X` a rigid parameter, left recursion over the cycle | P1; the run ends (plain SLD on the call looped); No |
 | `path(X, a)`, `X` rigid | The run ends; Undecided: neither derived for every `X` nor refuted, and witnesses with parameters are S26's |
@@ -202,11 +213,13 @@ realizes a separated admission signature (`realizes`).
 - **The checks never fire for P1.** A bounded run ends for every program, but
   a call, an answer, or a candidate outside the bounds is a gap, so the answer
   may be Undecided. S23 bounds a complete predicate's calls
-  (`calls_bounded`) and answers (`outputs_bounded`, `calls_decrease`); that
-  every call and scheduled answer of a P1 run is within the bounds, and every
-  candidate fits (clause bodies weighed by their connectives, goals without
-  formula variables), is S15's, with the completeness below (decided with the
-  user, 2026-11-08; noted there).
+  (`calls_bounded`) and answers (`outputs_bounded`, `calls_decrease`) per
+  component, an entry's calls by its own inputs; that every call and scheduled
+  answer of a P1 run is within the bounds' size, composing those bounds along
+  the component order, and every candidate fits (clause bodies weighed by
+  their connectives, goals without formula variables), is S15's, with the
+  completeness below (decided with the user, 2026-11-08; noted there). S15 may
+  need to raise the size limit.
 - **Completeness and exactness.** An atom in the least fixpoint of a P1
   program answering Yes (the engine's completeness), and the cases in which
   the answer is never Undecided, are S15's ("P1 decisions are total, sound,
@@ -222,7 +235,9 @@ realizes a separated admission signature (`realizes`).
   arguments), with unknown markers, and ground programs with NAF. A non-ground
   program with NAF has no witnesses: an open goal there is Undecided.
   Contexts: a query with assumptions has no witnesses (S26). Neither has a
-  goal with rigid parameters.
+  goal with rigid parameters. The greatest witness's check reads a guard atom
+  as false, so a positive program whose clauses use guards, as lowering emits
+  them, gets no greatest witness: its open goals are Undecided.
 - **Tabled calls.** Inputs with no flexible name as read, rigid parameters
   included, and contexts closed. A call with a flexible name at an input, or a
   context with a rigid parameter, and NAF on a non-ground operand, run by the

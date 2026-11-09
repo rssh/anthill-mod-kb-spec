@@ -22,7 +22,8 @@ The bounds are finite lists (`Bounds.calls`, `Bounds.answers`), so the rank is
 well-founded (`RunLower.wellFounded`), and the run is a total function with no
 fuel (`Engine.runToEnd`). At most `|Bounds.calls|` tables are opened: the
 predicates, the input lists of at most `arity` data terms, and the contexts
-of at most `|assumptions|` assumptions, S23's count of distinct calls. -/
+of at most `|assumptions|` assumptions, S23's count of distinct calls, over the
+data terms of at most `size` nodes. -/
 
 namespace AnthillModKbSpec.Tabled
 
@@ -53,14 +54,58 @@ namespace Bounds
 
 variable (bounds : Bounds Variable Literal Symbol)
 
+/-- Every data term of the bounds with at most `count` nodes. -/
+def terms : Nat → List (Term Variable Literal Symbol)
+  | 0 => []
+  | count + 1 => bounds.names.map .var ++ bounds.literals.map .lit ++
+      bounds.constructors.flatMap fun symbol => (upTo bounds.arity (terms count)).map (.app symbol)
+
+omit [DecidableEq Variable] [DecidableEq Literal] [DecidableEq Symbol] [FreshNames Variable] in
+theorem buildsAll_iff [DecidableEq Variable] [DecidableEq Literal] [DecidableEq Symbol] :
+    ∀ {args : List (Term Variable Literal Symbol)}, bounds.buildsAll args = true ↔ ∀ arg ∈ args, bounds.builds arg = true
+  | [] => by simp [buildsAll]
+  | arg :: rest => by simp [buildsAll, buildsAll_iff (args := rest)]
+
+omit [FreshNames Variable] in
+/-- Every data term of the bounds is listed, with its size. -/
+theorem mem_terms : ∀ (count : Nat) (term : Term Variable Literal Symbol), bounds.builds term = true →
+    Tabled.size term ≤ count → term ∈ bounds.terms count
+  | 0, term, _, small => absurd small (by have := size_pos term; omega)
+  | count + 1, .var name, built, _ => by
+      simp only [Bounds.builds, List.contains_iff_mem] at built
+      simp [terms, built]
+  | count + 1, .lit value, built, _ => by
+      simp only [Bounds.builds, List.contains_iff_mem] at built
+      simp [terms, built]
+  | count + 1, .app symbol args, built, small => by
+      simp only [Bounds.builds, Bool.and_eq_true, List.contains_iff_mem, decide_eq_true_eq] at built
+      obtain ⟨⟨constructor, short⟩, each⟩ := built
+      have argsListed : args ∈ upTo bounds.arity (bounds.terms count) := by
+        refine mem_upTo short fun arg member => mem_terms count arg ((bounds.buildsAll_iff).mp each arg member) ?_
+        have := size_le_sizeAll member
+        simp only [Tabled.size] at small
+        omega
+      simp only [terms, List.mem_append, List.mem_flatMap, List.mem_map]
+      exact .inr ⟨symbol, constructor, args, argsListed, rfl⟩
+  | count + 1, .truth, built, _ | count + 1, .falsity, built, _ | count + 1, .conj _ _, built, _
+  | count + 1, .disj _ _, built, _ | count + 1, .imp _ _, built, _ | count + 1, .defaultNeg _, built, _
+  | count + 1, .forallVar _ _, built, _ | count + 1, .existsVar _ _, built, _
+  | count + 1, .dictionaryCall _ _ _ _, built, _ | count + 1, .equal _ _, built, _ => by simp [Bounds.builds] at built
+
+omit [FreshNames Variable] in
+theorem mem_terms_of_holds {term : Term Variable Literal Symbol} (holding : bounds.holds term = true) :
+    term ∈ bounds.terms bounds.size := by
+  simp only [Bounds.holds, Bool.and_eq_true, decide_eq_true_eq] at holding
+  exact bounds.mem_terms _ term holding.1 holding.2
+
 /-- The calls a bounded run may table. -/
 def calls : List (Call Variable Literal Symbol) :=
-  bounds.predicates.flatMap fun predicate => (upTo bounds.arity bounds.data).flatMap fun inputs =>
+  bounds.predicates.flatMap fun predicate => (upTo bounds.arity (bounds.terms bounds.size)).flatMap fun inputs =>
     (upTo bounds.assumptions.length bounds.assumptions).map fun context => ⟨predicate, inputs, context⟩
 
 /-- The answers a bounded run may schedule. -/
 def answers : List (Term Variable Literal Symbol) :=
-  bounds.predicates.flatMap fun predicate => (upTo bounds.arity bounds.data).map (.app predicate)
+  bounds.predicates.flatMap fun predicate => (upTo bounds.arity (bounds.terms bounds.size)).map (.app predicate)
 
 end Bounds
 
@@ -76,7 +121,8 @@ theorem admits_calls {bounds : Bounds Variable Literal Symbol} (bounded : engine
   rw [bounded] at admitted
   simp only [Bool.and_eq_true, List.contains_iff_mem, decide_eq_true_eq, List.all_eq_true] at admitted
   obtain ⟨⟨⟨⟨predicate, short⟩, data⟩, drawn⟩, distinct⟩ := admitted
-  refine List.mem_flatMap.mpr ⟨symbol, predicate, List.mem_flatMap.mpr ⟨inputs, mem_upTo short data, ?_⟩⟩
+  refine List.mem_flatMap.mpr ⟨symbol, predicate, List.mem_flatMap.mpr
+    ⟨inputs, mem_upTo short fun input member => bounds.mem_terms_of_holds (data input member), ?_⟩⟩
   refine List.mem_map.mpr ⟨context, mem_upTo (distinct.length_le_of_subset fun term inside => drawn term inside) drawn, rfl⟩
 
 omit [FreshNames Variable] in
@@ -89,7 +135,8 @@ theorem inSpace_answers {bounds : Bounds Variable Literal Symbol} (bounded : eng
   · rename_i symbol args
     simp only [Bool.and_eq_true, List.contains_iff_mem, decide_eq_true_eq, List.all_eq_true] at inside
     obtain ⟨⟨predicate, short⟩, data⟩ := inside
-    exact List.mem_flatMap.mpr ⟨symbol, predicate, List.mem_map.mpr ⟨args, mem_upTo short data, rfl⟩⟩
+    exact List.mem_flatMap.mpr ⟨symbol, predicate, List.mem_map.mpr
+      ⟨args, mem_upTo short fun arg member => bounds.mem_terms_of_holds (data arg member), rfl⟩⟩
   · cases inside
 
 omit [FreshNames Variable] in
@@ -772,7 +819,13 @@ theorem step_rank {bounds : Bounds Variable Literal Symbol} (bounded : engine.bo
           rw [List.getElem?_eq_getElem bound] at found; exact Option.some.inj found
         have liveGenerator : State.done generator.state = false := by
           rw [← same]; simpa using live
-        exact engine.stepAt_rank bounded found liveGenerator stepped
+        obtain ⟨sameTables, sameStack⟩ := mark_same engine run generator
+        have rankEq : engine.rank bounds (engine.mark run generator) = engine.rank bounds run := by
+          simp only [rank, branches, points, sameStack]
+          rw [openCalls_congr (run := run) (other := engine.mark run generator) (by rw [sameTables]),
+            openAnswers_congr (run := run) (other := engine.mark run generator) (by rw [sameTables])]
+        rw [← rankEq]
+        exact engine.stepAt_rank bounded (by rw [sameStack]; exact found) liveGenerator stepped
       · cases stepped
 
 /-- The rank, ordered by `RunLower`. -/

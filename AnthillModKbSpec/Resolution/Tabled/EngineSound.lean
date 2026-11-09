@@ -993,6 +993,20 @@ theorem call?_app {obligation : Obligation Variable Literal Symbol} {store : Sto
     engine.callOfAtom store symbol args obligation.scope.assumptions = some call := by
   unfold call? at found; rw [reads] at found; exact found
 
+/-- Marking a cut adds a gap and changes nothing else. -/
+theorem mark_same (engine : Engine Variable Literal Symbol) (run : Run Variable Literal Symbol)
+    (generator : Generator Variable Literal Symbol) :
+    (engine.mark run generator).tables = run.tables ∧ (engine.mark run generator).stack = run.stack := by
+  unfold mark
+  repeat' split
+  all_goals exact ⟨rfl, rfl⟩
+
+theorem Run.Inv.marked {run : Run Variable Literal Symbol} (inv : Run.Inv engine kb naf query run)
+    (generator : Generator Variable Literal Symbol) : Run.Inv engine kb naf query (engine.mark run generator) := by
+  unfold mark
+  repeat' split
+  all_goals first | exact inv | exact { inv with }
+
 variable (baseSound : Strategy.Sound engine.hoApplySymbol kb naf engine.base) (refutesSound : RefutesSound engine kb naf)
 include baseSound refutesSound
 
@@ -1080,7 +1094,8 @@ theorem Run.Inv.step {run : Run Variable Literal Symbol} (inv : Run.Inv engine k
       · exact inv.completed completedEq
     · split
       · rename_i generator found
-        exact inv.steppedAt baseSound refutesSound found
+        obtain ⟨_, sameStack⟩ := mark_same engine run generator
+        exact (inv.marked generator).steppedAt baseSound refutesSound (by rw [sameStack]; exact found)
       · exact ⟨fun _ finished => (by cases finished), fun _ _ finished => (by cases finished)⟩
 
 /-- A run keeps the invariant; its success reconstructs the query's answer

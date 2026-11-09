@@ -92,7 +92,8 @@ inductive Missing (Variable Literal Symbol : Type) where
   waiting for a binding when its branch ended (floundering), or a predicate
   without a mode declaration at its arity (S23). -/
   | mode
-  /-- A termination argument: a dependency cycle, or a run interrupted by its fuel. -/
+  /-- A termination argument: a dependency cycle, a run interrupted by its
+  fuel, or a bounded run cut by its bounds. -/
   | termination
   /-- A construct the module has no route for. -/
   | construct (construct : Construct)
@@ -349,7 +350,8 @@ def Blocker.ofGap (opened : Term Variable Literal Symbol → List (Term Variable
     | .unsupported => .construct .unsupported
     | .contract => .construct .contract
     | .floundered => .mode
-    | .opened => .witnesses (opened gap.obligation.goal)⟩
+    | .opened => .witnesses (opened gap.obligation.goal)
+    | .bounded => .termination⟩
 
 /-- A run interrupted by its fuel: the query's goal, under its context, lacks
 a termination argument. -/

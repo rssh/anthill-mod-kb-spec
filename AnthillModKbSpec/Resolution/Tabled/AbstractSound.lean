@@ -1129,7 +1129,7 @@ theorem refutes_sound {count : Nat} {goal : Term Variable Literal Symbol}
   obtain ⟨env, envMember, abstracts⟩ := envsOver_abstracts (space := space) environment goal.freeVars.eraseDups
   have possible := (body_sound valid completes.free negation soundPossible soundDefinite goal environment env
     fun name occurs => abstracts name (List.mem_eraseDups.mpr occurs)).1 holds
-  simp only [refutes, List.all_eq_true, Bool.not_eq_true'] at refuted
+  simp only [refutes, refutesWith, List.all_eq_true, Bool.not_eq_true'] at refuted
   rw [refuted env envMember] at possible
   cases possible
 

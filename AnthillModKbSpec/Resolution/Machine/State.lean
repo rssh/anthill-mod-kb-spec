@@ -96,6 +96,10 @@ inductive GapReason where
   capability: the KB leaves the obligation open. It is recorded with the gaps,
   so it blocks exhaustion and NAF barriers, and the outcome reports it apart. -/
   | opened
+  /-- A bounded run's limit (S24): a call, an answer, or a candidate outside
+  the bounds that make the run end. Not a missing capability: the run stopped
+  short there. -/
+  | bounded
   deriving DecidableEq, Repr
 
 /-- One step of an obligation's provenance: a frame on the way from the root,

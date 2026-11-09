@@ -1,5 +1,5 @@
 import AnthillModKbSpec.Resolution.Tabled.Witness
-import AnthillModKbSpec.Resolution.Tabled.Admission
+import AnthillModKbSpec.Resolution.Tabled.Calls
 import AnthillModKbSpec.Resolution.Tabled.Weight
 import AnthillModKbSpec.Resolution.P1.Negation
 
@@ -10,9 +10,9 @@ SLG resolution as an extension of the shared machine. The run's state
 ordinary machine state (`Machine.State`) whose transitions are the machine's
 `step` with the engine's strategy:
 
-- **Tables.** One per distinct call: a predicate, its input values as read,
-  with no flexible name (rigid parameters are fixed for the run), and the
-  closed context (`Call`). A table holds its answers, each with the
+- **Tables.** One per distinct call: a predicate or a guard, its input values
+  as read, with no flexible name (rigid parameters are fixed for the run), and
+  the closed context (`Call`). A table holds its answers, each with the
   generator's completed proof, and the branches waiting on it.
 - **A new call** creates a table and pushes its generator: a machine state
   for the call with its outputs as fresh answer names, which resolves the call
@@ -106,16 +106,45 @@ structure Run (Variable Literal Symbol : Type) where
   stack : List (Generator Variable Literal Symbol)
   gaps : List (Gap Variable Literal Symbol)
 
-/-- The bounds of a bounded run (P1): the predicates, data terms, and
-assumptions its calls are drawn from, and the most arguments an atom has. A
-call outside them is a gap, and only answers within them are scheduled to
-consumers, so the run's tables and the answers it schedules are finitely many
+/-- The bounds of a bounded run (P1): the predicates its calls are of; the
+data terms its inputs and answers are, built from the constructors, literals,
+and names listed, every application with at most `arity` arguments, at most
+`size` nodes; and the assumptions its contexts are drawn from. A call outside
+them is a gap, and only answers within them are scheduled to consumers, so the
+run's tables and the answers it schedules are finitely many
 (`Tabled/Termination`). -/
 structure Bounds (Variable Literal Symbol : Type) where
   predicates : List Symbol
-  data : List (Term Variable Literal Symbol)
+  constructors : List Symbol
+  literals : List Literal
+  names : List Variable
+  size : Nat
   arity : Nat
   assumptions : List (Term Variable Literal Symbol)
+
+namespace Bounds
+
+variable [DecidableEq Variable] [DecidableEq Literal] [DecidableEq Symbol] (bounds : Bounds Variable Literal Symbol)
+
+mutual
+/-- A data term built from the bounds' constructors, literals, and names, every
+application with at most `arity` arguments. -/
+def builds : Term Variable Literal Symbol → Bool
+  | .var name => bounds.names.contains name
+  | .lit value => bounds.literals.contains value
+  | .app symbol args => bounds.constructors.contains symbol && decide (args.length ≤ bounds.arity) && buildsAll args
+  | _ => false
+
+def buildsAll : List (Term Variable Literal Symbol) → Bool
+  | [] => true
+  | term :: rest => builds term && buildsAll rest
+end
+
+/-- A data term of the bounds: built from them, at most `size` nodes. -/
+def holds (term : Term Variable Literal Symbol) : Bool :=
+  bounds.builds term && decide (Tabled.size term ≤ bounds.size)
+
+end Bounds
 
 /-- What the engine needs: the `ho_apply` symbol, the fragment's program with
 its modes, the clauses calls are resolved against, the unknown markers, the
@@ -163,18 +192,29 @@ def admits (symbol : Symbol) (inputs : List (Term Variable Literal Symbol)) (con
   match engine.bounds with
   | none => true
   | some bounds =>
-      bounds.predicates.contains symbol && decide (inputs.length ≤ bounds.arity) && inputs.all (· ∈ bounds.data) &&
+      bounds.predicates.contains symbol && decide (inputs.length ≤ bounds.arity) && inputs.all bounds.holds &&
         context.all (· ∈ bounds.assumptions) && decide context.Nodup
 
+/-- The inputs and outputs of an atom: a predicate's by its declared mode, a
+guard's one argument an input. -/
+def ioOf (symbol : Symbol) (args : List (Term Variable Literal Symbol)) :
+    Option (List (Term Variable Literal Symbol) × List (Term Variable Literal Symbol)) :=
+  if engine.fragment.guard symbol then
+    match args with
+    | [arg] => some ([arg], [])
+    | _ => none
+  else engine.fragment.io? symbol args
+
 /-- The call an atom makes in a context, when it is tabled: a predicate with
-a declared mode at its arity, its inputs with no flexible name as read (rigid
+a declared mode at its arity, or a guard, which its generated clauses decide
+once its argument is bound; its inputs with no flexible name as read (rigid
 parameters are fixed for the run), the context closed, within the bounds of a
 bounded run. -/
 def callOfAtom (store : Store Variable Literal Symbol) (symbol : Symbol) (args : List (Term Variable Literal Symbol))
     (context : ProofContext Variable Literal Symbol) : Option (Call Variable Literal Symbol) :=
-  if symbol = engine.hoApplySymbol ∨ engine.fragment.guard symbol = true ∨ engine.unknownMarker symbol = true then none
+  if symbol = engine.hoApplySymbol ∨ engine.unknownMarker symbol = true then none
   else
-    match engine.fragment.io? symbol args with
+    match engine.ioOf symbol args with
     | some (inputs, _) =>
         if inputs.all (rigidTerm store) && context.all closedTerm && engine.admits symbol inputs context then
           some ⟨symbol, inputs, context⟩
@@ -189,13 +229,13 @@ def call? (obligation : Obligation Variable Literal Symbol) (store : Store Varia
   | _ => none
 
 /-- An answer a bounded run schedules to consumers: an atom of the bounds'
-predicates over its data terms. -/
+predicates over data terms of the bounds. -/
 def inSpace (atom : Term Variable Literal Symbol) : Bool :=
   match engine.bounds with
   | none => true
   | some bounds =>
       match atom with
-      | .app symbol args => bounds.predicates.contains symbol && decide (args.length ≤ bounds.arity) && args.all (· ∈ bounds.data)
+      | .app symbol args => bounds.predicates.contains symbol && decide (args.length ≤ bounds.arity) && args.all bounds.holds
       | _ => false
 
 /-- The table of a call. -/
@@ -356,7 +396,8 @@ def schedule (stack : List (Generator Variable Literal Symbol)) (call : Call Var
 
 /-- Record a generator's answer, if new, and schedule it to the table's
 consumers. A bounded run schedules only answers within its bounds; another one
-is recorded, for consumers still to come, and each consumer waiting is a gap. -/
+is recorded, for consumers still to come, and each consumer waiting that it
+would have served is a gap. -/
 def answer (run : Run Variable Literal Symbol) (index : Nat) (atom : Term Variable Literal Symbol)
     (proof : CompletedProof Variable Literal Symbol (Term Variable Literal Symbol) Unit) : Run Variable Literal Symbol :=
   match run.tables[index]? with
@@ -368,7 +409,11 @@ def answer (run : Run Variable Literal Symbol) (index : Nat) (atom : Term Variab
               let next := engine.schedule acc.1 table.call atom waiter
               (next.1, next.2 ++ acc.2)) (run.stack, [])
           else (run.stack, table.waiters.filterMap fun waiter =>
-            if waiter.negative then none else some ⟨.unsupported, waiter.obligation, trailOf waiter.frames⟩)
+            if waiter.negative then none
+            else
+              match engine.consume waiter.obligation waiter.store table.call atom with
+              | some (some _) => some ⟨.bounded, waiter.obligation, trailOf waiter.frames⟩
+              | _ => none)
         { tables := updateTable run.tables index fun table => { table with answers := table.answers ++ [⟨atom, proof⟩] }
           stack := scheduled.1
           gaps := scheduled.2 ++ run.gaps }
@@ -474,6 +519,36 @@ def stepAt (run : Run Variable Literal Symbol) (position : Nat) (generator : Gen
             | _ => engine.advance run position generator (engine.strategy run.tables)
   | _ => engine.advance run position generator (engine.strategy run.tables)
 
+/-- A bounded run's cut at a focus, weighed `top`: a call outside its bounds,
+or an alternative of the unfitted strategy that does not fit. -/
+def cut (strategy : Strategy Variable Literal Symbol (Term Variable Literal Symbol)) (top : Nat)
+    (obligation : Obligation Variable Literal Symbol) (store : Store Variable Literal Symbol) : Bool :=
+  engine.bounds.isSome &&
+    ((strategy obligation store).alternatives.any (fun expansion => !decide (Fits engine.hoApplySymbol top expansion)) ||
+      match store.resolve obligation.goal with
+      | .app symbol args =>
+          (engine.callOfAtom store symbol args obligation.scope.assumptions).isNone &&
+            ({ engine with bounds := none }.callOfAtom store symbol args obligation.scope.assumptions).isSome
+      | _ => false)
+
+/-- The cut at a generator's focus: its root weighed above every clause body
+before its first step, its goal's size after. -/
+def cutAt (run : Run Variable Literal Symbol) (generator : Generator Variable Literal Symbol)
+    (obligation : Obligation Variable Literal Symbol) : Bool :=
+  if generator.started then
+    engine.cut (engine.strategyCore run.tables) (goalSize engine.hoApplySymbol obligation.goal) obligation generator.state.store
+  else engine.cut engine.base engine.rootWeight obligation generator.state.store
+
+/-- Record where a bounded run is about to cut a generator's focus, so that
+the blocker names the bound rather than the gap the machine records. -/
+def mark (run : Run Variable Literal Symbol) (generator : Generator Variable Literal Symbol) : Run Variable Literal Symbol :=
+  match generator.state.focus with
+  | .solve obligation =>
+      if engine.cutAt run generator obligation then
+        { run with gaps := ⟨.bounded, obligation, trailOf generator.state.frames⟩ :: run.gaps }
+      else run
+  | _ => run
+
 /-- One transition of the run: complete the component on top when it has
 nothing left, otherwise step the topmost generator with something left. The
 query finishing with nothing left ends the run. -/
@@ -485,7 +560,7 @@ def step (run : Run Variable Literal Symbol) : Status Variable Literal Symbol :=
       | some completed => .running completed
       | none =>
           match run.stack[position]? with
-          | some generator => engine.stepAt run position generator
+          | some generator => engine.stepAt (engine.mark run generator) position generator
           | none => .finished (outcomeOf run.gaps)
 
 /-- The outcome of a tabled run. `interrupted` keeps the run, whose top

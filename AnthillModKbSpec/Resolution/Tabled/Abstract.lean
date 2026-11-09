@@ -284,11 +284,16 @@ def kk : Nat → List (GAtom Variable Literal Symbol) × List (AAtom Variable Li
 /-- Enough rounds: one per abstract atom that may change. -/
 def rounds : Nat := (allAtoms signature space).length + 1
 
+/-- The goal is not possibly true under any abstract value of its free names,
+the iteration's result given. -/
+def refutesWith (fixed : List (GAtom Variable Literal Symbol) × List (AAtom Variable Literal Symbol))
+    (goal : Term Variable Literal Symbol) : Bool :=
+  (envsOver (values space) goal.freeVars.eraseDups).all fun env => !possible signature space fixed.1 fixed.2 env goal
+
 /-- The goal is false in every model of the completion: not possibly true
-under any abstract value of its free names. -/
+under any abstract value of its free names. The iteration runs once. -/
 def refutes (count : Nat) (goal : Term Variable Literal Symbol) : Bool :=
-  (envsOver (values space) goal.freeVars.eraseDups).all fun env =>
-    !possible signature space (kk signature space clauses count).1 (kk signature space clauses count).2 env goal
+  refutesWith signature space (kk signature space clauses count) goal
 
 /-! ## The witnesses of positive programs -/
 

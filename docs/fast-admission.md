@@ -207,9 +207,10 @@ deterministic when they are.
 
 - **Per component.** The call bound is stated within a predicate's component.
   Whole-run termination composes it along the component order, with finitely
-  many answers per call (`outputs_bounded`, `calls_decrease`). S24's tables
-  are keyed by these calls ([tabled evaluation](tabled-evaluation.md)); the
-  composition into a fuel-free bound on its runs is not yet proved.
+  many answers per call (`outputs_bounded`, `calls_decrease`). S24 runs a P1
+  query bounded, and the run ends without fuel for every program
+  (`Engine.runToEnd`, [tabled evaluation](tabled-evaluation.md)); that its
+  bounds never cut a P1 run short, by these theorems, is S15's.
 - **Cycles are predicate-level.** NAF or a denial over a predicate on a cycle
   is P2 even when the recursion decreases, as in `naf reachable(x)`.
 - **Constructive negation reads rigid names unbound.** A NAF on a parameter at
@@ -221,6 +222,8 @@ deterministic when they are.
   defined operation is a blocker, and determinism compares only declared
   constructors and literals.
 - **Consistency.** P1 answers are Yes, No, or Unknown for a consistent KB. A
-  denial whose body is Yes makes every answer Undecided; S24 checks it at run
-  time (`Setup.denialCheck`).
+  denial (`⊥ :- body` or `false :- body`) with an instance of its body proved,
+  or its run unsettled, makes every answer Undecided; S24 checks it at run time
+  (`Setup.denialCheckBounded` for a P1 query, `Setup.denialCheck` with fuel
+  for a P2 one).
 - **Dictionary operations** are blockers until S14 evaluates them.

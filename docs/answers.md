@@ -283,6 +283,8 @@ no gap.
   a symbol between roles, such as `D_all` and the only domain's membership,
   gets no witness. S24's witness models interpret the guards exactly, so its
   programs may mention them; they still realize only a separated signature.
+  Its greatest witness's check still reads a guard atom as false, so a
+  positive program whose clauses use guards gets no greatest witness yet.
 - **Candidates, not search.** The module tries all-true, all-false, and
   single-atom assignments. Open atoms that interact can need another
   assignment; then the answer is Undecided, never a wrong Unknown.
