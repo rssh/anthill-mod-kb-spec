@@ -9,7 +9,7 @@
 
 - acceptance: lake build
 
-- depends_on: WI-20261026-ANXY6-s10-implement-evidence-first, WI-20261107-R9YMZ-s24-tabled-backtracking-on-the, WI-20261107-JA6WZ-s22-answers-yes-no-unknown-and
+- depends_on: WI-20261026-ANXY6-s10-implement-evidence-first, WI-20261107-JA6WZ-s22-answers-yes-no-unknown-and, WI-20261117-HYJ2C-s28-the-ir-evaluator-exact-p1, WI-20261117-A0H19-s29-admission-as-translation
 
 - tags: resolution-machine
 
@@ -63,4 +63,8 @@ From S24 (2026-11-08): the tabled run tables only calls whose inputs and context
 ### 2026-11-09T13:31:57Z — feedback — user
 
 Correction to the 2026-11-08 S24 note: a call is now tabled when its inputs hold no flexible name as read, rigid parameters included (the context still closed); NAF is tabled only on a closed operand, so NAF on a flexible name, an eigenvariable, or a rigid parameter still reaches the positive strategy, or is a gap in a bounded run.
+
+### 2026-11-17T20:25:24Z — feedback — user
+
+Re-scoped by the decision IR (docs/decision-ir.md, 2026-11-17): the tabled-fragment part (disequality constraints, constructive negation, universals over eigenvariables by disunification with domain closure) becomes an IR primitive with its proof of exactness, admitted by S29's translator and run by S28's evaluator, no longer on S24's engine. The machine-store part (the solver interface, the two-stage closing) serves proof search only and can be split off. Depends on S28 and S29 instead of S24.
 

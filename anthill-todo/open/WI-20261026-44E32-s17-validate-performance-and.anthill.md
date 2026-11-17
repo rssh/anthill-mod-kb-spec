@@ -38,3 +38,7 @@ Design references: docs/resolution-state-machine.md and docs/resolution-implemen
 ### 2026-11-07T14:55:37Z — feedback — user
 
 Profiles reorganized (2026-11-07): the former P2 is P3; the new P2 is budgeted tabled evaluation. Regressions also cover the fast fragment: S23's classes and degrees, S24's tabled answers with witnesses, budgeted runs ending Undecided, S26's contexts, and S25's regular decisions; the guarantees document states which answers are exact (P1) and which complete only within the fuel (P2).
+### 2026-11-17T20:25:18Z — feedback — user
+
+Decision IR (docs/decision-ir.md, 2026-11-17): regressions cover the translation (patterns, statement normalization, blockers naming what needs a proof), the evaluator (exact P1 answers, cost classes, P2 within the fuel), certificates and their checks, and the bridges. The guarantees document states which Yes answers are theorems of the KB and which are indexed by the snapshot.
+

@@ -40,3 +40,7 @@ Profile composition acceptance (S01 revision): use one syntax and one Step/run. 
 ### 2026-11-07T14:55:36Z — feedback — user
 
 Profiles reorganized (2026-11-07): the former P2 is P3, and the new P2 is budgeted tabled evaluation (docs/fast-decision-routes.md, docs/lean-admission-contract.md). Add end-to-end regressions for tabled answers: Yes, No, Unknown with its witnesses, and Undecided by fuel or an inconsistent completion; the composed theorem covers S24's table answers and S26's contexts.
+### 2026-11-17T20:25:12Z — feedback — user
+
+Decision IR (docs/decision-ir.md, 2026-11-17): composed soundness has two paths. Decisions: S29's translation theorem and S28's exactness give answers about the models of the completion realizing the signature; a Yes with no closed-world step is also a theorem of the KB. Proofs: reconstruction and the S08 checker, with S31's decision nodes and the IR's NAF evidence.
+

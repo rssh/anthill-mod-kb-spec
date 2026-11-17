@@ -9,7 +9,7 @@
 
 - acceptance: lake build
 
-- depends_on: WI-20261107-7PQMQ-s23-moded-structural-recursion, WI-20261107-JA6WZ-s22-answers-yes-no-unknown-and, WI-20261026-P6JQV-s12-admit-explicit-induction, WI-20261107-R9YMZ-s24-tabled-backtracking-on-the
+- depends_on: WI-20261107-7PQMQ-s23-moded-structural-recursion, WI-20261107-JA6WZ-s22-answers-yes-no-unknown-and, WI-20261026-P6JQV-s12-admit-explicit-induction, WI-20261117-06YN9-s27-decision-ir-syntax-checker, WI-20261117-HYJ2C-s28-the-ir-evaluator-exact-p1, WI-20261117-A0H19-s29-admission-as-translation
 
 - tags: resolution-machine
 
@@ -33,4 +33,10 @@ Acceptance:
 
 Validation: lake build and focused Lean tests/examples appropriate to the changed definitions and proofs.
 Design references: docs/fast-decision-routes.md, docs/machine-induction.md, docs/admission-signature.md (exact realization).
+
+## Changes
+
+### 2026-11-17T20:25:36Z — feedback — user
+
+Re-scoped by the decision IR (docs/decision-ir.md, 2026-11-17): regular unary predicates become an IR primitive (the automaton over states, its search the primitive's own evaluator), with patterns for ∀x:D. φ and ∃x:D. φ goals; ground atoms are decided by S28's evaluator, not S24's engine. Depends on S27, S28, and S29 instead of S24.
 

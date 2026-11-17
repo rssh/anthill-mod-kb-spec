@@ -12,6 +12,11 @@ Undecided) as nested admission rules for one syntax and one state machine. P2 an
 the tabled part of P1 are specified in [fast evaluation](fast-decision-routes.md). It specifies the proposed Lean
 interfaces and theorem obligations and inventories reusable results and gaps.
 
+The [decision IR](decision-ir.md) (decided with the user, 2026-11-17) revises
+"one state machine": admission translates the program into a decidable IR, or
+says which parts need a proof. P0 ⊂ P1 ⊂ P2 are evidence classes of that IR,
+run by its own evaluator; the shared state machine is the proof search of P3.
+
 ## Scope
 
 Reuse the existing `Term`, `Derives`, semantic model, substitution and scope
@@ -24,7 +29,8 @@ matching, certificate, and admission code in `AnthillModKbSpec/Resolution/`.
 Ground-profile modules live in `Resolution/P0/`; add `Resolution/P1/` and
 `Resolution/P3/` when their specific implementations are introduced. The fast
 fragment, which classifies predicates into P1 and P2, lives in
-`Resolution/Tabled/`. Shared
+`Resolution/Tabled/`; the decision IR, its evaluator, and the translator into
+it, in `Resolution/IR/`. Shared
 machinery remains in `Resolution/`. Foundation modules must not import models
 or resolution, and concrete models must not import resolution. Profile-specific
 bridges using a concrete model belong in `Resolution/`, as with
@@ -53,7 +59,12 @@ represented formulas; it does not require implementing a parser or replacing Ter
    Each motivating example should have concrete transitions and checked evidence.
    Distinguish P1 total sound/complete decisions from P3 incomplete proof strategies;
    termination alone does not establish a P1 decision contract.
-3. **Composition and verification (S15–S17).** Compose static admission, prove
+3. **Decision IR (S27–S31; S21, S25, S26 re-scoped).** Define the IR, its
+   checker and finiteness evidence, its semantics, and the exact evaluator with
+   its certificates; make admission a translation into it, extensible by
+   formula patterns and IR primitives; connect proof search to it through the
+   oracle and derived rules ([design](decision-ir.md)).
+4. **Composition and verification (S15–S17).** Compose static admission, prove
    reconstruction and semantic soundness, and complete Lean regressions and
    theorem/assumption documentation. Prove successful P3 runs export Term proof
    trees accepted by P1, without replaying discovery. No Rust performance or
@@ -84,13 +95,18 @@ dependencies are preserved after this scope correction.
 | [S12](../anthill-todo/delivered/WI-20261026-P6JQV-s12-admit-explicit-induction.anthill.md) | Admitted induction and the Nat example: the structural principle of every declared domain, one case per constructor, lowered with `P` at `.predicate 1` and proved valid from exact realization, static admission reporting what the cases cannot run in the query's context and the clauses they may select, the principle selected once by its whole head on the shared machine, reconstruction and truth in the induction model, the exported tree checked by S08 ([implemented](machine-induction.md), delivered) | S11, S08, S07 |
 | [S22](../anthill-todo/delivered/WI-20261107-JA6WZ-s22-answers-yes-no-unknown-and.anthill.md) | Answers Yes, No, Unknown, and Undecided(blockers): logical Unknown for open predicates kept apart from the machine's gaps and from operational outcomes, admission requests reported as blockers, Yes, No, and Unknown each sound, Unknown by two checked witness models ([implemented](answers.md), delivered) | S10, S07, S12 |
 | [S23](../anthill-todo/delivered/WI-20261107-7PQMQ-s23-moded-structural-recursion.anthill.md) | The fast fragment's admission ([design](fast-decision-routes.md)): declared modes, safety with guards waiting in their scope, data terms and the complete class (data-term inputs on recursive calls, and data-term outputs or decreasing recursion), the budgeted class with notes naming the growing call or answer, each predicate's degree and determinism, P1 or P2 per predicate, blockers for constructs outside the fragment, locality, and the call bound S24 runs on ([implemented](fast-admission.md), delivered) | S22, S07 |
-| [S24](../anthill-todo/claimed/WI-20261107-R9YMZ-s24-tabled-backtracking-on-the.anthill.md) | Tabled backtracking on the shared machine ([design](fast-decision-routes.md), [implemented](tabled-evaluation.md)): tables per call and context (rigid parameters included), consumers and NAF waits as branches of their generators, completion per component; P1 runs bounded by their data, ending without fuel, P2 runs by fuel; the completion's models as fixpoints; Yes exported and checked, No by the Kripke–Kleene refutation over the data terms and one abstract value, Unknown by the least and greatest fixpoints or ground fixpoints, Undecided; the machine's invariants and reconstruction kept by the run | S23, S22, S10 |
-| [S21](../anthill-todo/open/WI-20261103-N17GV-s21-constraint-solvers-on-the.anthill.md) | Constraint solvers on the machine store: checks at every binding, discharge with evidence, conditional answers, the two-stage closing; in the tabled fragment, disequality constraints and constructive negation, so NAF on flexible names and eigenvariables answers with a constraint and universals over constraints are decided by disunification ([design](fast-decision-routes.md)) | S10, S18, S24, S22 |
-| [S26](../anthill-todo/open/WI-20261107-Q3FVM-s26-contexts-in-tabled.anthill.md) | Contexts in tabled evaluation ([design](fast-decision-routes.md)): eager case splits with branch answers combined, Harrop implication goals as scoped local clauses with the material reading, generic universals | S24, S22 |
-| [S25](../anthill-todo/open/WI-20261107-SFQPM-s25-regular-unary-predicates.anthill.md) | Regular unary predicates, a P1 route ([design](fast-decision-routes.md)): guarded universals and existentials decided over finitely many states, Yes by state closure, No by a counterexample | S24, S23, S22, S12 |
+| [S24](../anthill-todo/claimed/WI-20261107-R9YMZ-s24-tabled-backtracking-on-the.anthill.md) | Tabled backtracking on the shared machine ([design](fast-decision-routes.md), [implemented](tabled-evaluation.md)): tables per call and context (rigid parameters included), consumers and NAF waits as branches of their generators, completion per component; P1 runs bounded by their data, ending without fuel, P2 runs by fuel; the completion's models as fixpoints; Yes exported and checked, No by the Kripke–Kleene refutation over the data terms and one abstract value, Unknown by the least and greatest fixpoints or ground fixpoints, Undecided; the machine's invariants and reconstruction kept by the run. Its fixpoint modules carry over to the decision IR; its engine stops being the decision path once S28 replaces it ([decision IR](decision-ir.md)) | S23, S22, S10 |
+| [S27](../anthill-todo/open/WI-20261117-06YN9-s27-decision-ir-syntax-checker.anthill.md) | Decision IR ([design](decision-ir.md)): predicates with modes and kinds, rules and derived rules, denials, literals; the checker and the finiteness evidence of P1 (data-term inputs, finitely many derivable answers, no free output on a recursive call of a component that does not decrease); key semantics, the Herbrand reduction for guarded programs, the relevant program; which queries with parameters are P1 | S23, S24, S22, S07 |
+| [S28](../anthill-todo/open/WI-20261117-HYJ2C-s28-the-ir-evaluator-exact-p1.anthill.md) | The IR evaluator ([design](decision-ir.md)): exact P1 decisions with no fuel (the Kripke–Kleene iteration, then the completion's models over the atoms left undefined), P2 within the fuel; Yes as truth in every model of the completion, with a certificate (a derivation exported to S08, or the relevant program checked by recomputation); cost classes; consistency | S27, S08, S24 |
+| [S29](../anthill-todo/open/WI-20261117-A0H19-s29-admission-as-translation.anthill.md) | Admission as translation ([design](decision-ir.md)): Term to the IR, or Undecided with blockers naming what needs a proof; the pattern interface (recognizer, emitter, correctness lemma); core patterns; statement normalization (`∀x∈C. P(x)` is `P(x) :- x ∈ C` for a collection `C`; a declared data domain `D_i` still open); derived statements outside the completion; the translation theorem | S27, S03, S13, S14, S11 |
+| [S30](../anthill-todo/open/WI-20261117-B0GED-s30-quantifier-patterns.anthill.md) | Quantifier patterns ([design](decision-ir.md)): universals by Lloyd–Topor over ranges that enumerate finitely, compound NAF operands, composed patterns | S29, S28 |
+| [S31](../anthill-todo/open/WI-20261117-9FXWQ-s31-bridges-between-the-proof.anthill.md) | Bridges ([design](decision-ir.md)): proof search asks the evaluator (decision nodes checked by recomputation, NAF evidence); checked lemmas return as derived rules | S28, S29, S20, S12 |
+| [S21](../anthill-todo/open/WI-20261103-N17GV-s21-constraint-solvers-on-the.anthill.md) | Constraint solvers on the machine store: checks at every binding, discharge with evidence, conditional answers, the two-stage closing; disequality constraints and constructive negation, so NAF on flexible names and eigenvariables answers with a constraint and universals over constraints are decided by disunification ([design](fast-decision-routes.md)). Re-scoped 2026-11-17: constructive negation is an IR primitive; the store's solvers serve proof search ([decision IR](decision-ir.md)) | S10, S18, S22, S28, S29 |
+| [S26](../anthill-todo/open/WI-20261107-Q3FVM-s26-contexts-in-tabled.anthill.md) | Contexts ([decision IR](decision-ir.md), re-scoped 2026-11-17): a query's context as a condition on the models, translated as goals; an implication goal as `naf A ∨ G`; eager splits and scoped local clauses as proof-search strategies; generic universals blockers unless a pattern applies | S22, S28, S29 |
+| [S25](../anthill-todo/open/WI-20261107-SFQPM-s25-regular-unary-predicates.anthill.md) | Regular unary predicates, a P1 route and an IR primitive ([design](fast-decision-routes.md), [decision IR](decision-ir.md)): guarded universals and existentials decided over finitely many states, Yes by state closure, No by a counterexample | S23, S22, S12, S27, S28, S29 |
 | [S13](../anthill-todo/delivered/WI-20261026-9C19E-s13-specify-checked-typeless.anthill.md) | Checked typeless dictionary registration and domain connections: interfaces with operation paths, arities, and generic laws, registrations connected to their domains by evidence, `OrdDictionary(d)` and `DomainMember(d,x)` interpreted exactly, unknown dictionaries and invalid accesses as blockers, Booleans as values, invalidation by the names a plan reads ([implemented](dictionary-registry.md), delivered) | S02, S08 |
 | [S14](../anthill-todo/claimed/WI-20261026-5G8F5-s14-implement-dictionary-law.anthill.md) | Dictionary operations by total evaluators, a P1 route: evaluators admitted by the access check and primitive contracts, proved sound, total, and closed, their equations an equation oracle held by S08 snapshots, the decision of `call = result`, evaluation where the value is demanded; dictionary laws as checked lemmas through conditional views matched structurally; law search is P3, outside the KB module ([implemented](dictionary-evaluation.md)) | S13, S09, S20, S22 |
-| [S15](../anthill-todo/open/WI-20261026-SYMNV-s15-compose-static-admission.anthill.md) | Compose static admission across the profiles: P0 ⊂ P1 ⊂ P2 ⊂ P3, with supplied proofs, imports and checked lemmas, dictionaries, and the fast fragment, answering with S22's results; the P3 export theorem | S10, S12, S14, S20, S21, S22–S26 |
+| [S15](../anthill-todo/open/WI-20261026-SYMNV-s15-compose-static-admission.anthill.md) | Compose static admission across the profiles: the translation, the evaluator, and the bridges of the [decision IR](decision-ir.md), P0 ⊂ P1 ⊂ P2 as evidence classes of one IR and P3 as the proof layer, with supplied proofs, imports and checked lemmas, and dictionaries, answering with S22's results; the P3 export theorem | S10, S12, S14, S20, S21, S22–S31 |
 | [S16](../anthill-todo/open/WI-20261026-0AA47-s16-prove-composed-machine.anthill.md) | Prove composed machine soundness through elaboration and the declarative calculus | S15 |
 | [S17](../anthill-todo/open/WI-20261026-44E32-s17-validate-performance-and.anthill.md) | Complete Lean regression examples and document formal guarantees | S16 |
 
@@ -105,11 +121,11 @@ Generic interfaces for a decision contract do not implement a decision procedure
 | Embedded P0 | S07: whole-program acyclicity/rank checker, total shared-machine evaluation, nested ground NAF, and exact success/complete-failure certificates; S15: profile embedding |
 | Explicit proof tree supplied as Term | S04: construction interfaces; S06-S07: baseline evidence; S08: encoding, recursive checker, known terminating rule checks, and correctness; S09: its commands export as S08 logical nodes, checked given checked premise trees; S10-S14: nodes/checks for their commands; S20: checked lemmas used inside runs, exported as references re-checked at the use site; S15-S17: composed export/check theorem and regressions |
 | Dictionary operation/equality decision | S13: registry contracts; S14: total concrete evaluator and full decision contract, including the Nat ordering example ([implemented](dictionary-evaluation.md)); S15: composition |
-| Finite rule saturation | Replaced by S24's tabled backtracking on the shared machine, under the completion ([implemented](tabled-evaluation.md)): a goal that depends on a positive cycle is Unknown, not a least-relation No, with the least and greatest fixpoints as its witnesses |
-| Stratified NAF over finite rules | Replaced by S24 ([implemented](tabled-evaluation.md)), which tables NAF, loops through NAF included (P2 when NAF is over a predicate on a cycle): a ground NAF is proved by the Kripke–Kleene refutation of its operand, fails by an answer, and is otherwise an open atom; S07 ground acyclic NAF and S10 scoped certificates do not supply this procedure |
-| Finite guarded quantification | Deferred as a general complete decision procedure; S03 elaboration and S10 finite absence certificates remain in scope. S25 decides guarded quantification over any declared domain, finite or not, for regular unary predicates |
+| Finite rule saturation | Replaced by S24's tabled backtracking on the shared machine, under the completion ([implemented](tabled-evaluation.md)): a goal that depends on a positive cycle is Unknown, not a least-relation No, with the least and greatest fixpoints as its witnesses. Then by the decision IR's evaluator (S28, [design](decision-ir.md)), exact over the finite relevant program |
+| Stratified NAF over finite rules | Replaced by S24 ([implemented](tabled-evaluation.md)), which tables NAF, loops through NAF included (P2 when NAF is over a predicate on a cycle): a ground NAF is proved by the Kripke–Kleene refutation of its operand, fails by an answer, and is otherwise an open atom; S07 ground acyclic NAF and S10 scoped certificates do not supply this procedure. Then by S28, which decides NAF through cycles exactly, in the exponential cost class ([decision IR](decision-ir.md)) |
+| Finite guarded quantification | S30: universals by Lloyd–Topor over ranges that enumerate finitely ([decision IR](decision-ir.md)); S03 elaboration and S10 finite absence certificates remain in scope. S25 decides guarded quantification over any declared domain, finite or not, for regular unary predicates |
 | Finite predicate-reference quantification | Deferred as a complete enumeration/decision procedure; S02 reference registration remains in scope. The symbolic `Pred_n` guard and its generated facts give no closure over the registry; such a decision would be snapshot-indexed closed-world evidence |
-| Finite-answer variable queries | Deferred as a complete answer-set procedure; S05-S06 matching and individual successful answers remain in scope |
+| Finite-answer variable queries | Deferred as a complete answer-set procedure; S05-S06 matching and individual successful answers remain in scope. The IR evaluator computes every answer of a call (S28), so this becomes a small step |
 | Propositional logical reasoning | Deferred as complete derivability search; S08 proof checking and S09 logical commands remain in scope |
 | Additional certified decision procedure | S08/S15 define contract and composition interfaces; concrete additional procedures require follow-up tickets before enablement |
 
@@ -142,6 +158,12 @@ No Cargo commands or external implementation work are acceptance prerequisites.
 Key boundaries carried through the sequence:
 
 - Admission decides executable capability, not the truth of the query.
+- Decisions run on the decision IR, which admission translates the program
+  into; the shared machine is proof search. Patterns are responsible for a
+  translation's meaning, the IR checker for its decidability.
+- Yes means truth in every model of the completion realizing the signature,
+  with a certificate; a Yes with no closed-world step is also a theorem of the
+  KB. Checked lemmas are derived rules, never part of the completion.
 - KB formulas and their range annotations are generated. Lowering rejects a
   predicate binder left at a data range; it never infers ranges.
 - Guards are atoms over the signature's membership symbols. The registry and

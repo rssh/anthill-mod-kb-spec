@@ -2,6 +2,12 @@
 
 Status: design discussion, not an implemented resolver or a completeness theorem.
 
+Revised 2026-11-17: the "decidable core" of the architectural boundary below is
+the [decision IR](decision-ir.md), which admission translates the program into
+and its own evaluator decides; the state machine described here is the proof
+language's search (P3). Statements that P0–P3 run on one state machine are
+superseded there.
+
 The [S01 Lean admission contract](lean-admission-contract.md) defines P0, P1, P2, and P3
 admission rules for this same syntax and state machine. P1 extends P0 with certified
 decision procedures; P2 admits budgeted tabled evaluation that may end Undecided;

@@ -5,6 +5,11 @@ SLG resolution as an extension of the shared machine, and the answers Yes, No,
 Unknown, and Undecided against the Clark completion. Traces are in
 [Tests/Resolution/Tabled/Evaluation.lean](../Tests/Resolution/Tabled/Evaluation.lean).
 
+Revised 2026-11-17: under the [decision IR](decision-ir.md), decisions move to
+the IR's own evaluator (S28). `Fixpoint`, `Abstract`, `AbstractSound`, and
+`Witness` carry over as its semantics and P2's abstraction; the engine on the
+shared machine stops being the decision path once S28 replaces it.
+
 | Module | Contents |
 | --- | --- |
 | [Tabled/Fixpoint](../AnthillModKbSpec/Resolution/Tabled/Fixpoint.lean) | Interpretations over constructor keys, the consequence operator (`consequence`), the completion's models are its fixpoints (`fixpoint_iff_models`), least and greatest fixpoints (`lfp`, `gfp`), monotonicity for positive programs (`consequence_mono`) |

@@ -27,8 +27,10 @@ a design; its work items are S22–S26 in the
   completes.
 - **Fuel** bounds a P2 run. A P1 run is bounded by its data and ends without
   fuel (S24: [termination](tabled-evaluation.md#termination-bounded-runs-without-fuel)).
-- **One machine.** Tabling is an extension of the shared machine, and the
-  fragment's conditions are admission conditions. There is no separate engine.
+- **One machine** (revised 2026-11-17). Tabling was built as an extension of
+  the shared machine (S24). Under the [decision IR](decision-ir.md), the
+  fragment's conditions become the IR's checker and evidence, and its runs
+  move to the IR's own evaluator; the shared machine is proof search.
 
 Backtracking, disjunction, several matching clauses, nondeterministic outputs,
 and loops, positive or through NAF, all stay.
@@ -77,11 +79,16 @@ execution and the answers ([tabled evaluation](tabled-evaluation.md)).
 | **P2** | The rest of the fragment: budgeted predicates, NAF or denials over a predicate on a cycle, splits or hypotheses that depend on the data, generic universal goals (a failure is Undecided) |
 | **P3** | Proof search beyond clause selection (S09's left rules, S12's induction run, S14's law search): proof producers, whose results enter as checked proofs |
 
+Revised 2026-11-17: on the [decision IR](decision-ir.md), P1 is the IR's
+finiteness evidence (the query's relevant program is finite), and NAF or a
+denial through a cycle is P1 in the exponential cost class; P2 keeps what lacks
+the evidence, such as growing recursion and free outputs on a cycle.
+
 ## Answers
 
 | Answer | When | Evidence |
 | --- | --- | --- |
-| **Yes** | A proof is found | `Derives`, exportable as an S08 tree |
+| **Yes** | A proof is found; on the [decision IR](decision-ir.md), the goal holds in every model of the completion (2026-11-17) | `Derives`, exportable as an S08 tree; on the IR, a derivation, or the relevant program checked by recomputation |
 | **No** | The search completed, and the failure depends on no cycle | Finite failure, sound for the completion |
 | **Unknown** | The search completed, and the completion leaves the goal open: an open predicate reached; a failure through a positive cycle (`path(a, c)` over a cycle a ↔ b, c unreachable); a loop through NAF with models both ways (`p :- ¬q`, `q :- ¬p`); case-split branches that disagree | Two witness models, checked against the KB's clauses and denials |
 | **Undecided** | The fuel ran out (P2); the completion is inconsistent (`p :- ¬p`); the witnesses do not check; a construct outside the fragment | Blockers: the growing call, the cycle, or the construct, with site and path |
@@ -135,7 +142,9 @@ completion, implication and universal goals have two readings:
 
 The fragment runs the first and answers about the second: a success is Yes, a
 ground antecedent the fragment decides is read materially, and any other
-failure is Undecided.
+failure is Undecided. On the [decision IR](decision-ir.md) (2026-11-17) a
+context is a condition translated as goals, so the second reading is decided
+directly, and the first stays the proof machine's.
 
 **NAF inside a scope.** NAF inside an implication's or a split's scope is
 judged against the program extended by that scope's assumptions, and a Yes

@@ -27,12 +27,17 @@ system, or found by P3 search, including through nondeterministic choices. This
 allows a proved formula to be used without repeating its discovery. A theorem
 can enter automatic execution only after its use also passes operational admission.
 
-**There is one syntax and one interpreter/state machine.** The deductive and
-proof-oriented parts both use the existing formulas. P0, P1, P2, and P3 are nested sets
-of admission rules for that same machine; they are not languages, engines, or
-different interpretations of truth. Every Ready result contains a plan for the
-same command semantics. Profile information is evidence for admission, not an
-instruction to switch interpreters.
+**There is one syntax and one meaning.** The deductive and
+proof-oriented parts both use the existing formulas, and no profile is a
+different interpretation of truth. Revised 2026-11-17 by the
+[decision IR](decision-ir.md): decisions (P0, P1, P2) do not run on the state
+machine. Admission translates the program into a decidable IR, or reports which
+parts need a proof, and the IR's evaluator decides; P0 ⊂ P1 ⊂ P2 are evidence
+classes of that IR. The state machine is the proof search of P3, whose results
+enter as checked proofs. Where this contract says one interpreter, one run, or
+one plan across the profiles (R17 among them), the decision IR supersedes it;
+so it does for Yes as a `Derives` proof: Yes means truth in every model of the
+completion, with a certificate.
 
 - **P0: finite ground acyclic resolution.** A small baseline whose certificates
   reuse `GroundSearch`; this is not the intended deductive language boundary.

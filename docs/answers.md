@@ -34,7 +34,7 @@ with the P0 and S12 answers in
 
 | Answer | Evidence | Meaning |
 | --- | --- | --- |
-| **Yes** | A proof: a `Derives` tree, exportable as an S08 term | The goal holds in every model of the KB, with the tracked NAF provider |
+| **Yes** | A proof: a `Derives` tree, exportable as an S08 term. On the [decision IR](decision-ir.md) (2026-11-17), a derivation or the relevant program, checked by recomputation | The goal holds in every model of the KB, with the tracked NAF provider. On the decision IR, it holds in every model of the completion realizing the signature |
 | **No** | A failure certificate, or a refutation in the completion | The goal fails in every model of the completion |
 | **Unknown** | Two witnesses: assignments of the open atoms reached | A model of the completion, realizing the signature, in which the goal holds, and one in which it fails |
 | **Undecided** | Blockers: place, path, formula, and what is missing | Nothing |

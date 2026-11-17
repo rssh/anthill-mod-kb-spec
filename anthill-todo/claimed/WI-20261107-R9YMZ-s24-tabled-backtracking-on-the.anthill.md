@@ -74,3 +74,7 @@ Bounded gaps in the machine (claude, 2026-11-09, decided with the user): Respons
 
 Third review fixes (claude, 2026-11-09): Response.incomplete carries an explicit list of reasons (no default), so fit adds .bounded beside an unsupported match and no wrapper can lose it; NAF on an unknown marker answers opened; a denial run that met open atoms blocks unless a checked model shows the KB consistent (modelShown; decided with the user); the Kripke-Kleene iteration and the two fixpoints stop once a round changes nothing (untilStable, kleene_round), the engine computes it once on first use and the checker once per query universe. Correction to the earlier note: the iteration was not shared by the checker before this. Left: the duplicated NAF decision in stepAt and strategyCore, and answer's copy of schedule's consume match; Tests/ is outside lake build.
 
+### 2026-11-17T20:25:30Z — feedback — user
+
+Decision IR (docs/decision-ir.md, 2026-11-17): S24's Fixpoint, Abstract, AbstractSound, and Witness modules carry over as the IR's semantics and P2's abstraction (S27, S28). Its engine on the shared machine (Engine, EngineSound, Weight, Termination, Multiset) stops being the decision path once S28's evaluator replaces it. Nothing here blocks delivering S24 as implemented.
+

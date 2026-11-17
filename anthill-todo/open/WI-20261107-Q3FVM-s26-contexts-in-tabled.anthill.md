@@ -9,7 +9,7 @@
 
 - acceptance: lake build
 
-- depends_on: WI-20261107-R9YMZ-s24-tabled-backtracking-on-the, WI-20261107-JA6WZ-s22-answers-yes-no-unknown-and
+- depends_on: WI-20261107-JA6WZ-s22-answers-yes-no-unknown-and, WI-20261117-HYJ2C-s28-the-ir-evaluator-exact-p1, WI-20261117-A0H19-s29-admission-as-translation
 
 - tags: resolution-machine
 
@@ -33,9 +33,14 @@ Acceptance:
 
 Validation: lake build and focused Lean tests/examples appropriate to the changed definitions and proofs.
 Design references: docs/fast-decision-routes.md, docs/machine-left.md, docs/machine-positive.md.
+
 ## Changes
 
 ### 2026-11-08T17:17:33Z — feedback — user
 
 From S24 (2026-11-08): tables are keyed by the call and its context, and only closed contexts are tabled; the witnesses (Setup.witnesses) need a query with no assumptions, so a query with a context gets No or Yes but never Unknown. S26 extends the witnesses to contexts (the assumed facts and Harrop clauses as part of the witness programs) and the tables to contexts with names.
+
+### 2026-11-17T20:25:42Z — feedback — user
+
+Re-scoped by the decision IR (docs/decision-ir.md, 2026-11-17): a query's context is a condition on the models (Meaning.ofModels), so it translates as goals, and the answer is read from the statuses of Γ ∧ G and Γ ∧ naf G, exactly over the completion; an implication goal A → G is naf A ∨ G; a disjunctive or existential assumption is a disjunction or an existential conjunct of Γ, with no split machinery. Eager splits, scoped local clauses (the hereditary Harrop reading), and branch combination become proof-search strategies: sound, not exact (with g :- naf a and no clause for a, a → g is Yes, yet g fails once a is added as a clause). Generic universals stay blockers unless a pattern applies (S30, S25). The 2026-11-08 note on witnesses for contexts is moot: the evaluator answers over the completion directly. Depends on S28 and S29 instead of S24.
 
