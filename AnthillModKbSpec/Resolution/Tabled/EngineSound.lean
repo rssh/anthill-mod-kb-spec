@@ -43,9 +43,7 @@ theorem semanticNaf_adequate {hoApplySymbol : Symbol} {Value : Type} (model : Mo
 omit [DecidableEq Literal] [DecidableEq Symbol] in
 theorem resolve_closed (store : Store Variable Literal Symbol) {term : Term Variable Literal Symbol}
     (closed : closedTerm term = true) : store.resolve term = term :=
-  resolveWith_unbound fun name inside => by
-    simp only [closedTerm, List.isEmpty_iff] at closed
-    rw [closed] at inside; cases inside
+  store.resolve_closed (by simpa only [closedTerm, List.isEmpty_iff] using closed)
 
 omit [DecidableEq Literal] [DecidableEq Symbol] in
 theorem resolve_closed_all (store : Store Variable Literal Symbol) {terms : List (Term Variable Literal Symbol)}

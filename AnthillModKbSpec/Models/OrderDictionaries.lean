@@ -11,7 +11,11 @@ open OperationDictionaries InductiveDomains
 second name for `natOrd`'s value. `ordDictionary` and `domainMember` are the
 relations `OrdDictionary(d)` and `DomainMember(d, x)`; `isData` and `isPred`
 name all data and the predicate references; `asymmetric`, `lessCompare`, and
-`equalCompare` name laws. -/
+`equalCompare` name laws, and `view law i` a law's i-th conditional view, a
+checked lemma (S14). `evaluation` names the derived rule of an evaluated
+operation, and `tag i` the symbols of a proof encoding (S08's vocabulary), so
+proofs over this model can be supplied as terms. The model gives the last
+three no meaning: each is a reference. -/
 inductive Symbol where
   | member | weakOrd | eqModel | compare | equal | less
   | isNat | isBool | isData | isPred
@@ -22,6 +26,9 @@ inductive Symbol where
   | ordDictionary | domainMember
   | asymmetric | lessCompare | equalCompare
   | hoApply
+  | view (law : Symbol) (index : Nat)
+  | evaluation
+  | tag (index : Nat)
   deriving DecidableEq, Repr
 
 inductive Data where

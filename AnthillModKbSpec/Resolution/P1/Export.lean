@@ -300,7 +300,7 @@ attribute [local instance] termEq
 
 /-- What a plan's export is checked against: the input's effective program,
 generated signature clauses included. -/
-def Plan.snapshot : Snapshot Variable Literal Symbol := ⟨hoApplySymbol, plan.input.program.clauses.map ProgramClause.clause⟩
+def Plan.snapshot : Snapshot Variable Literal Symbol := ⟨hoApplySymbol, plan.input.program.clauses.map ProgramClause.clause, []⟩
 
 /-- The NAF provider of a plan's export: complete failure in the plan's ground
 program, under exactly the snapshot's KB and the plan's context. -/
@@ -338,7 +338,7 @@ def Plan.membership : RuleCheck plan.snapshot plan.failure where
       (naf := NafFailure.disabled) plan.input.listed plan.input.complete plan.input.distinct accepted.2
     refine derived.mono (fun clause inside => ?_) (fun _ _ none => none.elim)
     obtain ⟨entry, member, same⟩ := signatureKb_carried plan.admits.generated inside
-    exact List.mem_map.mpr ⟨entry, member, same⟩
+    exact Snapshot.mem_kb (List.mem_map.mpr ⟨entry, member, same⟩)
 
 /-- The checker for a plan's export. -/
 def Plan.checker : Checker Variable Literal Symbol :=

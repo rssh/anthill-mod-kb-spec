@@ -5,7 +5,7 @@
 -- ground negation as failure evaluated in the same run (S07); left rules on selected
 -- assumptions and compound clause heads, and the left strategy (S09); refutation search in
 -- the completed program (S10); `ho_apply` conversion and whole-formula head matching (S11);
--- checked lemmas used inside runs (S20).
+-- checked lemmas used inside runs (S20); operations evaluated on value demand (S14).
 import AnthillModKbSpec.Resolution.Machine.Store
 import AnthillModKbSpec.Resolution.Machine.Instantiation
 import AnthillModKbSpec.Resolution.Machine.Unification
@@ -21,5 +21,7 @@ import AnthillModKbSpec.Resolution.Machine.LeftRules
 import AnthillModKbSpec.Resolution.Machine.LeftStrategy
 import AnthillModKbSpec.Resolution.Machine.Refutation
 import AnthillModKbSpec.Resolution.Machine.Lemma
+-- Dictionary operations evaluated where their value is demanded, and laws matched structurally (S14).
+import AnthillModKbSpec.Resolution.Machine.Dictionary
 -- Open atoms reached through an open predicate's marked case (S22).
 import AnthillModKbSpec.Resolution.Machine.OpenAtoms

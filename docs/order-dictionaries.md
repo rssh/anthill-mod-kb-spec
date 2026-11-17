@@ -93,6 +93,13 @@ its interface proofs do not automatically insert ordering laws into the KB.
 `ordInterface` proof is not given (`laws_of_rank` covers ascending ranks only),
 though `OrdLaws` fixes no direction.
 
+S14 evaluates `less` and `equal` of the three dictionaries by registered
+evaluators, proved sound in this model, and uses the laws only as checked
+lemmas ([dictionary evaluation](dictionary-evaluation.md)). For that, the
+symbols include `view law i`, the name of a law's i-th conditional view,
+`evaluation`, the name of the evaluation rule, and `tag i`, the symbols of a
+proof encoding; the model gives them no meaning, each is a reference.
+
 Run the examples with:
 
 ```sh

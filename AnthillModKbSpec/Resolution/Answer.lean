@@ -50,6 +50,14 @@ inductive DictionaryMiss where
   /-- An operation call stands where a formula is needed: its value is data,
   to be compared with a value. -/
   | formula
+  /-- A declared operation with no registered evaluator (S14): no primitive
+  contract states it, or no evaluation is registered for the registration's
+  version. -/
+  | evaluator
+  /-- A declared operation with an evaluator, called outside its primitive
+  contract (S14): an argument is a member tree of another domain than the
+  contract's. The decision is made only on the contract's domains. -/
+  | domain
   deriving DecidableEq, Repr
 
 /-- A construct the module has no route for. -/
@@ -104,6 +112,10 @@ inductive Missing (Variable Literal Symbol : Type) where
   the completion (`p :- ¬p`), or a denial's body is derivable or unsettled.
   Every answer assumes a model. -/
   | consistency (atoms : List (Term Variable Literal Symbol))
+  /-- A checked lemma of the named dictionary law (S14): the formula is an
+  equation on a dictionary operation no evaluator answers, and the law may
+  conclude it. -/
+  | lemma (law : Symbol)
 
 /-- Where a blocker sits: a site admission inspected, before anything runs, or
 an obligation a run reached, with its context and its provenance from the

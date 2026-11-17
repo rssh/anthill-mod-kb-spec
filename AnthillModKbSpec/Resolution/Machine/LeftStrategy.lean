@@ -355,15 +355,15 @@ theorem introductionAttempts_sound (valid : store.Scoped) (declared : obligation
     subst inside
     intro _ produced; cases produced
 
-/-- The strategy `leftWith` on a program whose clauses are among those of
-`full`, with offers sound for `full`'s KB, is sound for `full`'s KB. -/
-theorem leftWith_sound_within {program full : Program Variable Literal Symbol}
-    (within : ∀ entry ∈ program.clauses, entry ∈ full.clauses) {offers : Offers Variable Literal Symbol Certificate}
+/-- The strategy `leftWith` on a program whose clauses are in a KB, with
+offers sound for that KB, is sound for that KB. -/
+theorem leftWith_sound_within {program : Program Variable Literal Symbol} {kb : LogicalKb Variable Literal Symbol}
+    (within : ∀ entry ∈ program.clauses, entry.clause ∈ kb) {offers : Offers Variable Literal Symbol Certificate}
     (offersSound : ∀ (obligation : Obligation Variable Literal Symbol) (store : Store Variable Literal Symbol),
       store.Scoped → obligation.Declared store →
       ∀ candidate ∈ offers obligation store (store.resolve obligation.goal) (store.readContext obligation),
-        AttemptSound hoApplySymbol full.kb naf store obligation candidate) :
-    Strategy.Sound hoApplySymbol full.kb naf (leftWith hoApplySymbol program offers) := by
+        AttemptSound hoApplySymbol kb naf store obligation candidate) :
+    Strategy.Sound hoApplySymbol kb naf (leftWith hoApplySymbol program offers) := by
   intro obligation store valid declared expansion member
   have chosen := offersSound obligation store valid declared
   unfold leftWith at member
@@ -372,7 +372,7 @@ theorem leftWith_sound_within {program full : Program Variable Literal Symbol}
   · exact positive_sound_within within obligation store valid declared expansion member
   · have unlessIndirect : ∀ candidate ∈ (if ((store.resolve obligation.goal).call? hoApplySymbol).isSome then []
         else offers obligation store (store.resolve obligation.goal) (store.readContext obligation)),
-        AttemptSound hoApplySymbol full.kb naf store obligation candidate := fun candidate inside => by
+        AttemptSound hoApplySymbol kb naf store obligation candidate := fun candidate inside => by
       split at inside
       · cases inside
       · exact chosen candidate inside
@@ -390,23 +390,23 @@ theorem leftWith_sound_within {program full : Program Variable Literal Symbol}
         rw [Response.alternatives, ← foundEq] at member
         exact exactCandidates_sound rfl expansion member
 
-/-- The left strategy on a program whose clauses are among those of `full`, with
-chosen commands sound for `full`'s KB, is sound for `full`'s KB. -/
-theorem left_sound_within {program full : Program Variable Literal Symbol}
-    (within : ∀ entry ∈ program.clauses, entry ∈ full.clauses) (select : Selection Variable Literal Symbol)
+/-- The left strategy on a program whose clauses are in a KB, with chosen
+commands sound for that KB, is sound for that KB. -/
+theorem left_sound_within {program : Program Variable Literal Symbol} {kb : LogicalKb Variable Literal Symbol}
+    (within : ∀ entry ∈ program.clauses, entry.clause ∈ kb) (select : Selection Variable Literal Symbol)
     (chosenSound : ∀ (obligation : Obligation Variable Literal Symbol) (store : Store Variable Literal Symbol),
       store.Scoped → obligation.Declared store →
       ∀ candidate ∈ chosenAttempts (Certificate := Certificate) hoApplySymbol program select obligation store
         (store.resolve obligation.goal) (store.readContext obligation),
-        AttemptSound hoApplySymbol full.kb naf store obligation candidate) :
-    Strategy.Sound hoApplySymbol full.kb naf (left (Certificate := Certificate) hoApplySymbol program select) :=
+        AttemptSound hoApplySymbol kb naf store obligation candidate) :
+    Strategy.Sound hoApplySymbol kb naf (left (Certificate := Certificate) hoApplySymbol program select) :=
   leftWith_sound_within within chosenSound
 
 /-- The left strategy is sound for its program's KB, whatever the selection
 chooses and whatever the NAF provider: it builds no closed-world node. -/
 theorem left_sound (program : Program Variable Literal Symbol) (select : Selection Variable Literal Symbol) :
     Strategy.Sound hoApplySymbol program.kb naf (left (Certificate := Certificate) hoApplySymbol program select) :=
-  left_sound_within (fun _ member => member) select fun _ _ valid declared =>
+  left_sound_within (kb := program.kb) (fun entry member => ⟨entry, member, rfl⟩) select fun _ _ valid declared =>
     chosenAttempts_sound valid declared select
 
 /-- A successful run of the left strategy reconstructs `Derives` for its answer

@@ -106,6 +106,7 @@ def blockerKinds (blockers : List (Blocker Nat Nat Sym)) : List String :=
   blockers.map fun blocker => match blocker.missing with
     | .proof => "proof" | .mode => "mode" | .termination => "termination"
     | .construct _ => "construct" | .witnesses _ => "witnesses" | .consistency _ => "consistency"
+    | .lemma _ => "lemma"
 
 def missingKinds : TabledAnswer Nat Nat Sym → List String
   | .undecided blockers => blockerKinds blockers

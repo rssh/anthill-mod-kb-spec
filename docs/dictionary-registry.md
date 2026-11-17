@@ -204,9 +204,9 @@ three old registrations' evidence transfers, and the new one is checked.
 
 - Evaluate operations. Primitive contracts state totality and result domains;
   the evaluators, their decision contract, and their termination, soundness,
-  and completeness proofs are S14's.
+  and completeness proofs are S14's ([dictionary evaluation](dictionary-evaluation.md)).
 - Use laws in runs: laws as checked lemmas and the conditional-rule view are
-  S14's (with S20).
+  S14's (with S20), in the same note.
 - Compose admission: S15 runs `Snapshot.WellFormed` (Invalid) and the access
   check (blockers) at every call site, with each site's position.
 - Add a type system, a runtime evaluator, or new `Term` syntax.

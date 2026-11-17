@@ -61,7 +61,7 @@ def answerIs (outcome : Run) (name : Nat) (expected : T) : Bool :=
   | some proof => same (proof.answer name) expected
   | none => false
 
-def checker (clauses : List Clause) : Checker Nat Nat Sym := ⟨⟨.ha, clauses⟩, NafFailure.disabled, none, []⟩
+def checker (clauses : List Clause) : Checker Nat Nat Sym := ⟨⟨.ha, clauses, []⟩, NafFailure.disabled, none, []⟩
 
 /-- The run's proof as a supplied tree, read through its final store. -/
 def exported (outcome : Run) : Option P :=

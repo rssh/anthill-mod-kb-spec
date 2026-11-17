@@ -77,14 +77,54 @@ inductive Proof (Variable Literal Symbol : Type) where
 def Proof.conclusion : Proof Variable Literal Symbol → Formula Variable Literal Symbol
   | .node _ conclusion _ => conclusion
 
+/-- An evaluator of operation terms (S14): the value it gives a term, if it
+evaluates it. -/
+abbrev Evaluator (Variable Literal Symbol : Type) :=
+  Term Variable Literal Symbol → Option (Term Variable Literal Symbol)
+
 /-- What a tree is checked against: the application symbol and the KB, as a
-finite clause list. -/
+finite clause list and the registered evaluators (S14), each of whose
+evaluations is an unconditional equation of the KB. A snapshot with no
+evaluator is its clause list. -/
 structure Snapshot (Variable Literal Symbol : Type) where
   hoApplySymbol : Symbol
   clauses : List (HornClause Variable Literal Symbol)
+  evaluators : List (Evaluator Variable Literal Symbol)
 
+/-- The equation `call = value` is an evaluation of a registered evaluator. -/
+def Snapshot.Evaluates (snapshot : Snapshot Variable Literal Symbol) (call value : Term Variable Literal Symbol) : Prop :=
+  ∃ evaluator ∈ snapshot.evaluators, evaluator call = some value
+
+/-- The KB: the listed clauses and the evaluated equations, the equation
+oracle's extension of the clauses (`EquationOracle.extend`). -/
 def Snapshot.kb (snapshot : Snapshot Variable Literal Symbol) : LogicalKb Variable Literal Symbol :=
-  fun clause => clause ∈ snapshot.clauses
+  fun clause => clause ∈ snapshot.clauses ∨
+    ∃ call value, snapshot.Evaluates call value ∧ clause = HornClause.equation call value []
+
+theorem Snapshot.mem_kb {snapshot : Snapshot Variable Literal Symbol} {clause : HornClause Variable Literal Symbol}
+    (listed : clause ∈ snapshot.clauses) : clause ∈ snapshot.kb :=
+  Or.inl listed
+
+/-- With no evaluator, a clause is in the KB exactly when it is listed. -/
+theorem Snapshot.mem_kb_iff {snapshot : Snapshot Variable Literal Symbol} (none : snapshot.evaluators = [])
+    {clause : HornClause Variable Literal Symbol} : clause ∈ snapshot.kb ↔ clause ∈ snapshot.clauses := by
+  show clause ∈ snapshot.clauses ∨ _ ↔ _
+  simp [Snapshot.Evaluates, none]
+
+/-- With no evaluator, the KB is the clause list. -/
+theorem Snapshot.kb_of_evaluators {snapshot : Snapshot Variable Literal Symbol} (none : snapshot.evaluators = []) :
+    snapshot.kb = fun clause => clause ∈ snapshot.clauses := by
+  funext clause
+  simp [Snapshot.kb, Snapshot.Evaluates, none]
+
+/-- An evaluation is derived by the clause rule on its evaluated equation,
+under every context and NAF provider. -/
+theorem Snapshot.evaluated_derives [DecidableEq Variable] {snapshot : Snapshot Variable Literal Symbol}
+    {call value : Term Variable Literal Symbol} (evaluated : snapshot.Evaluates call value)
+    {context : ProofContext Variable Literal Symbol} {naf : NafFailure Variable Literal Symbol} :
+    Derives snapshot.hoApplySymbol snapshot.kb context (.equal call value) naf :=
+  Derives.equation (Or.inr ⟨call, value, evaluated, rfl⟩) (Substitutes.identity _) (Substitutes.identity _)
+    (Substitutes.identity _) .truth
 
 /-- A known procedure for NAF evidence: it decides evidence for an operand
 under a context, and what it accepts is evidence of the provider. -/
@@ -701,8 +741,8 @@ theorem Local.derives {context : ProofContext Variable Literal Symbol} {rule : R
   case forallElim => exact .forallElim proved ‹_›
   case existsIntro => exact .existsIntro ‹_› proved
   case existsElim => exact .existsElim proved.1 ‹_› ‹_› ‹_› ‹_› proved.2
-  case clause => exact .clause ‹_› ‹_› ‹_› proved
-  case goalClause => exact .goalClause ‹_› ‹_› proved
+  case clause => exact .clause (Snapshot.mem_kb ‹_›) ‹_› ‹_› proved
+  case goalClause => exact .goalClause (Snapshot.mem_kb ‹_›) ‹_› proved
   case defaultNegIntro => exact .defaultNegIntro (‹NafCheck _ _›.sound _ _ _ ‹_›)
   case hoApplyIntro => exact .hoApplyIntro proved
   case hoApplyElim => exact .hoApplyElim proved

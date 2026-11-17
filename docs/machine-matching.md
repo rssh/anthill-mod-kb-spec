@@ -149,7 +149,7 @@ size of the pending pairs. No fuel is involved.
 | Syntactically identical, including binders and calls | Dropped |
 | An assignable name and anything | Bound, subject to the occurs and dependency checks |
 | Two different binders of the same quantifier | `unsupported`: alpha-equivalence matching is not admitted |
-| An operation call and anything else | `unsupported`: equality of calls needs evaluation (S14) |
+| An operation call and anything else | `unsupported`: equality of calls needs evaluation; S14 evaluates calls, and matches a law's view one way, outside the matcher ([dictionary evaluation](dictionary-evaluation.md)) |
 | `ho_apply` against an ordinary application | `unsupported`: the strategy compares such a candidate with the goal's indirect view instead (S11, [conversion](machine-conversion.md)) |
 | A rigid name and anything else; different constructors (a binder included); different symbols or arities; different literals | `mismatch` |
 | The same structural constructor | Split into the corresponding parts |

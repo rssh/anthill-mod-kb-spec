@@ -63,8 +63,9 @@ A blocker lacks one of these (`Missing`):
 | `proof` | A guarded universal over an infinite domain, a goal implication, a goal no search proved or refuted |
 | `mode` | A name that must be bound before the formula runs (a P0 ground instance, an unsafe call in the fast fragment); a goal still waiting at the end of its branch (floundering); a predicate without a mode declaration ([S23](fast-admission.md)) |
 | `termination` | A dependency cycle; a run interrupted by its fuel |
-| `construct` | A construct the route has no route for: a P0 capability, NAF in an induction case, an unsupported focus, a contract breach, a dictionary call the [registry](dictionary-registry.md) does not declare, a defined operation in the fast fragment's data, a clause concluding an unknown marker |
+| `construct` | A construct the route has no route for: a P0 capability, NAF in an induction case, an unsupported focus, a contract breach, a dictionary call the [registry](dictionary-registry.md) does not declare, a declared operation with no evaluator or called outside its contract ([S14](dictionary-evaluation.md)), a defined operation in the fast fragment's data, a clause concluding an unknown marker |
 | `witnesses` | Open atoms whose two witnesses were not both found |
+| `lemma` | A checked lemma of a named dictionary law that may conclude the formula, an equation on an operation no evaluator answers ([S14](dictionary-evaluation.md)) |
 
 Supplying checked evidence for a blocker turns Undecided into Yes or No
 (`Answer.supplyProof`, `Answer.supplyRefutation`): a proof term, a lemma, or a

@@ -210,10 +210,11 @@ def coversInput (hoApplySymbol : Symbol) (input : Input Domain Variable Literal 
   coversProgram checker hoApplySymbol input.program
 
 /-- The checker's KB is exactly the input's effective program, for its
-application symbol. -/
+application symbol: its clauses, and no evaluator. -/
 def ownChecker (hoApplySymbol : Symbol) (input : Input Domain Variable Literal Symbol) : Bool :=
   decide (checker.snapshot.hoApplySymbol = hoApplySymbol) &&
-    decide (checker.snapshot.clauses = input.program.clauses.map ProgramClause.clause)
+    decide (checker.snapshot.clauses = input.program.clauses.map ProgramClause.clause) &&
+    checker.snapshot.evaluators.isEmpty
 
 /-- `admit_import`: the operational check of imports. Imports are checked in
 a proof layer whose KB contains the executable program; the clauses of the
@@ -288,19 +289,19 @@ theorem admit_proved {hoApplySymbol : Symbol} {imports : List (Import Variable L
     {input : Input Domain Variable Literal Symbol} {proofs : List (Term Variable Literal Symbol)}
     {proof : Term Variable Literal Symbol} (admitted : admit vocab checker hoApplySymbol imports input proofs = .proved proof) :
     proof ∈ proofs ∧ checker.snapshot.hoApplySymbol = hoApplySymbol ∧
-      checker.snapshot.clauses = input.program.clauses.map ProgramClause.clause ∧
+      checker.snapshot.clauses = input.program.clauses.map ProgramClause.clause ∧ checker.snapshot.evaluators = [] ∧
       CheckedProof vocab checker imports input.context input.goal proof := by
   unfold admit at admitted
   simp only at admitted
   by_cases own : ownChecker checker hoApplySymbol input = true
   · simp only [own, ↓reduceIte] at admitted
-    simp only [ownChecker, Bool.and_eq_true, decide_eq_true_eq] at own
+    simp only [ownChecker, Bool.and_eq_true, decide_eq_true_eq, List.isEmpty_iff] at own
     split at admitted
     · rename_i found foundEq
       cases admitted
       have accepted := List.find?_some foundEq
       simp only [beq_iff_eq] at accepted
-      exact ⟨List.mem_of_find?_eq_some foundEq, own.1, own.2, (checkProof_accept_iff vocab checker).mp accepted⟩
+      exact ⟨List.mem_of_find?_eq_some foundEq, own.1.1, own.1.2, own.2, (checkProof_accept_iff vocab checker).mp accepted⟩
     · split at admitted <;> cases admitted
   · simp only [own, Bool.false_eq_true, ↓reduceIte] at admitted
     split at admitted <;> cases admitted
@@ -312,10 +313,10 @@ theorem admit_proved_derives {hoApplySymbol : Symbol} {imports : List (Import Va
     {proof : Term Variable Literal Symbol} (admitted : admit vocab checker hoApplySymbol imports input proofs = .proved proof) :
     Derives hoApplySymbol (fun clause => clause ∈ input.program.clauses.map ProgramClause.clause) input.context
       input.goal checker.provider := by
-  obtain ⟨_, symbol, clauses, checked⟩ := admit_proved vocab checker admitted
+  obtain ⟨_, symbol, clauses, evaluators, checked⟩ := admit_proved vocab checker admitted
   have derived := checked_toDerives vocab checker checked
   have kb : checker.snapshot.kb = fun clause => clause ∈ input.program.clauses.map ProgramClause.clause := by
-    unfold Snapshot.kb; rw [clauses]
+    rw [Snapshot.kb_of_evaluators evaluators, clauses]
   rw [symbol, kb] at derived
   exact derived
 

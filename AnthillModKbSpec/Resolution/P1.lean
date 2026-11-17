@@ -12,3 +12,5 @@ import AnthillModKbSpec.Resolution.P1.Lemma
 -- The module's answers over the completion: Yes, No, Unknown with checked witnesses,
 -- and Undecided with blockers (S22).
 import AnthillModKbSpec.Resolution.P1.Answer
+-- Evaluations of dictionary operations as checked nodes (S14).
+import AnthillModKbSpec.Resolution.P1.Evaluation

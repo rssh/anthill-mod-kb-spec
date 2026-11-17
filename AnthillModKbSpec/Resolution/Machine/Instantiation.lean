@@ -65,6 +65,11 @@ theorem resolveWith_unbound {bindings : List (Variable × Term Variable Literal 
       have different : other ≠ name := fun same => unbound other member (by simp [same])
       simp [Substitution.single, Substitution.bind, different]
 
+/-- A closed term reads as itself in every store. -/
+theorem Store.resolve_closed (store : Store Variable Literal Symbol) {term : Term Variable Literal Symbol}
+    (closed : term.freeVars = []) : store.resolve term = term :=
+  resolveWith_unbound fun name inside => by rw [closed] at inside; cases inside
+
 /-- Every free name of a reading comes from reading one free name of the term. -/
 theorem resolveWith_freeVars (bindings : List (Variable × Term Variable Literal Symbol))
     {term : Term Variable Literal Symbol} :

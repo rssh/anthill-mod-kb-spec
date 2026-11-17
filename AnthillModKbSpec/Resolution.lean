@@ -16,6 +16,10 @@ import AnthillModKbSpec.Resolution.AdmissionSignature
 import AnthillModKbSpec.Resolution.Elaboration
 import AnthillModKbSpec.Resolution.DictionaryRegistry
 import AnthillModKbSpec.Resolution.OrderRegistry
+import AnthillModKbSpec.Resolution.DictionaryEvaluation
+import AnthillModKbSpec.Resolution.OrderEvaluation
+import AnthillModKbSpec.Resolution.DictionaryLaws
+import AnthillModKbSpec.Resolution.DictionaryRoute
 import AnthillModKbSpec.Resolution.Machine
 import AnthillModKbSpec.Resolution.ScopedAtomSemantics
 import AnthillModKbSpec.Resolution.CertifiedRefutation

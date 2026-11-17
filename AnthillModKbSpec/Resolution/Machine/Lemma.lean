@@ -444,31 +444,31 @@ theorem lemmaAttempts_sound (sound : lemmas.Sound hoApplySymbol kb naf) (valid :
   · exact lemmaAttempt_sound sound valid
   · exact cutAttempt_sound sound valid choice
 
-/-- The left strategy with lemmas, on a program whose clauses are among those
-of `full`, is sound for `full`'s KB with lemmas sound there: every lemma
-command's contract is the lemma's derivation read through the answers. -/
-theorem withLemmas_sound_within {program full : Program Variable Literal Symbol}
-    (within : ∀ entry ∈ program.clauses, entry ∈ full.clauses) (sound : lemmas.Sound hoApplySymbol full.kb naf)
+/-- The left strategy with lemmas, on a program whose clauses are in a KB, is
+sound for that KB with lemmas sound there: every lemma command's contract is
+the lemma's derivation read through the answers. -/
+theorem withLemmas_sound_within {program : Program Variable Literal Symbol}
+    (within : ∀ entry ∈ program.clauses, entry.clause ∈ kb) (sound : lemmas.Sound hoApplySymbol kb naf)
     (select : Selection Variable Literal Symbol) (cuts : LemmaSelection Variable Literal Symbol) :
-    Strategy.Sound hoApplySymbol full.kb naf
+    Strategy.Sound hoApplySymbol kb naf
       (withLemmas (Certificate := Certificate) hoApplySymbol program lemmas select cuts) :=
   leftWith_sound_within within fun obligation store valid declared candidate inside => by
     rcases List.mem_append.mp inside with lemma | chosen
     · exact lemmaAttempts_sound sound valid cuts candidate lemma
-    · exact chosenAttempts_sound_within (fun _ ⟨entry, member, same⟩ => ⟨entry, within entry member, same⟩) valid
+    · exact chosenAttempts_sound_within (fun _ ⟨entry, member, same⟩ => same ▸ within entry member) valid
         declared select candidate chosen
 
-/-- A successful run with lemmas sound for `full`'s KB reconstructs `Derives`
-for its answer instance there. -/
-theorem withLemmas_reconstructs {program full : Program Variable Literal Symbol}
-    (within : ∀ entry ∈ program.clauses, entry ∈ full.clauses) (sound : lemmas.Sound hoApplySymbol full.kb naf)
+/-- A successful run with lemmas sound for a KB containing the program's
+clauses reconstructs `Derives` for its answer instance there. -/
+theorem withLemmas_reconstructs {program : Program Variable Literal Symbol}
+    (within : ∀ entry ∈ program.clauses, entry.clause ∈ kb) (sound : lemmas.Sound hoApplySymbol kb naf)
     (select : Selection Variable Literal Symbol) (cuts : LemmaSelection Variable Literal Symbol) (fuel : Nat)
     (snapshot : Snapshot) (flexibles : List Variable) (context : ProofContext Variable Literal Symbol)
     (goal : Formula Variable Literal Symbol) {resume : State Variable Literal Symbol Certificate Snapshot}
     {proof : CompletedProof Variable Literal Symbol Certificate Snapshot}
     (ran : run (withLemmas hoApplySymbol program lemmas select cuts) fuel (State.init snapshot flexibles context goal) =
       .success proof resume) :
-    Derives hoApplySymbol full.kb (context.map proof.store.resolve) (proof.store.resolve goal) naf :=
+    Derives hoApplySymbol kb (context.map proof.store.resolve) (proof.store.resolve goal) naf :=
   run_init_reconstructs _ (withLemmas_sound_within within sound select cuts) fuel snapshot flexibles context goal ran
 
 end Strategy

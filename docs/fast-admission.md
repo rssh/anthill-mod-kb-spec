@@ -227,4 +227,6 @@ deterministic when they are.
   (beside a P1 query, each denial body as its own profile says: bounded when
   it is P1, with fuel otherwise, `Setup.denialFor`; with fuel beside a P2
   query, `Setup.denialCheck`).
-- **Dictionary operations** are blockers until S14 evaluates them.
+- **Dictionary operations** are blockers here. S14 evaluates them on the
+  shared machine ([dictionary evaluation](dictionary-evaluation.md)); admitting
+  evaluated operations into the fast fragment is S15's composition.

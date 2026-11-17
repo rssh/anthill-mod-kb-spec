@@ -344,7 +344,7 @@ def holdsHypothesis (proof : CompletedProof String Unit Symbol Unit Unit) (opene
 /-! ### The exported tree, checked -/
 
 def checker : P1.Checker String Unit Symbol :=
-  ⟨⟨.hoApply, (program).clauses.map (·.clause)⟩, NafFailure.disabled, none, []⟩
+  ⟨⟨.hoApply, (program).clauses.map (·.clause), []⟩, NafFailure.disabled, none, []⟩
 
 def exported : Option (P1.Proof String Unit Symbol) :=
   proofOf.bind fun proof => P1.exportTree (Certificate := Unit) (fun _ => .truth) proof.store (fun _ _ => none) proof.tree
@@ -387,7 +387,7 @@ def toEven : P1.Rule String Unit Symbol → P1.Rule String Unit Symbol
 -- The genuine tree is rejected by a checker whose KB does not carry the
 -- principle: a clause node is checked against the snapshot.
 def withoutPrinciple : P1.Checker String Unit Symbol :=
-  ⟨⟨.hoApply, ((program).clauses.map (·.clause)).filter (· ≠ principleClause)⟩, NafFailure.disabled, none, []⟩
+  ⟨⟨.hoApply, ((program).clauses.map (·.clause)).filter (· ≠ principleClause), []⟩, NafFailure.disabled, none, []⟩
 #guard match exported with
   | some tree => !(P1.check withoutPrinciple (fun _ _ _ => false) [] tree)
   | none => false
@@ -512,7 +512,7 @@ def input (goal : T) (clauses : List Clause := kbClauses) : Admission.Input Dom 
 def universal (domain : Dom) (predicate : Sym) : T := Target.goal signature.naming ⟨9, domain, predicate⟩
 
 def checker (clauses : List Clause := kbClauses) : P1.Checker Nat Nat Sym :=
-  ⟨⟨.ha, (program clauses).clauses.map (·.clause)⟩, NafFailure.disabled, none, []⟩
+  ⟨⟨.ha, (program clauses).clauses.map (·.clause), []⟩, NafFailure.disabled, none, []⟩
 
 def outcomeOf (goal : T) (clauses : List Clause := kbClauses) : Option (Outcome Nat Nat Sym Unit Unit) :=
   match Induction.check .ha (input goal clauses) with

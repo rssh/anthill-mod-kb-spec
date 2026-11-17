@@ -147,7 +147,7 @@ def answerIs (outcome : Run) (name : Nat) (expected : T) : Bool :=
 
 /-- The checker of a run's export: the program's clauses, with no NAF evidence
 check and no derived rule. -/
-def checker (clauses : List Clause) : Checker Nat Nat Sym := ⟨⟨.ha, clauses⟩, NafFailure.disabled, none, []⟩
+def checker (clauses : List Clause) : Checker Nat Nat Sym := ⟨⟨.ha, clauses, []⟩, NafFailure.disabled, none, []⟩
 
 def verdict (clauses : List Clause) (context : List T) (goal : T) (proof : P) : Verdict Sym :=
   checkProof vocab (checker clauses) [] context goal (encode vocab proof)

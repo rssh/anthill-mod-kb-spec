@@ -210,28 +210,6 @@ section Runs
 variable [DecidableEq Variable] [DecidableEq Literal] [DecidableEq Symbol] [FreshNames Variable]
   (vocab : Vocabulary Symbol) (checker : Checker Variable Literal Symbol)
 
-/-- The program with the checker's clauses added after its own. -/
-def _root_.AnthillModKbSpec.Machine.Program.cover (program : Program Variable Literal Symbol)
-    (clauses : List (HornClause Variable Literal Symbol)) : Program Variable Literal Symbol :=
-  ⟨program.clauses ++ clauses.map fun clause => ⟨.signature, clause⟩, program.guard⟩
-
-omit [DecidableEq Variable] [DecidableEq Literal] [DecidableEq Symbol] [FreshNames Variable] in
-/-- A program whose clauses are among `clauses`, covered by them, denotes
-exactly their KB. -/
-theorem _root_.AnthillModKbSpec.Machine.Program.cover_kb {program : Program Variable Literal Symbol}
-    {clauses : List (HornClause Variable Literal Symbol)} (covers : ∀ entry ∈ program.clauses, entry.clause ∈ clauses) :
-    (program.cover clauses).kb = fun clause => clause ∈ clauses := by
-  funext clause
-  apply propext
-  constructor
-  · rintro ⟨entry, inside, rfl⟩
-    rcases List.mem_append.mp inside with own | added
-    · exact covers entry own
-    · obtain ⟨found, member, rfl⟩ := List.mem_map.mp added
-      exact member
-  · intro member
-    exact ⟨⟨.signature, clause⟩, List.mem_append_right _ (List.mem_map_of_mem member), rfl⟩
-
 omit [FreshNames Variable] in
 theorem coversProgram_spec {hoApplySymbol : Symbol} {program : Program Variable Literal Symbol}
     (covers : coversProgram checker hoApplySymbol program = true) :
@@ -248,11 +226,9 @@ theorem withLemmas_sound {hoApplySymbol : Symbol} {program : Program Variable Li
       (withLemmas (Certificate := Certificate) hoApplySymbol program
         (lemmasFor vocab checker hoApplySymbol program lemmas) select cuts) := by
   obtain ⟨symbol, clauses⟩ := coversProgram_spec checker covers
-  have kb : (program.cover checker.snapshot.clauses).kb = checker.snapshot.kb := Program.cover_kb clauses
   have sound := lemmasFor_sound vocab checker hoApplySymbol program lemmas
-  rw [← kb] at sound ⊢
   rw [symbol] at sound ⊢
-  exact withLemmas_sound_within (fun _ member => List.mem_append_left _ member) sound select cuts
+  exact withLemmas_sound_within (fun entry member => Snapshot.mem_kb (clauses entry member)) sound select cuts
 
 /-- `withLemmas_derives`: a successful run of a covered program with its
 lemmas reconstructs `Derives` for its answer instance in the checker's KB,

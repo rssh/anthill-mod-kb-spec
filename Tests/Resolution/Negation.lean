@@ -42,7 +42,7 @@ def completedOf (clauses : List Clause) (formulas : List T := []) : List Clause 
   (completionOf clauses formulas).clauses
 
 def snapshotOf (clauses : List Clause) (formulas : List T := []) : Snapshot Nat Nat Sym :=
-  ⟨.ha, completedOf clauses formulas⟩
+  ⟨.ha, completedOf clauses formulas, []⟩
 
 /-- Check a tree whose NAF nodes carry refutations in the completed program. -/
 def verdict (clauses : List Clause) (formulas : List T) (context : List T) (goal : T) (proof : P) : Verdict Sym :=
@@ -74,7 +74,7 @@ def refuteNoP (argument : T) : P :=
   (node (.forallIntro 7) (.forallVar 1 (naf (atom .p [x 1]))) [nafNode (atom .p [x 7]) (refuteNoP (x 7))]) = .accept
 -- Without the completion there is no refutation: the program alone is not
 -- closed.
-#guard checkProof vocab (refutationChecker vocab ⟨.ha, []⟩) [] [] (naf (atom .p [x 5]))
+#guard checkProof vocab (refutationChecker vocab ⟨.ha, [], []⟩) [] [] (naf (atom .p [x 5]))
   (encode vocab (nafNode (atom .p [x 5]) (refuteNoP (x 5)))) = .reject
 
 /-! ### A fact: a clash refutes other constants, never a rigid name -/
@@ -219,7 +219,7 @@ def refuteByPlus (operand : T) : P :=
 #guard verdict withPlus [] [] (naf (atom .p [k .one])) (nafNode (atom .p [k .one]) (refuteByPlus (atom .p [k .one])))
   = .reject
 #guard checkProof vocab (refutationChecker vocab
-    ⟨.ha, completed withPlus (Signature.of (· == .unknown) .ha (fun symbol => symbol == .plus || free symbol) withPlus [])⟩)
+    ⟨.ha, completed withPlus (Signature.of (· == .unknown) .ha (fun symbol => symbol == .plus || free symbol) withPlus []), []⟩)
     [] [] (naf (atom .p [k .one])) (encode vocab (nafNode (atom .p [k .one]) (refuteByPlus (atom .p [k .one])))) = .accept
 
 /-! ### Flexible operands: delay first, then the closing phase -/
@@ -419,7 +419,7 @@ def underR5 : Option T := exported overTwo [] [atom .r [x 5]] nafP5
 def qOfP : List Clause := pOne ++ [.definite (atom .q [x 0]) [atom .p [x 0]]]
 def nafQTwo : T := naf (atom .q [k .two])
 def lemmaQ : Clause := fact (atom .q [k .one])
-#guard checkIn ⟨.ha, completedOf qOfP [nafQTwo] ++ [lemmaQ]⟩ [] nafQTwo (exported qOfP [nafQTwo] [] nafQTwo) = some .accept
+#guard checkIn ⟨.ha, completedOf qOfP [nafQTwo] ++ [lemmaQ], []⟩ [] nafQTwo (exported qOfP [nafQTwo] [] nafQTwo) = some .accept
 #guard checkIn (snapshotOf (qOfP ++ [lemmaQ]) [nafQTwo]) [] nafQTwo (exported qOfP [nafQTwo] [] nafQTwo) = some .reject
 
 end NegationTests

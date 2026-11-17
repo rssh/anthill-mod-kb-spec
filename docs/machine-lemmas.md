@@ -82,7 +82,9 @@ must be simple: an atom, falsity, an equation, or a NAF formula
 (`simpleConclusion`). It is compared with the goal first (`compareLemma`), and
 only a lemma that may apply gets witnesses. An equation or a NAF formula is
 matched when the goal has its connective; an equation conclusion is the shape
-of S14's dictionary laws. An atom is compared as a local rule's conclusion is
+of S14's dictionary laws, whose views S14 matches one way against a goal's
+dictionary call, since the matcher does not compare two calls
+([dictionary evaluation](dictionary-evaluation.md)). An atom is compared as a local rule's conclusion is
 (S11): directly, or through an indirect view where the two differ by
 `ho_apply`, the node then converted; a lambda-valued answer is a gap. A universal lemma is
 instantiated with its premise `B` as an obligation of the run. A goal that

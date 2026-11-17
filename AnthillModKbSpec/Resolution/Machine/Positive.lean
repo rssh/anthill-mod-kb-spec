@@ -552,33 +552,40 @@ theorem clauseUse_sound (valid : store.Scoped) {head : Term Variable Literal Sym
   · exact conclusionAttempt_sound valid (fun _ => ⟨rfl, by simp [Expansion.rigids, Expansion.clause], rfl⟩)
       fun _ _ _ matched => Expansion.clause_soundUnder member matched
 
-theorem clauseAttempt_sound (valid : store.Scoped) (reads : store.resolve obligation.goal = goal)
-    {program : Program Variable Literal Symbol} {entry : ProgramClause Variable Literal Symbol}
-    (inside : entry ∈ program.clauses) :
-    AttemptSound hoApplySymbol program.kb naf store obligation
+/-- A program clause's candidate is sound in every KB containing the clause. -/
+theorem clauseAttempt_sound_in (valid : store.Scoped) (reads : store.resolve obligation.goal = goal)
+    {entry : ProgramClause Variable Literal Symbol} (member : entry.clause ∈ kb) :
+    AttemptSound hoApplySymbol kb naf store obligation
       (clauseAttempt (Certificate := Certificate) hoApplySymbol obligation store goal avoid entry) := by
   unfold clauseAttempt
   split
   · rename_i head body clauseEq
-    exact clauseUse_sound valid ⟨entry, inside, clauseEq⟩
+    exact clauseUse_sound valid (clauseEq ▸ member)
   · rename_i body clauseEq
     split
     · intro expansion found
       cases found
-      exact fixed_sound fun later refines => Expansion.goalClause_soundUnder ⟨entry, inside, clauseEq⟩
+      exact fixed_sound fun later refines => Expansion.goalClause_soundUnder (clauseEq ▸ member)
         (by rw [valid.read_refines reads refines]; exact Store.resolve_falsity _)
     · intro _ found; cases found
 
-/-- The candidates for a program whose clauses are among those of `full` are
-sound for `full`'s KB. -/
+theorem clauseAttempt_sound (valid : store.Scoped) (reads : store.resolve obligation.goal = goal)
+    {program : Program Variable Literal Symbol} {entry : ProgramClause Variable Literal Symbol}
+    (inside : entry ∈ program.clauses) :
+    AttemptSound hoApplySymbol program.kb naf store obligation
+      (clauseAttempt (Certificate := Certificate) hoApplySymbol obligation store goal avoid entry) :=
+  clauseAttempt_sound_in valid reads ⟨entry, inside, rfl⟩
+
+/-- The candidates for a program whose clauses are in a KB are sound for that
+KB. -/
 theorem atomResponse_sound_within (valid : store.Scoped) (reads : store.resolve obligation.goal = goal)
-    {program full : Program Variable Literal Symbol} {leftRules : Bool}
+    {program : Program Variable Literal Symbol} {leftRules : Bool}
     {extra : List (Attempt Variable Literal Symbol Certificate)}
-    (within : ∀ entry ∈ program.clauses, entry ∈ full.clauses)
-    (extraSound : ∀ candidate ∈ extra, AttemptSound hoApplySymbol full.kb naf store obligation candidate) :
+    (within : ∀ entry ∈ program.clauses, entry.clause ∈ kb)
+    (extraSound : ∀ candidate ∈ extra, AttemptSound hoApplySymbol kb naf store obligation candidate) :
     ∀ expansion ∈ (atomResponse (Certificate := Certificate) hoApplySymbol program obligation store goal
       (store.readContext obligation) leftRules extra).alternatives,
-      CandidateSound hoApplySymbol full.kb naf store obligation expansion := by
+      CandidateSound hoApplySymbol kb naf store obligation expansion := by
   intro expansion inside
   unfold atomResponse at inside
   split at inside
@@ -597,7 +604,7 @@ theorem atomResponse_sound_within (valid : store.Scoped) (reads : store.resolve 
   · obtain ⟨⟨rule, read⟩, _, rfl⟩ := List.mem_map.mp fromRule
     exact localAttempt_sound valid rule read leftRules
   · obtain ⟨entry, entryMember, rfl⟩ := List.mem_map.mp clause
-    exact clauseAttempt_sound valid reads (within entry entryMember)
+    exact clauseAttempt_sound_in valid reads (within entry entryMember)
   · exact extraSound candidate added
 
 theorem atomResponse_sound (valid : store.Scoped) (reads : store.resolve obligation.goal = goal)
@@ -607,7 +614,7 @@ theorem atomResponse_sound (valid : store.Scoped) (reads : store.resolve obligat
     ∀ expansion ∈ (atomResponse (Certificate := Certificate) hoApplySymbol program obligation store goal
       (store.readContext obligation) leftRules extra).alternatives,
       CandidateSound hoApplySymbol program.kb naf store obligation expansion :=
-  atomResponse_sound_within valid reads (fun _ member => member) extraSound
+  atomResponse_sound_within (kb := program.kb) valid reads (fun entry member => ⟨entry, member, rfl⟩) extraSound
 
 omit [DecidableEq Symbol] [DecidableEq Literal] in
 /-- The introduction rules are sound: the goal reads as their connective in
@@ -697,14 +704,14 @@ theorem compositeResponse_sound (valid : store.Scoped) (declared : obligation.De
     rw [Response.alternatives, ← foundEq] at member
     exact exactCandidates_sound reads expansion member
 
-/-- The responses for a program whose clauses are among those of `full` are
-sound for `full`'s KB. -/
+/-- The responses for a program whose clauses are in a KB are sound for that
+KB. -/
 theorem respondTo_sound_within (valid : store.Scoped) (declared : obligation.Declared store)
-    (reads : store.resolve obligation.goal = goal) {program full : Program Variable Literal Symbol}
-    (within : ∀ entry ∈ program.clauses, entry ∈ full.clauses) :
+    (reads : store.resolve obligation.goal = goal) {program : Program Variable Literal Symbol}
+    (within : ∀ entry ∈ program.clauses, entry.clause ∈ kb) :
     ∀ expansion ∈ (respondTo (Certificate := Certificate) hoApplySymbol program obligation store goal
       (store.readContext obligation)).alternatives,
-      CandidateSound hoApplySymbol full.kb naf store obligation expansion := by
+      CandidateSound hoApplySymbol kb naf store obligation expansion := by
   intro expansion member
   unfold respondTo at member
   split at member
@@ -723,20 +730,19 @@ theorem respondTo_sound (valid : store.Scoped) (declared : obligation.Declared s
     ∀ expansion ∈ (respondTo (Certificate := Certificate) hoApplySymbol program obligation store goal
       (store.readContext obligation)).alternatives,
       CandidateSound hoApplySymbol program.kb naf store obligation expansion :=
-  respondTo_sound_within valid declared reads fun _ member => member
+  respondTo_sound_within (kb := program.kb) valid declared reads fun entry member => ⟨entry, member, rfl⟩
 
-/-- The strategy on a program whose clauses are among those of `full` is sound
-for `full`'s KB. -/
-theorem positive_sound_within {program full : Program Variable Literal Symbol}
-    (within : ∀ entry ∈ program.clauses, entry ∈ full.clauses) :
-    Strategy.Sound hoApplySymbol full.kb naf (positive (Certificate := Certificate) hoApplySymbol program) :=
+/-- The strategy on a program whose clauses are in a KB is sound for that KB. -/
+theorem positive_sound_within {program : Program Variable Literal Symbol}
+    (within : ∀ entry ∈ program.clauses, entry.clause ∈ kb) :
+    Strategy.Sound hoApplySymbol kb naf (positive (Certificate := Certificate) hoApplySymbol program) :=
   fun _ _ valid declared => respondTo_sound_within valid declared rfl within
 
 /-- The strategy is sound for the KB its program denotes, whatever the NAF
 provider: it builds no closed-world node. -/
 theorem positive_sound (program : Program Variable Literal Symbol) :
     Strategy.Sound hoApplySymbol program.kb naf (positive (Certificate := Certificate) hoApplySymbol program) :=
-  positive_sound_within fun _ member => member
+  positive_sound_within (kb := program.kb) fun entry member => ⟨entry, member, rfl⟩
 
 /-- A successful run of the strategy reconstructs `Derives` for its answer
 instance: the goal and context read through the final answers. -/

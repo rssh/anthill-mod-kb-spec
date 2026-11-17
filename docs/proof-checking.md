@@ -13,7 +13,7 @@ externally, or exported from a machine run. Traces are in
 | Module | Contents |
 | --- | --- |
 | [P1/Substitutes](../AnthillModKbSpec/Resolution/P1/Substitutes.lean) | Deciding capture-avoiding substitution with a stated result (`substitutes_iff`) |
-| [P1/Tree](../AnthillModKbSpec/Resolution/P1/Tree.lean) | Rules and trees, the checker's interfaces (`NafCheck`, `RuleCheck`, `Checker`), rule applications (`Local`), tree validity (`Valid`), the checker (`nodeCheck`, `check`, `check_iff`), reconstruction (`Valid.derives`), the capabilities a tree uses (`Valid.uses`) |
+| [P1/Tree](../AnthillModKbSpec/Resolution/P1/Tree.lean) | Rules and trees, the snapshot (`Snapshot`: clauses and, since S14, registered evaluators, `Snapshot.kb`), the checker's interfaces (`NafCheck`, `RuleCheck`, `Checker`), rule applications (`Local`), tree validity (`Valid`), the checker (`nodeCheck`, `check`, `check_iff`), reconstruction (`Valid.derives`), the capabilities a tree uses (`Valid.uses`) |
 | [P1/Encoding](../AnthillModKbSpec/Resolution/P1/Encoding.lean) | The `Term` encoding (`encode`, `decode`, `decode_encode`), references over an import table (`Resolves`), missing capabilities through references (`missing`), `CheckedProof`, `checkProof`, `checkProof_accept_iff`, `checked_toDerives` |
 | [P1/Decision](../AnthillModKbSpec/Resolution/P1/Decision.lean) | `DecisionContract` and proof checking as one (`proofRoute`, `reject_says_nothing`) |
 | [P1/Export](../AnthillModKbSpec/Resolution/P1/Export.lean) | Machine trees as supplied proofs (`exportTree`, `exportProof`), P0 witnesses as terms, the checker for a P0 plan's export, `Plan.exportProof_checked`, `Plan.exportProof_derives` |
@@ -118,6 +118,11 @@ interface whose soundness is a proof obligation in the shared logic:
   procedure checks the application, and the tree supplies the premises' proofs.
   S09's commands need none: each is a composition of the shared rules and
   exports as their nodes ([left rules](machine-left.md#proof-trees)).
+- **Evaluated equations** (S14): a snapshot lists registered evaluators beside
+  its clauses, and its KB is the clauses and the unconditional equations
+  `call = value` they evaluate, an equation oracle's extension. A NAF check's
+  soundness is indexed by that KB. S14's evaluation rule is a `RuleCheck` that
+  runs the evaluators again on its node ([dictionary evaluation](dictionary-evaluation.md)).
 - **References** to previously checked proofs, by name, over an import table
   ordered newest first. A reference stands for the statement its import was
   supplied for: its goal must be the import's goal, and the import's
@@ -233,7 +238,7 @@ executable program with that clause, and becomes a fact of the executable
 program, which then succeeds where it was exhausted.
 
 `admit` is one admission check over supplied proofs, imports, and P0, in the
-query's own program (`ownChecker`). A supplied term that checks for the query
+query's own program (`ownChecker`: its clauses, and no evaluator). A supplied term that checks for the query
 answers it (`proved`) without running anything, and the query is derivable in
 its own effective program (`admit_proved_derives`). Otherwise P0 decides on the
 program extended with the accepted imports (`admit_plan`), and a

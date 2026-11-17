@@ -81,7 +81,7 @@ namespace Setup
 variable {Domain : Type} (setup : Setup Domain Variable Literal Symbol)
 
 /-- The completed snapshot answers are checked against. -/
-def snapshot : Snapshot Variable Literal Symbol := ⟨setup.hoApplySymbol, setup.completion.clauses⟩
+def snapshot : Snapshot Variable Literal Symbol := ⟨setup.hoApplySymbol, setup.completion.clauses, []⟩
 
 /-- Evidence-first NAF over the completion; with `fast`, the unknown marker. -/
 def strategy (fast : Bool) : Strategy Variable Literal Symbol (Term Variable Literal Symbol) :=
@@ -270,7 +270,7 @@ theorem check_model {goal : Formula Variable Literal Symbol} {expected : Bool}
   refine ⟨_, ⟨?_, negation, Open.realizes_guards setup.separated fun symbol guard =>
     agrees symbol ((setup.isGuard_iff symbol).mpr guard)⟩, valued⟩
   rw [show setup.snapshot.kb = (fun clause => clause ∈ setup.completion.clauses : LogicalKb Variable Literal Symbol)
-    from rfl, setup.completion_eq]
+    from Snapshot.kb_of_evaluators rfl, setup.completion_eq]
   exact models
 
 theorem witnesses_sound {outcome : Outcome Variable Literal Symbol (Term Variable Literal Symbol) Unit}

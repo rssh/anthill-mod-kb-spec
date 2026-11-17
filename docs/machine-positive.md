@@ -285,7 +285,9 @@ The run-level theorems hold for every sound strategy, so later strategies
   [P0 evaluation](machine-p0.md)), so every other answer is kept.
 - `ho_apply` conversion and flexible heads are S11's
   ([conversion](machine-conversion.md)), part of this strategy's candidates;
-  equality and dictionary calls are S14's.
+  equality and dictionary calls are S14's: an equation on a dictionary call is
+  evaluated, or matched against a law's view, by a strategy wrapping this one
+  ([dictionary evaluation](dictionary-evaluation.md)).
 - No termination, fairness, or completeness is claimed in general. Depth-first
   selection may loop, and `exhausted` is relative to this strategy's candidates.
   For ranked ground P0 inputs, S07 proves termination and complete failure on

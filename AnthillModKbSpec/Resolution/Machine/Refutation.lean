@@ -455,10 +455,10 @@ theorem refuter_sound {hoApplySymbol : Symbol} {naf : NafFailure Variable Litera
       (refuter (Certificate := Certificate) hoApplySymbol completion guard) := by
   intro obligation store valid declared expansion member
   have within : ∀ entry ∈ (Program.ofClauses completion.scanned guard).clauses,
-      entry ∈ (Program.ofClauses completion.clauses guard).clauses := fun entry inside => by
+      entry.clause ∈ (Program.ofClauses completion.clauses guard).kb := fun entry inside => by
     simp only [Program.ofClauses, List.mem_map] at inside
     obtain ⟨clause, inside, rfl⟩ := inside
-    exact Program.mem_ofClauses (Completion.Completed.mem_clauses_of_scanned inside)
+    exact ⟨_, Program.mem_ofClauses (Completion.Completed.mem_clauses_of_scanned inside), rfl⟩
   unfold refuter at member
   dsimp only at member
   split at member

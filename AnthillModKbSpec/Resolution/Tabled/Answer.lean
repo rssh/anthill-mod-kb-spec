@@ -153,7 +153,13 @@ def clauses : List (HornClause Variable Literal Symbol) := setup.fragment.clause
 def completion : Completed Variable Literal Symbol := Completion.completion setup.clauses setup.signature
 
 /-- The completed snapshot answers are about. -/
-def snapshot : P1.Snapshot Variable Literal Symbol := ⟨setup.hoApplySymbol, setup.completion.clauses⟩
+def snapshot : P1.Snapshot Variable Literal Symbol := ⟨setup.hoApplySymbol, setup.completion.clauses, []⟩
+
+/-- A model of the completion's clauses is a model of the snapshot's KB, which
+has no evaluator. -/
+theorem models_snapshot {Value : Type} {model : Model Literal Symbol Value setup.hoApplySymbol}
+    (models : model.Models fun clause => clause ∈ setup.completion.clauses) : model.Models setup.snapshot.kb :=
+  fun clause member => models clause ((P1.Snapshot.mem_kb_iff rfl).mp member)
 
 /-- The clauses the signature generates for its guards: domain membership,
 `D_all` from each domain, and the registered predicates' facts. Every model
@@ -164,7 +170,7 @@ def generated : List (HornClause Variable Literal Symbol) :=
 /-- The snapshot exported proofs are checked against: the completion and the
 guards' generated clauses, which prove guard atoms. -/
 def checkSnapshot : P1.Snapshot Variable Literal Symbol :=
-  ⟨setup.hoApplySymbol, setup.completion.clauses ++ setup.generated⟩
+  ⟨setup.hoApplySymbol, setup.completion.clauses ++ setup.generated, []⟩
 
 /-- The universe of a query: the ground data subterms of the program and the query. -/
 def space (context : ProofContext Variable Literal Symbol) (goal : Formula Variable Literal Symbol) :
@@ -215,6 +221,8 @@ theorem refutesIn_sound {space : List (Term Variable Literal Symbol)} {operand :
   simp only [refutesIn, refutesInWith, Bool.and_eq_true] at refuted
   obtain ⟨round, roundEq⟩ := setup.kleene_round space
   rw [roundEq] at refuted
+  have models : model.Models fun clause => clause ∈ setup.completion.clauses :=
+    fun clause member => models clause ((P1.Snapshot.mem_kb_iff rfl).mpr member)
   exact refutes_sound (count := round) (Completes.of_models (signature := setup.signature) (clauses := setup.clauses) models)
     refuted.1 negation refuted.2 environment
 
@@ -224,7 +232,9 @@ theorem refutesIn_naf {space : List (Term Variable Literal Symbol)} {operand : T
     semanticNaf setup.hoApplySymbol setup.checkSnapshot.kb context operand := by
   intro Value model models negation environment _
   rw [sat_neg model environment negation]
-  exact refutesIn_sound refuted (fun clause member => models clause (List.mem_append_left _ member)) negation environment
+  exact refutesIn_sound refuted
+    (fun clause member => models clause (P1.Snapshot.mem_kb (List.mem_append_left _ ((P1.Snapshot.mem_kb_iff rfl).mp member))))
+    negation environment
 
 variable (setup)
 
@@ -626,8 +636,8 @@ theorem models_checkSnapshot {Value : Type} {model : Model Literal Symbol Value 
     (models : model.Models setup.snapshot.kb) (realizes : AdmissionSignature.Realizes setup.admission model) :
     model.Models setup.checkSnapshot.kb := by
   intro clause member environment
-  rcases List.mem_append.mp member with inCompletion | inGenerated
-  · exact models clause inCompletion environment
+  rcases List.mem_append.mp ((P1.Snapshot.mem_kb_iff rfl).mp member) with inCompletion | inGenerated
+  · exact models clause (P1.Snapshot.mem_kb inCompletion) environment
   · exact Elaboration.models_signatureKb setup.admission model realizes setup.names clause
       (mem_signatureClauses setup.listed inGenerated) environment
 
@@ -725,7 +735,7 @@ theorem witnesses_sound {query : Tabled.Query Variable Literal Symbol}
             obtain ⟨models, valued⟩ := ground_witness groundConditions.1 fixed groundAtoms
               (fun body member => denied body (mem_denials member))
               (Open.guardTruth setup.admission setup.hoApplySymbol) groundConditions.2
-            refine ⟨_, ⟨models, Model.keys_complement _, realizes fun symbol keys isGuard => ?_⟩, valued⟩
+            refine ⟨_, ⟨setup.models_snapshot models, Model.keys_complement _, realizes fun symbol keys isGuard => ?_⟩, valued⟩
             have notMarker : setup.fragment.unknownMarker symbol = false := by
               cases marker : setup.fragment.unknownMarker symbol
               · rfl
@@ -768,8 +778,10 @@ theorem witnesses_sound {query : Tabled.Query Variable Literal Symbol}
             rw [← fixedEq]; exact denialsG body (mem_denials member)) goalPositive holdsG
         obtain ⟨lowModels, lowFails⟩ := least_witness (base := setup.lowBase) covered positive valid closedL
           (fun body member => denialsL body (mem_denials member)) failsL
-        refine ⟨⟨_, _, ⟨highModels, Model.keys_complement _, realizes fun symbol keys isGuard => ?_⟩, _, contextHolds _, highHolds⟩,
-          ⟨_, _, ⟨lowModels, Model.keys_complement _, realizes fun symbol keys isGuard => ?_⟩, fun _ => .truth False,
+        refine ⟨⟨_, _, ⟨setup.models_snapshot highModels, Model.keys_complement _, realizes fun symbol keys isGuard => ?_⟩, _,
+            contextHolds _, highHolds⟩,
+          ⟨_, _, ⟨setup.models_snapshot lowModels, Model.keys_complement _, realizes fun symbol keys isGuard => ?_⟩,
+            fun _ => .truth False,
             contextHolds _, lowFails _⟩⟩
         · simp [highBase, isGuard]
         · simp [lowBase, isGuard]

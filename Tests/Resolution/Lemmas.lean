@@ -68,7 +68,7 @@ def onlyEmpty (snapshot : P1.Snapshot Nat Nat Sym) : NafCheck snapshot emptyFail
     exact accepted⟩
 
 /-- A checker over a KB, with that NAF evidence check and no derived rule. -/
-def layer (clauses : List Clause) : Checker Nat Nat Sym := ⟨⟨.ha, clauses⟩, emptyFailure, some (onlyEmpty _), []⟩
+def layer (clauses : List Clause) : Checker Nat Nat Sym := ⟨⟨.ha, clauses, []⟩, emptyFailure, some (onlyEmpty _), []⟩
 
 /-! ### Runs -/
 
@@ -273,7 +273,7 @@ def claim : L := lemma .pa [] (atom .p [k .a]) (node .truth .truth)
 -- Another snapshot: a checker whose KB does not contain the program offers
 -- nothing; nor does one for another application symbol.
 #guard offeredNames (layer [pq]) facts [univ] = []
-#guard offeredNames ⟨⟨.isPred, facts ++ [pq]⟩, emptyFailure, none, []⟩ facts [univ] = []
+#guard offeredNames ⟨⟨.isPred, facts ++ [pq], []⟩, emptyFailure, none, []⟩ facts [univ] = []
 
 /-! ### A use site that may still change is a gap
 

@@ -32,7 +32,7 @@ def zero : T := k .zero
 def node (rule : Rule Nat Nat Sym) (conclusion : T) (premises : List P := []) : P := .node rule conclusion premises
 
 /-- A checker over a clause list: no NAF evidence check, no derived rule. -/
-def plain (clauses : List Clause) : Checker Nat Nat Sym := ⟨⟨.ha, clauses⟩, NafFailure.disabled, none, []⟩
+def plain (clauses : List Clause) : Checker Nat Nat Sym := ⟨⟨.ha, clauses, []⟩, NafFailure.disabled, none, []⟩
 
 def verdict (checker : Checker Nat Nat Sym) (context : List T) (goal : T) (proof : P)
     (imports : List (Import Nat Nat Sym) := []) : Verdict Sym :=

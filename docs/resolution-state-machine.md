@@ -659,6 +659,9 @@ admitted lookup/matching strategy; indexing never binds rigid parameters.
 This particular matching problem is structural: it assigns dictionary and argument
 variables, not lambda abstractions. Rules parameterized by dictionaries are not by
 themselves a demonstration that general higher-order unification is needed.
+S14 implements this command with laws as checked lemmas, the conditional-rule view
+a lemma proved from the law, matched one way against the focus
+([dictionary evaluation](dictionary-evaluation.md)).
 
 #### Command: evaluate a dictionary operation
 
@@ -683,7 +686,10 @@ This action uses the existing equation-oracle contract; it does not define an
 evaluator for arbitrary dictionaries. Dictionary resolution, callable lookup,
 and invalid-access behavior need a separate concrete design. A dictionary call
 used directly as a proposition additionally needs a proof connecting its value
-to truth. Those transitions are not settled here.
+to truth. Those transitions are not settled here. S14 settles the evaluation:
+registered evaluators admitted by S13's access check and primitive contracts,
+their equations an equation oracle, the goal matched against the evaluated
+equation `call = v` in one step ([dictionary evaluation](dictionary-evaluation.md)).
 
 Do not trigger all dictionary laws merely because an operation term occurs as
 data. Law selection is driven by the focused proof goal; value evaluation is

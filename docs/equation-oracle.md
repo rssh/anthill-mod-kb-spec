@@ -65,6 +65,12 @@ that closedness makes this equality independent of the chosen environment.
 This is a semantic specification; it does not assume decidable equality on the
 entire carrier or provide an executable external solver.
 
+An executable oracle is S14's: the equations of registered dictionary
+evaluators (`DictionaryRegistry.Snapshot.oracle`), sound by each evaluator's
+proved soundness, decided by running the evaluators. An S08 snapshot listing
+them holds exactly the extended KB, so NAF evidence there is evidence for that
+KB ([dictionary evaluation](dictionary-evaluation.md)).
+
 [`Tests/Foundation/EquationOracle.lean`](../Tests/Foundation/EquationOracle.lean) checks a computed Nat
 comparison used to prove an equation in a predicate rule's body, consistency,
 and combination with certified NAF at the extended KB. A conditional-oracle

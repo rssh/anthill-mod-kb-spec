@@ -459,7 +459,7 @@ def nafByRefutation (vocab : Vocabulary Symbol) (hoApplySymbol : Symbol)
   let search := refuter hoApplySymbol completion guard
   Strategy.withOpenGoals unknownMarker
     (Strategy.withRefutation (fun operand => !(openAtomsOf unknownMarker completion.free completion.program operand).isEmpty)
-      (refutationCheck vocab ⟨hoApplySymbol, clauses⟩).check (refute vocab search fuel)
+      (refutationCheck vocab ⟨hoApplySymbol, clauses, []⟩).check (refute vocab search fuel)
       (left hoApplySymbol (Program.ofClauses clauses guard) select))
 
 /-- Evidence-first NAF is sound for the completed program with refutation
@@ -467,15 +467,16 @@ evidence, so in every model of it with complement NAF (`refutation_adequate`). -
 theorem nafByRefutation_sound (vocab : Vocabulary Symbol) (hoApplySymbol : Symbol)
     (completion : Completion.Completed Variable Literal Symbol) (guard : Symbol → Bool)
     (select : Selection Variable Literal Symbol) (fuel : Nat) (unknownMarker : Symbol → Bool) :
-    Strategy.Sound hoApplySymbol (Snapshot.kb ⟨hoApplySymbol, completion.clauses⟩)
-      (refutation hoApplySymbol (Snapshot.kb ⟨hoApplySymbol, completion.clauses⟩))
+    Strategy.Sound hoApplySymbol (Snapshot.kb ⟨hoApplySymbol, completion.clauses, []⟩)
+      (refutation hoApplySymbol (Snapshot.kb ⟨hoApplySymbol, completion.clauses, []⟩))
       (nafByRefutation vocab hoApplySymbol completion guard select fuel unknownMarker) := by
   have base := left_sound (Certificate := Term Variable Literal Symbol) (hoApplySymbol := hoApplySymbol)
-    (naf := refutation hoApplySymbol (Snapshot.kb ⟨hoApplySymbol, completion.clauses⟩))
+    (naf := refutation hoApplySymbol (Snapshot.kb ⟨hoApplySymbol, completion.clauses, []⟩))
     (Program.ofClauses completion.clauses guard) select
-  rw [Program.ofClauses_kb] at base
+  rw [Program.ofClauses_kb, ← Snapshot.kb_of_evaluators (snapshot := ⟨hoApplySymbol, completion.clauses, []⟩) rfl]
+    at base
   exact Strategy.withOpenGoals_sound
-    (Strategy.withRefutation_sound base (refutationCheck vocab ⟨hoApplySymbol, completion.clauses⟩).sound)
+    (Strategy.withRefutation_sound base (refutationCheck vocab ⟨hoApplySymbol, completion.clauses, []⟩).sound)
 
 end P1
 
