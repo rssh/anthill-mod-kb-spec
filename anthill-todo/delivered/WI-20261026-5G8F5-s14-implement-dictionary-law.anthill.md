@@ -3,9 +3,9 @@
 - id: WI-20261026-5G8F5-s14-implement-dictionary-law
 - created: 2026-10-26T08:32:35Z
 
-- status: Claimed
+- status: Delivered
 - status_agent: claude
-- status_at: 2026-11-09T20:12:41Z
+- status_at: 2026-11-17T22:19:29Z
 
 - acceptance: lake build
 
@@ -40,4 +40,8 @@ From S13 (dictionary registry, docs/dictionary-registry.md): the evaluator compu
 ### 2026-11-09T17:52:26Z — feedback — user
 
 From S20 (2026-11-09): the machine side of laws as checked lemmas is in place. An equation conclusion is backchained by lemmaRule, the law's premises becoming obligations of the run in order, and exported as a reference re-checked at the use site (trace law : ∀1. (q(1) → f(1) = c) in Tests/Resolution/Lemmas.lean). The run's lemmas are sound when they give Derives (Machine.Lemmas.Sound): a law used this way is a P1.Lemma entry with a proof term checked by the run's checker; a law known only by its validity theorem (law_valid) needs its own route to Derives.
+
+### 2026-11-17T22:11:37Z — feedback — user
+
+Review before delivery (2026-11-18): acceptance met. The Nat ordering route decides call = result as a DecisionContract (decide_sound, decide_refutes, evaluate_total), run with its own value check (check?_true, check?_false, check?_complete); evaluation on value demand (Strategy.withEvaluation); laws only as checked lemmas through structurally matched views, the asymmetry trace generating OrdDictionary, both DomainMember guards, and less(natOrd, a, b) = true in order, with rollback across dictionaries and Undecided naming a missing law; unmet guards, nested paths, and missing evaluators traced. Exported trees: the decision's evaluation node is proved accepted (Route.answer_accepted); a run's export is checked before Yes, and the whole-run export theorem is S15/S16's, as for S09 and S20. Scope moved: dictionary operations inside the fast fragment become IR primitives under the decision IR (S29), composed at every call site in S15.
 

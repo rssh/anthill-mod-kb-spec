@@ -282,9 +282,11 @@ either side, is answered Yes or No (`answer_definite`).
 
 ## Boundaries
 
-- **Composition is S15's.** The fast fragment still reports dictionary calls
-  as blockers (`dictionaryLaw`, S23); admitting evaluated operations there,
-  and running the access check and the decision at every call site, is S15's.
+- **Composition.** The fast fragment still reports dictionary calls as
+  blockers (`dictionaryLaw`, S23). Under the [decision IR](decision-ir.md)
+  (2026-11-17), a call with a registered evaluator becomes a primitive literal
+  of the IR, admitted by S13's access check and this route's contracts (S29);
+  running the access check and the decision at every call site is S15's.
 - **Value demand is an equation side.** A call inside an atom's arguments, or
   inside another call, is not evaluated (it would need `equalSubst` at the
   call's position), and an equation between two calls is a gap. A call whose
