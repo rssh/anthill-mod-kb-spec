@@ -3,9 +3,9 @@
 - id: WI-20261117-06YN9-s27-decision-ir-syntax-checker
 - created: 2026-11-17T20:23:45Z
 
-- status: Claimed
+- status: Delivered
 - status_agent: claude
-- status_at: 2026-11-18T07:09:21Z
+- status_at: 2026-11-18T15:22:06Z
 
 - acceptance: lake build
 
