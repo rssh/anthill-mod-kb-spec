@@ -1,8 +1,9 @@
 # Decision IR: admission as translation
 
 Status: design, decided with the user on 2026-11-17. S27's part, the IR, its
-checker and evidence, its semantics, the Herbrand reduction, and relevance, is
-[implemented](ir-programs.md) in part. It revises the
+checker and evidence, its semantics, the Herbrand reduction, relevance with
+the relevant program finite under P1, and S07's ground programs as the P0
+case where the IR expresses them, is [implemented](ir-programs.md). It revises the
 [S01 contract](lean-admission-contract.md)'s "one syntax and one
 interpreter/state machine": there is still one syntax and one meaning, but
 decisions run on an intermediate representation (IR) of their own, which
@@ -85,7 +86,7 @@ well formed, and P2 (decided with the user, 2026-11-18; see the boundaries).
 **Finiteness evidence** makes a program **P1**: the query's *relevant
 program*, the ground rule instances its calls and the denials' calls can use,
 is finite, both for the answers a call derives and for the answers it may
-have in some model. The denials join every query's relevant program (decided
+have in some model (S27's `relevant_finite`, `instances_finite`). The denials join every query's relevant program (decided
 with the user, 2026-11-18): a denial can rule out a model of the query's
 part on a consistent KB (`p(a) :- naf q(a). q(a) :- naf p(a). ⊥ :- p(a).`
 makes `p(a)` No), so its instances that the relevant atoms meet are decided

@@ -77,6 +77,20 @@ theorem available_iff {bound names : List Variable} : available bound names = tr
 
 end Binding
 
+/-- Where a literal's arguments sit in its rendering: under the default
+negation of a NAF literal and of a disequality, at the literal otherwise. -/
+def Goal.argsPath (path : List Nat) : Goal Variable Literal Symbol → List Nat
+  | .naf _ _ | .differ _ _ => path ++ [0]
+  | _ => path
+
+/-- A literal names a predicate of its own kind: a call or a NAF a closed one,
+a guard a guard, a primitive a primitive. -/
+def Goal.fits (declared : Predicate Symbol) : Goal Variable Literal Symbol → Bool
+  | .call _ _ | .naf _ _ => declared.closed
+  | .guard _ _ => declared.kind == .guard
+  | .primitive _ _ _ => declared.kind == .primitive
+  | _ => false
+
 namespace Program
 
 variable [DecidableEq Variable] [DecidableEq Literal] [DecidableEq Symbol] (program : Program Variable Literal Symbol)
@@ -168,17 +182,19 @@ def declarationBlocker (site : Site) (path : List Nat) (goal : Goal Variable Lit
       else
         match goal, program.predicate? symbol with
         | .marker _ _, _ => Tabled.outside site path formula .termKind
-        | _, some _ => Tabled.outside site path formula .termKind
+        | _, some declared =>
+            if goal.fits declared then Tabled.blocker site path formula .mode else Tabled.outside site path formula .termKind
         | _, none => Tabled.blocker site path formula .mode
   | none => Tabled.blocker site path formula .mode
 
 /-- The blockers of a literal at its site and path, with these names bound
 before it: a symbol of the wrong kind or undeclared, an argument that is not
-data, at its argument path, and a name it needs unbound. -/
+data, at its argument's path in the rendering (`Goal.argsPath`), and a name it
+needs unbound. -/
 def goalBlockers (site : Site) (path : List Nat) (bound : List Variable) (goal : Goal Variable Literal Symbol) :
     List (Blocker Variable Literal Symbol) :=
   (if program.declares goal then [] else [program.declarationBlocker site path goal]) ++
-    program.argsBlockers site path 0 goal.args ++
+    program.argsBlockers site (goal.argsPath path) 0 goal.args ++
     (if program.needs bound goal then [] else [Tabled.blocker site path goal.toTerm .mode])
 
 /-- The blockers of a body read left to right from the names bound before it,
@@ -223,7 +239,8 @@ def denialBlockers (index : Nat) (body : List (Goal Variable Literal Symbol)) : 
 /-- The blockers of the declarations: each symbol declared twice, a
 predicate named by the reserved `ho_apply` symbol, and a finite guard's
 listed member that is not a ground data term over the declared
-constructors. -/
+constructors. The reserved symbol is no constructor either, so no ground data
+term the checker accepts (a member, an evaluator's output) holds it. -/
 def declarationBlockers : List (Blocker Variable Literal Symbol) :=
   let symbols := program.predicates.map (·.symbol)
   let duplicates := symbols.eraseDups.filter fun symbol => symbols.count symbol > 1
@@ -231,6 +248,9 @@ def declarationBlockers : List (Blocker Variable Literal Symbol) :=
     else duplicates.map (fun symbol => Tabled.outside .goal [] (.app symbol []) .termKind) ++
       if duplicates.isEmpty then [Tabled.outside .goal [] (.app program.hoApply []) .termKind] else []) ++
     (symbols.filter (· == program.hoApply)).map (fun symbol => Tabled.outside .goal [] (.app symbol []) .hoApplyConversion) ++
+    (program.constructors.filter fun constructor => match constructor with
+      | .application symbol _ => symbol == program.hoApply
+      | .literal _ => false).map (fun _ => Tabled.outside .goal [] (.app program.hoApply []) .hoApplyConversion) ++
     program.predicates.flatMap fun declared =>
       if declared.kind = .guard then
         match program.members declared.symbol with
@@ -387,12 +407,13 @@ theorem programBlockers_parts (clean : program.programBlockers = []) :
 omit [DecidableEq Variable] in
 theorem declarationBlockers_nil (clean : program.declarationBlockers = []) :
     (program.predicates.map (·.symbol)).Nodup ∧ (∀ predicate ∈ program.predicates, predicate.symbol ≠ program.hoApply) ∧
+      (∀ arity, Constructor.application program.hoApply arity ∉ program.constructors) ∧
       ∀ declared ∈ program.predicates, declared.kind = .guard → ∀ members, program.members declared.symbol = some members →
         ∀ member ∈ members, groundIn program.constructors member = true := by
   unfold declarationBlockers at clean
   simp only [List.append_eq_nil_iff] at clean
-  obtain ⟨⟨nodupPart, reservedPart⟩, membersPart⟩ := clean
-  refine ⟨?_, fun predicate member same => ?_, fun declared member kind members found term inside => ?_⟩
+  obtain ⟨⟨⟨nodupPart, reservedPart⟩, constructorsPart⟩, membersPart⟩ := clean
+  refine ⟨?_, fun predicate member same => ?_, fun arity inside => ?_, fun declared member kind members found term inside => ?_⟩
   · by_cases nodup : (program.predicates.map (·.symbol)).Nodup
     · exact nodup
     · simp only [nodup, ite_false, List.append_eq_nil_iff, List.map_eq_nil_iff] at nodupPart
@@ -403,6 +424,8 @@ theorem declarationBlockers_nil (clean : program.declarationBlockers = []) :
       List.mem_filter.mpr ⟨List.mem_map.mpr ⟨predicate, member, rfl⟩, by simp [same]⟩
     rw [reservedPart] at inside
     cases inside
+  · simp only [List.map_eq_nil_iff, List.filter_eq_nil_iff] at constructorsPart
+    simpa using constructorsPart _ inside
   · simp only [List.flatMap_eq_nil_iff] at membersPart
     have this := membersPart declared member
     simp only [kind, ite_true, found, List.map_eq_nil_iff, List.filter_eq_nil_iff] at this
@@ -425,7 +448,7 @@ theorem wellFormed_of_check {query : Query Variable Literal Symbol} (clean : pro
     program.WellFormed := by
   have programClean : program.programBlockers = [] := (List.append_eq_nil_iff.mp clean).1
   obtain ⟨declarations, rules, denials, derived⟩ := programBlockers_parts programClean
-  obtain ⟨unique, reserved, members⟩ := declarationBlockers_nil declarations
+  obtain ⟨unique, reserved, _, members⟩ := declarationBlockers_nil declarations
   exact ⟨rules, derived, denials, unique, reserved, members⟩
 
 /-- A query with no blocker: its conditions are declared and data and read

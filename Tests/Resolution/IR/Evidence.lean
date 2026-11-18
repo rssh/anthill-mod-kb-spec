@@ -89,7 +89,6 @@ has data-term arguments. -/
 /- The vertices: `path` with both arguments bound, `edge` called with both
 bound and with its output free. -/
 #guard (pathProgram.vertices (query [call .path [k .a, k .c]])).length == 3
-#guard pathProgram.closed (query [call .path [k .a, k .c]])
 #guard pathProgram.levels (query [call .path [k .a, k .c]]) (.path, [true, true]) == 2
 
 /- `∃Y. path(a, Y)`: the recursive call leaves `Y` free at its caller's level
@@ -162,10 +161,15 @@ splits it; split, the query is P1 when each of its three instances,
 #guard ((pathProgram.splitValues (query [call .path [v 7, k .c]] [] [guard .node 7])).map fun values =>
     isP1 (pathProgram.classifyClosed ((query [call .path [v 7, k .c]] [] [guard .node 7]).instantiate values))).all id
 
-/- An instance of the split that is not P1 makes the query P2: with a free
-output on the cycle, each instance `∃Y. path(x, Y)` is P2. -/
-#guard reasons (pathProgram.classify (query [call .path [v 7, v 1], guard .node 1] [1] [guard .node 7])) ==
-  [.freeOutput, .freeOutput, .freeOutput]
+/- The notes are read once, on the query with its parameter bound: with a free
+output on the cycle, `∃Y. path(x, Y)` is P2, as each of its instances is. -/
+#guard reasons (pathProgram.classify (query [call .path [v 7, v 1], guard .node 1] [1] [guard .node 7])) == [.freeOutput]
+
+/- A finite guard with no member splits a parameter into no instance: the
+query's notes still count, and an unguarded rule makes it P2. -/
+#guard reasons ({ program [rule .q [v 0] [call .r [v 0]], rule .r [v 0] [guard .allData 0]] with
+    members := fun | .item => some [] | other => members other }.classify (query [call .q [v 7]] [] [guard .item 7])) ==
+  [.unguarded]
 
 /- Guarded by an infinite domain, the parameter cannot be split. -/
 #guard reasons (pathProgram.classify (query [call .path [v 7, k .c]] [] [guard .allData 7])) == [.parameter]
@@ -193,8 +197,11 @@ and `p(a) :- a = a.` are P1, not P0. -/
 denial's call `p(a)` is a vertex of the query's graph, decided with it. -/
 #guard isP1 ((program [rule .p [k .a] [.naf .q [k .a]], rule .q [k .a] [.naf .p [k .a]]] [[call .p [k .a]]]).classify
   (query [call .p [k .a]]))
-#guard ((program [rule .p [k .a] [.naf .q [k .a]], rule .q [k .a] [.naf .p [k .a]]] [[call .q [k .a]]]).vertices
-  (query [call .p [k .a]])).length == 2
+
+/- `p(a). r(a). ⊥ :- r(a).`, the query `p(a)`: only the denial reaches
+`r(a)`, a second vertex; without the denial the graph has one. -/
+#guard ((program [fact .p [k .a], fact .r [k .a]] [[call .r [k .a]]]).vertices (query [call .p [k .a]])).length == 2
+#guard ((program [fact .p [k .a], fact .r [k .a]]).vertices (query [call .p [k .a]])).length == 1
 
 /- A denial without the finiteness evidence makes the query P2: `⊥ :- path(a, Y),
 node(Y)` leaves `Y` free on the cycle, so even `path(a, c)` is P2. -/
@@ -241,7 +248,96 @@ defined operation inside data at its argument's path. -/
 #guard blockersOf ((program [rule .q [v 0] [guard .allData 0, call .r [.app .grow [v 0]]], rule .r [v 0] [guard .allData 0]]).classify
   (query [call .q [k .a]])) == [(some (.body 0 1), [0], .app .grow [v 0])]
 
-/- A finite guard's listed member must be a ground data term. -/
+/- A NAF literal's arguments sit under its negation: the defined operation in
+`naf path(X, grow(X))` is at path `[0, 1]` of the body literal. -/
+#guard blockersOf ((program [rule .q [v 0] [guard .allData 0, .naf .path [v 0, .app .grow [v 0]]]]).classify
+  (query [call .q [k .a]])) == [(some (.body 0 1), [0, 1], .app .grow [v 0])]
+
+/-- What each blocker lacks: a mode, a term kind, `ho_apply` conversion, or
+something else. -/
+def missingOf : Profile Nat Nat Sym → List String
+  | .undecided blockers => blockers.map fun blocker => match blocker.missing with
+      | .mode => "mode"
+      | .construct (.capability .termKind) => "termKind"
+      | .construct (.capability .hoApplyConversion) => "hoApplyConversion"
+      | _ => "other"
+  | _ => []
+
+/- A declared predicate at another arity lacks a mode, as an undeclared one
+does; a predicate of another kind lacks its kind. -/
+#guard missingOf ((program [rule .q [v 0] [guard .allData 0, call .p [v 0, v 0]]]).classify (query [call .q [k .a]])) ==
+  ["mode"]
+#guard missingOf ((program [rule .q [v 0] [guard .allData 0, call .node [v 0]]]).classify (query [call .q [k .a]])) ==
+  ["termKind"]
+
+/- A finite guard's listed member must be a ground data term, and the reserved
+`ho_apply` symbol is no constructor. -/
 #guard undecided ({ program [] with members := fun | .node => some [v 3] | _ => none }.classify (query [call .p [k .a]]))
+#guard missingOf ({ program [] with constructors := constructors ++ [Constructor.application Sym.ha 0] }.classify
+  (query [call .p [k .a]])) == ["hoApplyConversion"]
+
+/-! ## The size of each relevant program
+
+`Program.relevantProgram` saturates the calls and their answers within a fuel,
+and gives the relevant program of a closed query once its table is stable
+(`relevantProgram_complete`). Each line gives the computed calls, rule
+instances, and denial instances. -/
+
+/-- The computed calls, rule instances, and denial instances of a query's
+relevant program, if computed. -/
+def relevantSize (prog : Program Nat Nat Sym) (goals : Query Nat Nat Sym) (fuel : Nat := 50) : Option (Nat × Nat × Nat) :=
+  (prog.relevantProgram goals fuel).map fun computed => (computed.calls.length, computed.instances.length, computed.denials.length)
+
+/- `path(a, c)` over the cycle: the calls `path(a, c)`, `path(b, c)`, each
+`edge` call with both arguments bound and with the second free; two instances
+at each `path` call, one `edge` fact at each free `edge` call. -/
+#guard relevantSize pathProgram (query [call .path [k .a, k .c]]) == some (6, 6, 0)
+
+/- Too little fuel: no relevant program, the table not stable. -/
+#guard relevantSize pathProgram (query [call .path [k .a, k .c]]) 2 == none
+
+/- The lowered program, its guards over `D_all`: the same program. -/
+#guard relevantSize (program (pathRules .allData)) (query [call .path [k .a, k .c]]) == some (6, 6, 0)
+
+/- `append([a], [b], Z)`: one call per suffix of the first list. -/
+#guard relevantSize (program appendRules) appendQuery == some (2, 2, 0)
+
+/- `count(a, succ(zero))`, its output bound: the calls at `succ(zero)` and
+`zero`. -/
+#guard relevantSize (program countRules) (query [call .count [k .a, succ (k .zero)]]) == some (2, 2, 0)
+
+/- The thirteen `dup` calls in a row, and the `top` call. -/
+#guard relevantSize (program [rule .dup [v 0, v 1] [guard .allData 0, .equal (v 1) (pair (v 0) (v 0)), guard .allData 1],
+    dupChain]) (query [call .top [k .a, v 20], guard .allData 20] [20]) == some (14, 14, 0)
+
+/- The P0 input `p(a) :- q(a), naf r(a). q(a).`: the calls `p(a)`, `q(a)`,
+`r(a)`, and two instances; `r` has no rule. -/
+#guard relevantSize (program [rule .p [k .a] [call .q [k .a], .naf .r [k .a]], fact .q [k .a]]) (query [call .p [k .a]]) ==
+  some (3, 2, 0)
+
+/- The denial `⊥ :- p(a)` joins the query `p(a)` over
+`p(a) :- naf q(a). q(a) :- naf p(a).`: the calls `p(a)` and `q(a)`, and the
+denial's instance. -/
+#guard relevantSize (program [rule .p [k .a] [.naf .q [k .a]], rule .q [k .a] [.naf .p [k .a]]] [[call .p [k .a]]])
+  (query [call .p [k .a]]) == some (2, 2, 1)
+
+/- `p(a). r(a). ⊥ :- r(a).`, the query `p(a)`: the denial adds the call `r(a)`,
+its fact, and its own instance. -/
+#guard relevantSize (program [fact .p [k .a], fact .r [k .a]] [[call .r [k .a]]]) (query [call .p [k .a]]) == some (2, 2, 1)
+#guard relevantSize (program [fact .p [k .a], fact .r [k .a]]) (query [call .p [k .a]]) == some (1, 1, 0)
+
+/- One atom under two call patterns, one instance: `edge(a, b)` reached bound
+and with its output free is one fact. -/
+#guard relevantSize (program [fact .edge [k .a, k .b],
+    rule .q [v 0] [guard .node 0, call .edge [v 0, k .b], call .edge [v 0, v 1], guard .node 1]])
+  (query [call .q [k .a]]) == some (3, 2, 0)
+
+/- A query with a rigid parameter is read through its split: no relevant
+program of its own; `path(a, c)` and `path(b, c)` reach the cycle, `path(c, c)`
+has one instance, no edge leaving `c`. -/
+#guard relevantSize pathProgram (query [call .path [v 7, k .c]] [] [guard .node 7]) == none
+#guard ((pathProgram.splitValues (query [call .path [v 7, k .c]] [] [guard .node 7])).map fun values =>
+    relevantSize pathProgram ((query [call .path [v 7, k .c]] [] [guard .node 7]).instantiate values)) ==
+  [some (6, 6, 0), some (6, 6, 0), some (3, 1, 0)]
 
 end IREvidenceTests

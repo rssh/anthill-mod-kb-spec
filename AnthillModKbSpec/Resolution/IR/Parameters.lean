@@ -405,6 +405,134 @@ theorem meaning_split {query : Query Variable Literal Symbol} (queryOk : QueryOk
     exact ⟨⟨Value, model, models, _, same.1.mp context, same.2.mp holds⟩,
       ⟨Value', model', models', _, same'.1.mp context', fun satisfied => fails (same'.2.mpr satisfied)⟩⟩
 
+/-! ## The executable split -/
+
+omit [DecidableEq Literal] [DecidableEq Symbol] [FreshNames Variable] in
+theorem assignments_mem {choices : Variable → List (Term Variable Literal Symbol)} :
+    ∀ {names : List Variable} {values : Variable → Term Variable Literal Symbol},
+      values ∈ assignments choices names → ∀ name ∈ names, values name ∈ choices name
+  | [], _, _, _, inside => by cases inside
+  | first :: rest, values, member, name, inside => by
+      simp only [assignments, List.mem_flatMap, List.mem_map] at member
+      obtain ⟨value, valueMember, others, othersMember, rfl⟩ := member
+      by_cases same : name = first
+      · subst same; simpa using valueMember
+      · simp only [same, ite_false]
+        exact assignments_mem othersMember name ((List.mem_cons.mp inside).resolve_left same)
+
+omit [DecidableEq Literal] [DecidableEq Symbol] [FreshNames Variable] in
+theorem assignments_complete {choices : Variable → List (Term Variable Literal Symbol)} :
+    ∀ {names : List Variable} {values : Variable → Term Variable Literal Symbol},
+      (∀ name ∈ names, values name ∈ choices name) →
+        ∃ chosen ∈ assignments choices names, ∀ name ∈ names, chosen name = values name
+  | [], _, _ => ⟨fun name => .var name, List.mem_singleton.mpr rfl, fun _ inside => by cases inside⟩
+  | first :: rest, values, each => by
+      obtain ⟨chosen, chosenMember, agrees⟩ :=
+        assignments_complete (names := rest) fun name inside => each name (List.mem_cons_of_mem _ inside)
+      refine ⟨fun other => if other = first then values first else chosen other, ?_, fun name inside => ?_⟩
+      · simp only [assignments, List.mem_flatMap, List.mem_map]
+        exact ⟨values first, each first List.mem_cons_self, chosen, chosenMember, rfl⟩
+      · by_cases same : name = first
+        · subst same; simp
+        · simp only [same, ite_false]
+          exact agrees name ((List.mem_cons.mp inside).resolve_left same)
+
+attribute [local instance] Machine.termEq in
+omit [FreshNames Variable] in
+theorem mem_splitChoices {query : Query Variable Literal Symbol} {name : Variable} {value : Term Variable Literal Symbol} :
+    value ∈ program.splitChoices query name ↔ ∃ symbol members, Goal.guard symbol (.var name) ∈ query.conditions ∧
+      program.kindAt .guard symbol 1 = true ∧ program.members symbol = some members ∧ value ∈ members := by
+  unfold splitChoices
+  rw [List.mem_eraseDups, List.mem_flatMap]
+  constructor
+  · rintro ⟨condition, conditionMember, inside⟩
+    cases condition with
+    | guard symbol arg =>
+        cases arg with
+        | var other =>
+            simp only at inside
+            split at inside
+            · rename_i chosen
+              simp only [Bool.and_eq_true, beq_iff_eq] at chosen
+              obtain ⟨⟨kind, finite⟩, rfl⟩ := chosen
+              cases found : program.members symbol with
+              | none => simp [Program.finite, found] at finite
+              | some members => exact ⟨symbol, members, conditionMember, kind, found, by simpa [found] using inside⟩
+            · cases inside
+        | _ => simp at inside
+    | _ => simp at inside
+  · rintro ⟨symbol, members, conditionMember, kind, found, inside⟩
+    refine ⟨.guard symbol (.var name), conditionMember, ?_⟩
+    simp [kind, Program.finite, found, inside]
+
+omit [FreshNames Variable] in
+/-- Every assignment the split computes is an instance of the split. -/
+theorem splitValues_splits {query : Query Variable Literal Symbol} {values : Variable → Term Variable Literal Symbol}
+    (member : values ∈ program.splitValues query) : program.Splits query values :=
+  fun name inside => mem_splitChoices.mp (assignments_mem member name inside)
+
+omit [FreshNames Variable] in
+/-- Every instance of the split agrees, on the parameters, with an assignment
+the split computes. -/
+theorem splits_splitValues {query : Query Variable Literal Symbol} {values : Variable → Term Variable Literal Symbol}
+    (splits : program.Splits query values) :
+    ∃ chosen ∈ program.splitValues query, ∀ name ∈ query.parameters, chosen name = values name :=
+  assignments_complete fun name inside => mem_splitChoices.mpr (splits name inside)
+
+omit [DecidableEq Literal] [DecidableEq Symbol] [FreshNames Variable] in
+/-- An instance reads its values only at the parameters. -/
+theorem instantiate_congr {query : Query Variable Literal Symbol} {values others : Variable → Term Variable Literal Symbol}
+    (agree : ∀ name ∈ query.parameters, values name = others name) : query.instantiate values = query.instantiate others := by
+  have same : query.instanceSubst values = query.instanceSubst others := by
+    funext name
+    unfold Query.instanceSubst
+    by_cases parameter : name ∈ query.parameters
+    · simp [parameter, agree name parameter]
+    · simp [parameter]
+  unfold Query.instantiate
+  rw [same]
+
+/-- **The meaning of a P1 query with rigid parameters is its split's**, over
+the instances `classify` reads (`splitValues`): Yes exactly when every
+instance's truth holds, No exactly when every instance's falsity holds,
+Unknown exactly when one instance is not No and another not Yes. -/
+theorem meaning_classify {query : Query Variable Literal Symbol} (some : query.parameters ≠ [])
+    (decided : (program.classify query).decides = true) :
+    ((program.meaning query).truth ↔
+        ∀ values ∈ program.splitValues query, (program.meaning (query.instantiate values)).truth) ∧
+      ((program.meaning query).falsity ↔
+        ∀ values ∈ program.splitValues query, (program.meaning (query.instantiate values)).falsity) ∧
+      ((program.meaning query).independence ↔
+        (∃ values ∈ program.splitValues query, ¬ (program.meaning (query.instantiate values)).falsity) ∧
+          ∃ values ∈ program.splitValues query, ¬ (program.meaning (query.instantiate values)).truth) := by
+  obtain ⟨clean, _, unsplitNil, _⟩ := program.classify_split some decided
+  have queryOk := program.queryOk_of_check clean
+  have enumerates := enumerates_of_wellFormed (program.wellFormed_of_check clean)
+  have split : ∀ name ∈ query.parameters, program.splits query name = true := by
+    intro name inside
+    unfold unsplit at unsplitNil
+    simp only [List.map_eq_nil_iff, List.filter_eq_nil_iff, Bool.not_eq_true'] at unsplitNil
+    simpa using unsplitNil name inside
+  obtain ⟨truth, falsity, independence⟩ := meaning_split queryOk enumerates split
+  have transport : ∀ (holds : Query Variable Literal Symbol → Prop),
+      (∀ values, program.Splits query values → holds (query.instantiate values)) ↔
+        ∀ values ∈ program.splitValues query, holds (query.instantiate values) := by
+    intro holds
+    refine ⟨fun each values member => each values (splitValues_splits member), fun each values splits => ?_⟩
+    obtain ⟨chosen, chosenMember, agree⟩ := splits_splitValues splits
+    rw [← instantiate_congr agree]
+    exact each chosen chosenMember
+  have witness : ∀ (holds : Query Variable Literal Symbol → Prop),
+      (∃ values, program.Splits query values ∧ holds (query.instantiate values)) ↔
+        ∃ values ∈ program.splitValues query, holds (query.instantiate values) := by
+    intro holds
+    refine ⟨fun ⟨values, splits, holding⟩ => ?_, fun ⟨values, member, holding⟩ => ⟨values, splitValues_splits member, holding⟩⟩
+    obtain ⟨chosen, chosenMember, agree⟩ := splits_splitValues splits
+    exact ⟨chosen, chosenMember, by rw [instantiate_congr agree]; exact holding⟩
+  refine ⟨truth.trans (transport fun target => (program.meaning target).truth),
+    falsity.trans (transport fun target => (program.meaning target).falsity), independence.trans ?_⟩
+  rw [witness fun target => ¬ (program.meaning target).falsity, witness fun target => ¬ (program.meaning target).truth]
+
 end Program
 
 end AnthillModKbSpec.IR

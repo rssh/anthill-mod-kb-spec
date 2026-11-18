@@ -30,3 +30,9 @@ Acceptance:
 Validation: lake build and focused Lean tests/examples appropriate to the changed definitions and proofs.
 Design references: docs/decision-ir.md, docs/guarded-elaboration.md.
 
+## Changes
+
+### 2026-11-18T14:32:35Z — feedback — user
+
+From S27 (2026-11-18): S07's P0.Ground embeds in the IR only where the IR keeps its meaning (IR/Ground: embedGround refuses an input with falsity, NAF of a compound goal, an unknown marker, or a predicate symbol at two arities; embedGround_p0, satisfies_ofBody). Compound NAF operands are S30's (the catalog's 'compound NAF operands'): naf G with G compound lowers to naf aux with aux :- G (a separate rule, not aux :- G, naf aux); falsity to a call of a predicate with no rule. With that lowering S07's inputs embed whole.
+

@@ -39,3 +39,11 @@ Design references: docs/decision-ir.md, docs/tabled-evaluation.md, docs/answers.
 
 From S27's review (2026-11-18), decided with the user: constraints outside a query's relevant program can rule out its models even on a consistent KB (an unreached rule r(a) :- p(a), naf r(a) forces p(a) false). S28 answers Unknown only when no rule outside the relevant program reads a relevant atom under NAF on a cycle; otherwise Undecided, naming that rule. Denials are S27's: they join the relevant program and its evidence graph. S27's splitting theorem (relevant_of_fixpoint, fixpoint_of_relevant) assumes the rest of the KB extends a relevant model; S28's exactness must discharge that, by the check above. Also: a split instance whose conditions no model satisfies is both Yes and No (vacuous); combine instances as S27's meaning_split states (Yes when every instance's truth holds, No when every instance's falsity holds, Unknown when one is not No and one is not Yes).
 
+### 2026-11-18T12:57:53Z — feedback — user
+
+From S27 (2026-11-18): S27 proves the relevant program finite under P1 (relevant_finite, instances_finite in IR/RelevantProgram) and computes one by saturation (Program.relevantProgram), complete when its table is stable (stable_complete). The computed program can hold more than the relevant one: calls are made reading a body left to right, before later literals that rule an instance out, and the enumeration (stepEnvs, bodyEnvs) has no soundness theorem. S28, which builds the relevant program a decision runs on, owns its soundness and exactness (or reads the computed superset as a splitting set closed under passing instances).
+
+### 2026-11-18T14:33:01Z — feedback — user
+
+Update from S27's review (2026-11-18): Program.relevantProgram now returns none unless the query is closed and the saturated table stable within the fuel; when computed it lists the calls, the rule instances, and the denials' passing instances (denials join the relevant program), each instance by its rule's or denial's index and the values of its names, without repeats (relevantProgram_complete); stable_answers gives the listed possible answers at free calls. The over-approximation and the missing soundness stay S28's.
+

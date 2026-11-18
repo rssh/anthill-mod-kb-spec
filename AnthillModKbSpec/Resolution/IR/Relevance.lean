@@ -416,13 +416,12 @@ theorem boundArgs_map {α β : Type} (f : α → β) : ∀ (pattern : Pattern) (
       cases bound <;> simp [rest]
 
 omit [FreshNames Variable] in
-/-- **The finiteness evidence**, what no note gives a closed query: its
-vertices are closed under successors; every call that leaves an output free,
+/-- **The finiteness evidence**, what no note gives a closed query: every call
+that leaves an output free,
 from a vertex that leaves one free, lowers the rank; every call at its
 caller's level keeps to the data terms (no `growingCall`); every name is
 guarded; every rigid parameter is split. -/
 structure Evidence (program : Program Variable Literal Symbol) (query : Query Variable Literal Symbol) : Prop where
-  closed : program.closed query = true
   lowering : ∀ vertex ∈ program.vertices query, vertex.2.free = true → ∀ call ∈ program.callsAt vertex,
     call.2.2.2.2.2.2.free = true → lowersWith (program.levels query) vertex call.2.1 call.2.2.2.1 call.2.2.2.2.2 = true
   bounded : program.growingIn (program.vertices query) (program.levels query) (program.dataInfo query) = []
@@ -435,11 +434,8 @@ theorem evidence_of_notes {query : Query Variable Literal Symbol} (evidence : pr
   rw [notes_eq] at evidence
   unfold notesWith at evidence
   simp only [List.append_eq_nil_iff] at evidence
-  obtain ⟨⟨⟨⟨closedPart, growingPart⟩, freePart⟩, unguardedPart⟩, unsplitPart⟩ := evidence
-  refine ⟨?_, ?_, growingPart, unguardedPart, unsplitPart⟩
-  · cases closed : program.closedIn (program.vertices query)
-    · simp [closed] at closedPart
-    · exact closed
+  obtain ⟨⟨⟨growingPart, freePart⟩, unguardedPart⟩, unsplitPart⟩ := evidence
+  refine ⟨?_, growingPart, unguardedPart, unsplitPart⟩
   · intro vertex member free call callMember calleeFree
     simp only [freeOutputsIn, List.flatMap_eq_nil_iff, List.map_eq_nil_iff, List.filter_eq_nil_iff, List.mem_filter] at freePart
     have := freePart vertex ⟨member, free⟩ call callMember
@@ -448,18 +444,12 @@ theorem evidence_of_notes {query : Query Variable Literal Symbol} (evidence : pr
     · rw [lowersEq] at this; simp at this
     · rfl
 
-omit [FreshNames Variable] in
-/-- With the evidence, no call goes to a higher level (`levels_le`). -/
-theorem Evidence.ranked {query : Query Variable Literal Symbol} (parts : program.Evidence query) :
-    ∀ vertex ∈ program.vertices query, ∀ call ∈ program.callsAt vertex,
-      program.levels query call.2.2.2.2.2 ≤ program.levels query vertex :=
-  fun _ member call callMember => program.levels_le parts.closed member (List.mem_map.mpr ⟨call, callMember, rfl⟩)
-
 omit [DecidableEq Literal] [FreshNames Variable] in
-theorem successor_mem {query : Query Variable Literal Symbol} (closed : program.closed query = true) {vertex : Vertex Symbol}
+theorem successor_mem {query : Query Variable Literal Symbol} {vertex : Vertex Symbol}
     (member : vertex ∈ program.vertices query) {call : Nat × Rule Variable Literal Symbol × Nat × Goal Variable Literal Symbol ×
       List Variable × Vertex Symbol} (callMember : call ∈ program.callsAt vertex) :
     call.2.2.2.2.2 ∈ program.vertices query := by
+  have closed := program.closed_vertices query
   unfold Program.closed Program.closedIn at closed
   have := List.all_eq_true.mp closed vertex member
   exact List.contains_iff_mem.mp (List.all_eq_true.mp this _ (List.mem_map.mpr ⟨call, callMember, rfl⟩))
@@ -492,9 +482,9 @@ theorem call_rank {query : Query Variable Literal Symbol} (parts : program.Evide
           sizeAll ((boundArgs call.2.2.2.2 call.2.1.args).map (subst σ)) <
             sizeAll ((boundArgs vertex.2 rule.args).map (subst σ))) := by
   have inCallsAt := mem_callsAt atVertex inCalls
-  refine ⟨successor_mem parts.closed member inCallsAt, ?_⟩
+  refine ⟨successor_mem member inCallsAt, ?_⟩
   have lowered := parts.lowering vertex member free _ inCallsAt calleeFree
-  have levelLe := parts.ranked vertex member _ inCallsAt
+  have levelLe := program.levels_le member (List.mem_map.mpr ⟨_, inCallsAt, rfl⟩)
   simp only [lowersWith, Bool.or_eq_true, decide_eq_true_eq] at lowered
   rcases lowered with lower | decreasing
   · exact .inl lower
@@ -655,24 +645,6 @@ section Splitting
 
 variable {program}
 
-omit [DecidableEq Literal] [DecidableEq Symbol] [FreshNames Variable] in
-theorem mem_bodyCalls : ∀ {position : Nat} {bound : List Variable} {body : List (Goal Variable Literal Symbol)}
-    {call : Nat × Goal Variable Literal Symbol × List Variable × Vertex Symbol}, call ∈ bodyCalls position bound body →
-      call.2.1 ∈ body ∧ call.2.1.vertex? call.2.2.1 = some call.2.2.2
-  | _, _, [], _, member => by cases member
-  | position, bound, goal :: rest, call, member => by
-      simp only [bodyCalls, List.mem_append] at member
-      rcases member with here | there
-      · cases found : goal.vertex? bound with
-        | none => rw [found] at here; cases here
-        | some vertex =>
-            rw [found] at here
-            simp only [List.mem_singleton] at here
-            subst here
-            exact ⟨List.mem_cons_self, found⟩
-      · obtain ⟨inRest, found⟩ := mem_bodyCalls there
-        exact ⟨List.mem_cons_of_mem _ inRest, found⟩
-
 omit [DecidableEq Literal] [FreshNames Variable] in
 theorem vertex?_closed {goal : Goal Variable Literal Symbol} (declared : program.declares goal = true) {bound : List Variable}
     {vertex : Vertex Symbol} (found : goal.vertex? bound = some vertex) : program.closedAt vertex.1 vertex.2.length = true := by
@@ -710,7 +682,7 @@ omit [FreshNames Variable] in
 /-- A relevant call's vertex is in the graph, and names a closed predicate at
 its arity. -/
 theorem relevant_vertex (wellFormed : program.WellFormed) {query : Query Variable Literal Symbol} (queryOk : QueryOk program query)
-    (closedGraph : program.closed query = true) {vertex : Vertex Symbol} {values : List (Term Variable Literal Symbol)}
+    {vertex : Vertex Symbol} {values : List (Term Variable Literal Symbol)}
     (relevant : program.Relevant query vertex values) :
     vertex ∈ program.vertices query ∧ program.closedAt vertex.1 vertex.2.length = true := by
   induction relevant with
@@ -727,7 +699,7 @@ theorem relevant_vertex (wellFormed : program.WellFormed) {query : Query Variabl
       refine ⟨denialVertices_mem (List.mem_flatMap.mpr ⟨body, denialMember, List.mem_map.mpr ⟨_, inCalls, rfl⟩⟩), ?_⟩
       exact vertex?_closed (Scans.goals (wellFormed.denials body denialMember) _ goalMember).1 found
   | rule _ _ _ atVertex _ _ _ inCalls ih =>
-      have calleeMember := successor_mem closedGraph ih.1 (mem_callsAt atVertex inCalls)
+      have calleeMember := successor_mem ih.1 (mem_callsAt atVertex inCalls)
       obtain ⟨goalMember, found⟩ := mem_bodyCalls inCalls
       refine ⟨calleeMember, vertex?_closed ?_ found⟩
       exact (Scans.goals (wellFormed.rules _ (rulesOf_mem (mem_rulesAt.mp atVertex).1)).scans _ goalMember).1
@@ -755,13 +727,12 @@ theorem entry_passes (wellFormed : program.WellFormed) (guarded : program.Guarde
     (groundRule : GroundOn program.constructors σ rule.names)
     (bodyHolds : (program.keyModel markers interp).Satisfies (fun name => Open.dataKey (σ name)) (bodyTerm rule.body)) :
     program.Passes σ (startNames vertex.2 rule.args) rule.body := by
-  have closedGraph := (evidence_of_notes evidence).closed
-  have vertexMember := (relevant_vertex wellFormed queryOk closedGraph entry.1).1
+  have vertexMember := (relevant_vertex wellFormed queryOk entry.1).1
   have ruleMember := rulesOf_mem (mem_rulesAt.mp atVertex).1
   refine passes_of_holds wellFormed (Scans.goals (wellFormed.rules rule ruleMember).scans)
     (fun name occurs => groundRule name (List.mem_append_right _ occurs)) _ bodyHolds
     fun position bound predicate args callMember calleeFree closedCall argsGround atomHolds => ?_
-  have calleeMember := successor_mem closedGraph vertexMember (mem_callsAt atVertex callMember)
+  have calleeMember := successor_mem vertexMember (mem_callsAt atVertex callMember)
   exact ans_complete wellFormed guarded evidence supported _ calleeMember calleeFree (by simpa [length_patternOf] using closedCall)
     _ (by simp [length_patternOf]) argsGround atomHolds
 
@@ -781,9 +752,8 @@ theorem relevant_of_fixpoint (wellFormed : program.WellFormed) (guarded : progra
     (fixed : program.KeyFixpoint markers interp) {atom : GAtom Variable Literal Symbol} (relevant : program.RelevantAtom query atom) :
     program.RelevantHolds query markers interp atom := by
   obtain ⟨vertex, entry⟩ := relevant
-  have closedGraph := (evidence_of_notes evidence).closed
   have supported : program.Supported markers interp := fun symbol keys closed holds => (fixed.1 symbol keys closed).mp holds
-  have closedVertex := (relevant_vertex wellFormed queryOk closedGraph entry.1).2
+  have closedVertex := (relevant_vertex wellFormed queryOk entry.1).2
   obtain ⟨_, symbolEq, lengths, ground, _⟩ := id entry
   obtain ⟨symbol, values⟩ := atom
   simp only at symbolEq lengths ground
@@ -871,7 +841,6 @@ theorem denied_iff (wellFormed : program.WellFormed) (guarded : program.Guarded)
       ∀ body ∈ program.denials, ∀ σ : Variable → Term Variable Literal Symbol,
         GroundOn program.constructors σ (bodyNames body) → program.Passes σ [] body →
           ¬ (program.keyModel markers interp).Satisfies (fun name => Open.dataKey (σ name)) (bodyTerm body) := by
-  have closedGraph := (evidence_of_notes evidence).closed
   constructor
   · intro denied body member σ _ _ holds
     exact denied (body.map Goal.toTerm) (List.mem_append_right _ (List.mem_map.mpr ⟨body, member, rfl⟩)) _ holds

@@ -43,3 +43,11 @@ From the user (2026-11-17), on statement normalization: "Our KB statement D_i - 
 
 From S24's review (2026-11-18): read a concrete ho_apply as the direct call inside NAF operands too. S24 answers p :- naf ho_apply(q, b) with q(a) Undecided, an unsupported construct, where Yes is due: the completion closes no ho_apply atom, so the operand must be translated, not refuted as written.
 
+### 2026-11-18T12:57:54Z — feedback — user
+
+From S27 (2026-11-18): S07's P0.Ground embeds in the IR (IR/Ground, ofGround_p0), but NAF of a compound goal and falsity have no IR literal: S27's embedding reads them as truth and is faithful only for goals without them (atomicGoal). S29's lowering translates them into auxiliary predicates (aux :- G, naf aux; falsity as an undefined predicate), which then also covers S07's inputs.
+
+### 2026-11-18T14:32:36Z — feedback — user
+
+Correction (S27, 2026-11-18, after review): the lowering of compound NAF operands in S07's inputs is S30's (the catalog's 'compound NAF operands'), not S29's; noted on S30. The lowering is naf G to naf aux with the separate rule aux :- G. S27's embedGround refuses such inputs (and falsity, unknown markers, multiple arities per symbol) rather than reading them as truth. Multiple arities per symbol remain the translation's to rename (S29): IR declarations are keyed by symbol.
+

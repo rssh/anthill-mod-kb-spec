@@ -1,5 +1,7 @@
 import AnthillModKbSpec.Resolution.IR.Check
 import AnthillModKbSpec.Resolution.Tabled.Graph
+import AnthillModKbSpec.Resolution.Tabled.AbstractSound
+import AnthillModKbSpec.Resolution.P0.Rank
 
 /-! # The IR's evidence classes: P0, P1, P2 (S27)
 
@@ -8,9 +10,10 @@ anything runs ([decision IR](../../../docs/decision-ir.md)). **P1** is a
 program with the *finiteness evidence*: the query's relevant program, the
 ground rule instances its calls and the denials' can use (`IR/Relevance`), is
 finite, both for the answers a call derives and for the answers it may have
-in some model. **P2** is a well-formed program without it, run by the same
-evaluator with fuel (S28). **P0** is S07's ground acyclic case, and has the
-evidence too.
+in some model (`IR/RelevantProgram`). **P2** is a well-formed program without
+it, run by the same evaluator with fuel (S28). **P0** is S07's ground acyclic
+case, and has the evidence too; S07's ground inputs classify P0 where the IR
+expresses them (`IR/Ground`).
 
 **Call patterns.** The evidence is read per call pattern, not per declared
 mode: a call binds some of its arguments before it runs (all its inputs, and
@@ -19,7 +22,8 @@ any output a name already bound gives), and leaves the others free. The query
 second free. A *vertex* is a predicate with a pattern; reading a rule of
 `p` with the arguments of pattern `β` bound gives the patterns of its calls
 (`Program.successors`). The vertices the query and the denials reach form a
-finite graph (`Program.vertices`, closed under successors: `Program.closed`);
+finite graph (`Program.vertices`, closed under successors within its bound:
+`Program.closed_vertices`);
 the denials join every query's graph (decided with the user, 2026-11-18).
 Each vertex gets a level (`Program.levelTable`, the vertices it reaches
 outside its component), computed once with the data-term outputs.
@@ -92,6 +96,45 @@ theorem mem_of_mem_boundArgs {α : Type} {pattern : Pattern} {args : List α} {a
 /-- A pattern leaves some argument free. -/
 def Pattern.free (pattern : Pattern) : Bool := pattern.any (· == false)
 
+/-! ## Counting -/
+
+/-- A literal's site: a call's or a NAF's predicate with its arity. -/
+def Goal.site? : Goal Variable Literal Symbol → Option (Symbol × Nat)
+  | .call predicate args | .naf predicate args => some (predicate, args.length)
+  | _ => none
+
+theorem nodup_eraseDups {α : Type} [BEq α] [LawfulBEq α] : ∀ (items : List α), items.eraseDups.Nodup
+  | [] => List.nodup_nil
+  | first :: rest => by
+      rw [List.eraseDups_cons]
+      refine List.nodup_cons.mpr ⟨?_, nodup_eraseDups _⟩
+      simp [List.mem_eraseDups, List.mem_filter]
+termination_by items => items.length
+decreasing_by exact Nat.lt_add_one_of_le (List.length_filter_le _ _)
+
+theorem sum_map_const {α : Type} (value : Nat) : ∀ items : List α, (items.map fun _ => value).sum = items.length * value
+  | [] => by simp
+  | _ :: rest => by
+      simp only [List.map_cons, List.sum_cons, List.length_cons, sum_map_const value rest, Nat.succ_mul]
+      omega
+
+theorem length_tuples {α : Type} (choices : List α) :
+    ∀ n, (Tabled.tuples choices n).length = choices.length ^ n
+  | 0 => rfl
+  | n + 1 => by
+      simp only [Tabled.tuples, List.length_flatMap, List.length_map]
+      rw [sum_map_const, length_tuples choices n, Nat.pow_succ]
+
+theorem le_foldr_max : ∀ (items : List Nat) (init : Nat), init ≤ items.foldr max init ∧ ∀ item ∈ items, item ≤ items.foldr max init
+  | [], init => ⟨Nat.le_refl _, fun _ member => by cases member⟩
+  | first :: rest, init => by
+      obtain ⟨initLe, restLe⟩ := le_foldr_max rest init
+      simp only [List.foldr_cons]
+      refine ⟨Nat.le_trans initLe (Nat.le_max_right _ _), fun item member => ?_⟩
+      rcases List.mem_cons.mp member with rfl | inside
+      · exact Nat.le_max_left _ _
+      · exact Nat.le_trans (restLe item inside) (Nat.le_max_right _ _)
+
 section Patterns
 
 variable [DecidableEq Variable]
@@ -123,6 +166,34 @@ def bodyCalls : Nat → List Variable → List (Goal Variable Literal Symbol) �
       (match goal.vertex? bound with
         | some vertex => [(position, goal, bound, vertex)]
         | none => []) ++ bodyCalls (position + 1) (after bound goal) rest
+
+theorem site_of_vertex? {goal : Goal Variable Literal Symbol} {bound : List Variable} {vertex : Vertex Symbol}
+    (found : goal.vertex? bound = some vertex) : goal.site? = some (vertex.1, vertex.2.length) := by
+  cases goal with
+  | call predicate args =>
+      simp only [Goal.vertex?, Option.some.injEq] at found; subst found
+      simp [Goal.site?, patternOf]
+  | naf predicate args =>
+      simp only [Goal.vertex?, Option.some.injEq] at found; subst found
+      simp [Goal.site?, full]
+  | _ => simp [Goal.vertex?] at found
+
+theorem mem_bodyCalls : ∀ {position : Nat} {bound : List Variable} {body : List (Goal Variable Literal Symbol)}
+    {call : Nat × Goal Variable Literal Symbol × List Variable × Vertex Symbol}, call ∈ bodyCalls position bound body →
+      call.2.1 ∈ body ∧ call.2.1.vertex? call.2.2.1 = some call.2.2.2
+  | _, _, [], _, member => by cases member
+  | position, bound, goal :: rest, call, member => by
+      simp only [bodyCalls, List.mem_append] at member
+      rcases member with here | there
+      · cases found : goal.vertex? bound with
+        | none => rw [found] at here; cases here
+        | some vertex =>
+            rw [found] at here
+            simp only [List.mem_singleton] at here
+            subst here
+            exact ⟨List.mem_cons_self, found⟩
+      · obtain ⟨inRest, found⟩ := mem_bodyCalls there
+        exact ⟨List.mem_cons_of_mem _ inRest, found⟩
 
 end Patterns
 
@@ -169,14 +240,20 @@ def growVertices (found : List (Vertex Symbol)) : List (Vertex Symbol) :=
 def closeVertices (fuel : Nat) (found : List (Vertex Symbol)) : List (Vertex Symbol) :=
   Tabled.untilStable (fun next found => next.length == found.length) program.growVertices fuel found
 
-/-- A bound on the number of vertices: each is a called symbol with a pattern
-of a call's length. -/
-def vertexBound (query : Query Variable Literal Symbol) : Nat :=
-  let callCount := (program.rules.map fun rule => rule.body.length).sum + (program.denials.map List.length).sum +
-    query.goals.length + query.conditions.length
-  let widest := ((program.rules.map (·.body) ++ program.denials).flatMap fun body => body.map fun goal => goal.args.length).foldr
+/-- The number of literals of the rules, the denials, and the query. -/
+def literalCount (query : Query Variable Literal Symbol) : Nat :=
+  (program.rules.map fun rule => rule.body.length).sum + (program.denials.map List.length).sum + query.goals.length +
+    query.conditions.length
+
+/-- The widest literal's arity. -/
+def widest (query : Query Variable Literal Symbol) : Nat :=
+  ((program.rules.map (·.body) ++ program.denials).flatMap fun body => body.map fun goal => goal.args.length).foldr
     max ((query.conditions ++ query.goals).map (fun goal => goal.args.length) |>.foldr max 0)
-  (callCount + 1) * 2 ^ widest + 1
+
+/-- A bound on the number of vertices: each is a called symbol with a pattern
+of a call's length (`length_allVertices_lt`). -/
+def vertexBound (query : Query Variable Literal Symbol) : Nat :=
+  (program.literalCount query + 1) * 2 ^ program.widest query + 1
 
 /-- The vertices the query and the denials reach. -/
 def vertices (query : Query Variable Literal Symbol) : List (Vertex Symbol) :=
@@ -187,8 +264,189 @@ def closedIn (found : List (Vertex Symbol)) : Bool :=
   found.all fun vertex => (program.successors vertex).all found.contains
 
 /-- The query's vertices are closed under successors: the closure reached its
-end. -/
+end, as it always does within its bound (`closed_vertices`). -/
 def closed (query : Query Variable Literal Symbol) : Bool := program.closedIn (program.vertices query)
+
+/-! ## The vertex closure ends within its bound -/
+
+/-- The sites of the program's rules and denials and of the query. -/
+def sites (query : Query Variable Literal Symbol) : List (Symbol × Nat) :=
+  program.rules.flatMap (fun rule => rule.body.filterMap Goal.site?) ++
+    program.denials.flatMap (fun body => body.filterMap Goal.site?) ++
+    query.goals.filterMap Goal.site? ++ query.conditions.filterMap Goal.site?
+
+/-- Every vertex a site can have: its predicate with each pattern of its
+arity. The vertex closure stays inside it. -/
+def allVertices (query : Query Variable Literal Symbol) : List (Vertex Symbol) :=
+  (program.sites query).flatMap fun site => (Tabled.tuples [true, false] site.2).map (site.1, ·)
+
+section Closure
+
+variable {program}
+
+omit [DecidableEq Variable] [DecidableEq Literal] [DecidableEq Symbol] in
+theorem mem_allVertices {query : Query Variable Literal Symbol} {symbol : Symbol} {pattern : Pattern}
+    (site : (symbol, pattern.length) ∈ program.sites query) : (symbol, pattern) ∈ program.allVertices query := by
+  refine List.mem_flatMap.mpr ⟨_, site, List.mem_map.mpr ⟨pattern, ?_, rfl⟩⟩
+  exact Tabled.mem_tuples fun flag _ => by cases flag <;> simp
+
+omit [DecidableEq Literal] [DecidableEq Symbol] in
+theorem vertex_allVertices {query : Query Variable Literal Symbol} {goal : Goal Variable Literal Symbol} {bound : List Variable}
+    {vertex : Vertex Symbol} (found : goal.vertex? bound = some vertex)
+    (inSites : ∀ site, goal.site? = some site → site ∈ program.sites query) : vertex ∈ program.allVertices query :=
+  mem_allVertices (inSites _ (site_of_vertex? found))
+
+omit [DecidableEq Literal] in
+theorem successors_allVertices {query : Query Variable Literal Symbol} {vertex callee : Vertex Symbol}
+    (successor : callee ∈ program.successors vertex) : callee ∈ program.allVertices query := by
+  obtain ⟨⟨index, rule, call⟩, inCalls, rfl⟩ := List.mem_map.mp successor
+  obtain ⟨⟨index', rule'⟩, atVertex, inMap⟩ := List.mem_flatMap.mp inCalls
+  obtain ⟨call', callMember, same⟩ := List.mem_map.mp inMap
+  simp only [Prod.mk.injEq] at same
+  obtain ⟨rfl, rfl, rfl⟩ := same
+  obtain ⟨goalMember, found⟩ := mem_bodyCalls callMember
+  refine vertex_allVertices found fun site siteEq => ?_
+  have ruleMember := rulesOf_mem (List.mem_filter.mp atVertex).1
+  exact List.mem_append_left _ (List.mem_append_left _ (List.mem_append_left _
+    (List.mem_flatMap.mpr ⟨rule', ruleMember, List.mem_filterMap.mpr ⟨_, goalMember, siteEq⟩⟩)))
+
+omit [DecidableEq Literal] [DecidableEq Symbol] in
+theorem start_allVertices {query : Query Variable Literal Symbol} {vertex : Vertex Symbol}
+    (member : vertex ∈ queryVertices query ++ program.denialVertices) : vertex ∈ program.allVertices query := by
+  rcases List.mem_append.mp member with fromQuery | fromDenials
+  · simp only [queryVertices, List.mem_append, List.mem_flatMap, List.mem_map] at fromQuery
+    rcases fromQuery with ⟨condition, conditionMember, call, inCalls, rfl⟩ | ⟨call, inCalls, rfl⟩
+    · obtain ⟨goalMember, found⟩ := mem_bodyCalls inCalls
+      simp only [List.mem_singleton] at goalMember
+      subst goalMember
+      exact vertex_allVertices found fun site siteEq =>
+        List.mem_append_right _ (List.mem_filterMap.mpr ⟨_, conditionMember, siteEq⟩)
+    · obtain ⟨goalMember, found⟩ := mem_bodyCalls inCalls
+      exact vertex_allVertices found fun site siteEq =>
+        List.mem_append_left _ (List.mem_append_right _ (List.mem_filterMap.mpr ⟨_, goalMember, siteEq⟩))
+  · simp only [denialVertices, List.mem_flatMap, List.mem_map] at fromDenials
+    obtain ⟨body, bodyMember, call, inCalls, rfl⟩ := fromDenials
+    obtain ⟨goalMember, found⟩ := mem_bodyCalls inCalls
+    exact vertex_allVertices found fun site siteEq =>
+      List.mem_append_left _ (List.mem_append_left _ (List.mem_append_right _
+        (List.mem_flatMap.mpr ⟨body, bodyMember, List.mem_filterMap.mpr ⟨_, goalMember, siteEq⟩⟩)))
+
+omit [DecidableEq Literal] in
+/-- A round that adds no vertex leaves the vertices closed; otherwise it adds
+one, inside the allVertices. -/
+theorem closeVertices_closed {query : Query Variable Literal Symbol} :
+    ∀ (fuel : Nat) (found : List (Vertex Symbol)), found.Nodup → (∀ vertex ∈ found, vertex ∈ program.allVertices query) →
+      (program.allVertices query).length < found.length + fuel → program.closedIn (program.closeVertices fuel found) = true
+  | 0, found, nodup, inside, bound => by
+      have := List.Nodup.length_le_of_subset nodup inside
+      omega
+  | fuel + 1, found, nodup, inside, bound => by
+      have grownNodup : (program.growVertices found).Nodup := nodup_eraseDups _
+      have grownInside : ∀ vertex ∈ program.growVertices found, vertex ∈ program.allVertices query := by
+        intro vertex member
+        simp only [growVertices, List.mem_eraseDups, List.mem_append, List.mem_flatMap] at member
+        rcases member with old | ⟨source, _, successor⟩
+        · exact inside vertex old
+        · exact successors_allVertices successor
+      have kept : ∀ vertex ∈ found, vertex ∈ program.growVertices found := fun vertex member => by
+        simp [growVertices, List.mem_eraseDups, member]
+      have grows := List.Nodup.length_le_of_subset nodup kept
+      unfold closeVertices Tabled.untilStable
+      split
+      · rename_i same
+        have sameLength : (program.growVertices found).length = found.length := by simpa using same
+        unfold closedIn
+        refine List.all_eq_true.mpr fun vertex member => List.all_eq_true.mpr fun callee successor => ?_
+        refine List.contains_iff_mem.mpr (Classical.byContradiction fun outside => ?_)
+        have longer := List.Nodup.length_le_of_subset (List.nodup_cons.mpr ⟨outside, nodup⟩) (l₂ := program.growVertices found)
+          (fun other inside' => by
+            rcases List.mem_cons.mp inside' with rfl | old
+            · simp only [growVertices, List.mem_eraseDups, List.mem_append, List.mem_flatMap]
+              exact .inr ⟨vertex, member, successor⟩
+            · exact kept other old)
+        simp only [List.length_cons] at longer
+        omega
+      · rename_i different
+        have differ : (program.growVertices found).length ≠ found.length := by simpa using different
+        exact closeVertices_closed fuel _ grownNodup grownInside (by omega)
+
+omit [DecidableEq Variable] [DecidableEq Literal] [DecidableEq Symbol] in
+theorem length_flatMap_filterMap_le {α β γ : Type} (f : α → List β) (g : β → Option γ) :
+    ∀ items : List α, (items.flatMap fun item => (f item).filterMap g).length ≤ (items.map fun item => (f item).length).sum
+  | [] => by simp
+  | first :: rest => by
+      simp only [List.flatMap_cons, List.length_append, List.map_cons, List.sum_cons]
+      have := length_flatMap_filterMap_le f g rest
+      have := List.length_filterMap_le g (f first)
+      omega
+
+omit [DecidableEq Variable] [DecidableEq Literal] [DecidableEq Symbol] in
+theorem sum_le_length_mul {α : Type} (f : α → Nat) (bound : Nat) :
+    ∀ items : List α, (∀ item ∈ items, f item ≤ bound) → (items.map f).sum ≤ items.length * bound
+  | [], _ => by simp
+  | first :: rest, each => by
+      simp only [List.map_cons, List.sum_cons, List.length_cons, Nat.succ_mul]
+      have := sum_le_length_mul f bound rest fun item member => each item (List.mem_cons_of_mem _ member)
+      have := each first List.mem_cons_self
+      omega
+
+omit [DecidableEq Variable] [DecidableEq Literal] [DecidableEq Symbol] in
+theorem site_arity {query : Query Variable Literal Symbol} : ∀ site ∈ program.sites query, site.2 ≤ program.widest query := by
+  intro site member
+  obtain ⟨initLe, inner⟩ := le_foldr_max ((program.rules.map (·.body) ++ program.denials).flatMap fun body =>
+    body.map fun goal => goal.args.length) ((query.conditions ++ query.goals).map (fun goal => goal.args.length) |>.foldr max 0)
+  obtain ⟨_, outer⟩ := le_foldr_max ((query.conditions ++ query.goals).map (fun goal => goal.args.length)) 0
+  have ofGoal : ∀ {goal : Goal Variable Literal Symbol}, goal.site? = some site → site.2 = goal.args.length := by
+    intro goal siteEq
+    cases goal <;> simp [Goal.site?] at siteEq <;> (subst siteEq; simp [Goal.args])
+  unfold widest
+  simp only [sites, List.mem_append, List.mem_flatMap, List.mem_filterMap] at member
+  rcases member with ((⟨rule, ruleMember, goal, goalMember, siteEq⟩ | ⟨body, bodyMember, goal, goalMember, siteEq⟩) |
+    ⟨goal, goalMember, siteEq⟩) | ⟨goal, goalMember, siteEq⟩
+  · rw [ofGoal siteEq]
+    exact inner _ (List.mem_flatMap.mpr ⟨rule.body, List.mem_append_left _ (List.mem_map.mpr ⟨rule, ruleMember, rfl⟩),
+      List.mem_map.mpr ⟨goal, goalMember, rfl⟩⟩)
+  · rw [ofGoal siteEq]
+    exact inner _ (List.mem_flatMap.mpr ⟨body, List.mem_append_right _ bodyMember, List.mem_map.mpr ⟨goal, goalMember, rfl⟩⟩)
+  · rw [ofGoal siteEq]
+    exact Nat.le_trans (outer _ (List.mem_map.mpr ⟨goal, List.mem_append_right _ goalMember, rfl⟩)) initLe
+  · rw [ofGoal siteEq]
+    exact Nat.le_trans (outer _ (List.mem_map.mpr ⟨goal, List.mem_append_left _ goalMember, rfl⟩)) initLe
+
+omit [DecidableEq Variable] [DecidableEq Literal] [DecidableEq Symbol] in
+theorem length_sites_le (query : Query Variable Literal Symbol) : (program.sites query).length ≤ program.literalCount query := by
+  have rules := length_flatMap_filterMap_le (fun rule : Rule Variable Literal Symbol => rule.body) Goal.site? program.rules
+  have denials := length_flatMap_filterMap_le (fun body : List (Goal Variable Literal Symbol) => body) Goal.site? program.denials
+  have goals := List.length_filterMap_le Goal.site? query.goals
+  have conditions := List.length_filterMap_le Goal.site? query.conditions
+  have denialsEq : (program.denials.map fun body => body.length) = program.denials.map List.length := rfl
+  rw [denialsEq] at denials
+  simp only [sites, literalCount, List.length_append]
+  omega
+
+omit [DecidableEq Variable] [DecidableEq Literal] [DecidableEq Symbol] in
+/-- **The universe is smaller than the closure's bound**: its vertices are
+the sites' predicates with every pattern of their arities, at most one site
+per literal and at most `2 ^ widest` patterns per site. -/
+theorem length_allVertices_lt (query : Query Variable Literal Symbol) :
+    (program.allVertices query).length < program.vertexBound query := by
+  have total : (program.allVertices query).length ≤ (program.sites query).length * 2 ^ program.widest query := by
+    simp only [allVertices, List.length_flatMap, List.length_map, length_tuples, List.length_cons, List.length_nil]
+    exact sum_le_length_mul _ _ _ fun site member => Nat.pow_le_pow_right (by decide) (site_arity site member)
+  have count := Nat.mul_le_mul_right (2 ^ program.widest query) (length_sites_le (program := program) query)
+  rw [vertexBound, Nat.add_mul, Nat.one_mul]
+  generalize 2 ^ program.widest query = patterns at total count ⊢
+  omega
+
+omit [DecidableEq Literal] in
+/-- **The vertex closure ends within its bound**: the query's vertices are
+closed under successors. -/
+theorem closed_vertices (query : Query Variable Literal Symbol) : program.closed query = true :=
+  closeVertices_closed _ _ (nodup_eraseDups _) (fun _ member => start_allVertices (List.mem_eraseDups.mp member))
+    (by have := length_allVertices_lt (program := program) query; omega)
+
+end Closure
+
 
 /-- Each vertex's level: the vertices it reaches that do not reach it back,
 those outside its component. Computed once for the graph. A call to another
@@ -270,11 +528,11 @@ theorem levelIn_le {found : List (Vertex Symbol)} (closed : program.closedIn fou
       cases notBack
 
 omit [DecidableEq Literal] in
-/-- In the query's closed graph, no call goes to a higher level. -/
-theorem levels_le {query : Query Variable Literal Symbol} (closed : program.closed query = true) {vertex callee : Vertex Symbol}
+/-- In the query's graph, no call goes to a higher level. -/
+theorem levels_le {query : Query Variable Literal Symbol} {vertex callee : Vertex Symbol}
     (member : vertex ∈ program.vertices query) (successor : callee ∈ program.successors vertex) :
     program.levels query callee ≤ program.levels query vertex :=
-  program.levelIn_le closed member successor
+  program.levelIn_le (closed_vertices query) member successor
 
 /-! ## Data terms and decrease -/
 
@@ -351,8 +609,6 @@ inductive Reason where
   | unguarded
   /-- A rigid parameter no finite guard among the conditions splits. -/
   | parameter
-  /-- The vertex closure did not reach its end within its bound. -/
-  | unclosed
   deriving DecidableEq, Repr
 
 /-- One reason, at its site and path. -/
@@ -434,8 +690,7 @@ def unsplit (query : Query Variable Literal Symbol) : List (Note Variable Litera
 of the graph, its levels, and its data-term outputs. -/
 def notesWith (found : List (Vertex Symbol)) (levelOf : Vertex Symbol → Nat) (info : Vertex Symbol → Bool)
     (query : Query Variable Literal Symbol) : List (Note Variable Literal Symbol) :=
-  (if program.closedIn found then [] else [⟨.goal, [], bodyTerm query.goals, .unclosed⟩]) ++
-    program.growingIn found levelOf info ++ program.freeOutputsIn found levelOf ++ program.unguarded query ++
+  program.growingIn found levelOf info ++ program.freeOutputsIn found levelOf ++ program.unguarded query ++
     program.unsplit query
 
 /-- Every reason the query is P2 rather than P1: the graph, its levels, and
@@ -464,17 +719,20 @@ def Goal.atom? : Goal Variable Literal Symbol → Option (Symbol × List (Term V
 attribute [local instance] Machine.termEq in
 /-- The ground acyclic case, S07's class: ground rules whose bodies are calls
 and NAF, no denial and no derived rule, no opened predicate, a ground query of
-calls and NAF with no condition and no answer name, and no atom of the program
-depending on itself (S07 ranks atoms). -/
+calls and NAF with no condition and no answer name, and the program's atoms
+ranked: S07's topological rank (`GroundSearch.topoRank`) lowers every call of
+every rule. It does exactly when some rank does (`topoRank_decreases`): S07
+ranks atoms, not predicates. -/
 def ground (query : Query Variable Literal Symbol) : Bool :=
   let atoms := (program.rules.map fun rule => (rule.head, rule.args)) ++
     program.rules.flatMap fun rule => rule.body.filterMap Goal.atom?
   let edges := program.rules.flatMap fun rule => (rule.body.filterMap Goal.atom?).map ((rule.head, rule.args), ·)
+  let rank := GroundSearch.topoRank edges atoms
   program.rules.all (fun rule => rule.names.isEmpty && rule.body.all Goal.groundRun) &&
     program.denials.isEmpty && program.derived.isEmpty && query.conditions.isEmpty && query.answers.isEmpty &&
     (bodyNames query.goals).isEmpty && query.goals.all Goal.groundRun &&
     program.predicates.all (fun predicate => predicate.kind != .opened) &&
-    atoms.all fun atom => !(Tabled.reach edges atoms atom).contains atom
+    edges.all fun edge => decide (GroundSearch.rankOf rank edge.2 < GroundSearch.rankOf rank edge.1)
 
 /-! ## Rigid parameters: the split -/
 
@@ -546,13 +804,16 @@ def classifyClosed (query : Query Variable Literal Symbol) : Profile Variable Li
 /-- The profile, before anything runs. A closed query is classified on its
 own; a query with rigid parameters is P1 when each of them is split by a
 finite guard and every instance of the split is P0 or P1 (decided with the
-user, 2026-11-18). -/
+user, 2026-11-18). Its notes are read once, on the query with its parameters
+bound, the unsplit parameters among them: an instance reaches the same
+vertices, so a note the query has its instances have, and a split with no
+instance is P1 only without one. -/
 def classify (query : Query Variable Literal Symbol) : Profile Variable Literal Symbol :=
   if query.parameters.isEmpty then program.classifyClosed query
   else
     match program.check query with
     | [] =>
-        match program.unsplit query with
+        match program.notes query with
         | [] => Profile.combine ((program.splitValues query).map fun values => program.classifyClosed (query.instantiate values))
         | notes => .p2 notes
     | blockers => .undecided blockers
@@ -584,11 +845,11 @@ theorem classify_undecided {query : Query Variable Literal Symbol} {blockers : L
   repeat' split at classified
   all_goals simp_all
 
-/-- **What P1 or P0 gives a query with rigid parameters**: each parameter is
-split, and every instance of the split is P0 or P1. -/
+/-- **What P1 or P0 gives a query with rigid parameters**: no note, each
+parameter split, and every instance of the split P0 or P1. -/
 theorem classify_split {query : Query Variable Literal Symbol} (some : query.parameters ≠ [])
     (decided : (program.classify query).decides = true) :
-    program.check query = [] ∧ program.unsplit query = [] ∧
+    program.check query = [] ∧ program.notes query = [] ∧ program.unsplit query = [] ∧
       ∀ values ∈ program.splitValues query, (program.classifyClosed (query.instantiate values)).decides = true := by
   have notEmpty : query.parameters.isEmpty = false := by
     cases parameters : query.parameters with
@@ -600,11 +861,17 @@ theorem classify_split {query : Query Variable Literal Symbol} (some : query.par
   | cons _ _ => rw [clean] at decided; simp [Profile.decides] at decided
   | nil =>
       rw [clean] at decided
-      cases unsplitEq : program.unsplit query with
-      | cons _ _ => rw [unsplitEq] at decided; simp [Profile.decides] at decided
+      cases notesEq : program.notes query with
+      | cons _ _ => rw [notesEq] at decided; simp [Profile.decides] at decided
       | nil =>
-          rw [unsplitEq] at decided
-          refine ⟨rfl, rfl, fun values member => ?_⟩
+          rw [notesEq] at decided
+          have unsplitNil : program.unsplit query = [] := by
+            have parts := notesEq
+            rw [notes_eq] at parts
+            unfold notesWith at parts
+            simp only [List.append_eq_nil_iff] at parts
+            exact parts.2
+          refine ⟨rfl, rfl, unsplitNil, fun values member => ?_⟩
           unfold Profile.combine at decided
           by_cases all : ((program.splitValues query).map fun values =>
               program.classifyClosed (query.instantiate values)).all Profile.decides = true
