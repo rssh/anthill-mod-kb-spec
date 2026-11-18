@@ -33,3 +33,9 @@ Acceptance:
 Validation: lake build and focused Lean tests/examples appropriate to the changed definitions and proofs.
 Design references: docs/decision-ir.md, docs/tabled-evaluation.md, docs/answers.md, docs/proof-checking.md.
 
+## Changes
+
+### 2026-11-18T10:49:07Z — feedback — user
+
+From S27's review (2026-11-18), decided with the user: constraints outside a query's relevant program can rule out its models even on a consistent KB (an unreached rule r(a) :- p(a), naf r(a) forces p(a) false). S28 answers Unknown only when no rule outside the relevant program reads a relevant atom under NAF on a cycle; otherwise Undecided, naming that rule. Denials are S27's: they join the relevant program and its evidence graph. S27's splitting theorem (relevant_of_fixpoint, fixpoint_of_relevant) assumes the rest of the KB extends a relevant model; S28's exactness must discharge that, by the check above. Also: a split instance whose conditions no model satisfies is both Yes and No (vacuous); combine instances as S27's meaning_split states (Yes when every instance's truth holds, No when every instance's falsity holds, Unknown when one is not No and one is not Yes).
+

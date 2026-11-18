@@ -1,6 +1,8 @@
 # Decision IR: admission as translation
 
-Status: design, decided with the user on 2026-11-17. It revises the
+Status: design, decided with the user on 2026-11-17. S27's part, the IR, its
+checker and evidence, its semantics, the Herbrand reduction, and relevance, is
+[implemented](ir-programs.md) in part. It revises the
 [S01 contract](lean-admission-contract.md)'s "one syntax and one
 interpreter/state machine": there is still one syntax and one meaning, but
 decisions run on an intermediate representation (IR) of their own, which
@@ -74,15 +76,22 @@ auxiliary predicates.
 | Query | The context's conditions, the atoms to decide, the answer names |
 
 **Well-formedness** (`IR.check`, decidable). Read left to right, every
-literal's inputs are bound (S23's `scan`, on the IR), and every data name is
-guarded. The translator orders a conjunction's literals so that names are
-bound from finite sources first; conjunction commutes in the completion, so
-the order changes no meaning.
+literal's inputs are bound (S23's `scan`, on the IR). The translator orders a
+conjunction's literals so that names are bound from finite sources first;
+conjunction commutes in the completion, so the order changes no meaning. A
+data name no guard literal guards is carrier-ranged: the program is
+well formed, and P2 (decided with the user, 2026-11-18; see the boundaries).
 
 **Finiteness evidence** makes a program **P1**: the query's *relevant
-program*, the ground rule instances its calls can use, is finite, both for the
-answers a call derives and for the answers it may have in some model.
-Admission establishes it from S23's analyses, on the IR:
+program*, the ground rule instances its calls and the denials' calls can use,
+is finite, both for the answers a call derives and for the answers it may
+have in some model. The denials join every query's relevant program (decided
+with the user, 2026-11-18): a denial can rule out a model of the query's
+part on a consistent KB (`p(a) :- naf q(a). q(a) :- naf p(a). ⊥ :- p(a).`
+makes `p(a)` No), so its instances that the relevant atoms meet are decided
+with the query, and a denial without the evidence makes the query P2.
+Admission establishes it from S23's analyses, on the IR, per call pattern
+(S27):
 
 1. Every call in the dependency closure has bounded inputs: within a
    component, data terms of its entry's inputs (`calls_bounded`); across
@@ -95,10 +104,12 @@ Admission establishes it from S23's analyses, on the IR:
 2. Every call has finitely many derivable answers: data-term outputs, or a
    decreasing component (`outputs_bounded`, `calls_decrease`).
 3. In a component that does not decrease, no recursive call leaves an output
-   free. A self-supporting cycle holds of unboundedly many values in the
-   greatest fixpoint: `path(X, Y) :- edge(X, Z), path(Z, Y)` over a cycle,
-   with `Y` free, holds of every `Y`. A ground query binds `Y`;
-   `∃Y. path(a, Y)` does not, and is P2.
+   free: as checked (S27), from a vertex that leaves an output free, every
+   call that leaves one free goes to a lower level or decreases. A
+   self-supporting cycle holds of unboundedly many values in the greatest
+   fixpoint: `path(X, Y) :- edge(X, Z), path(Z, Y)` over a cycle, with `Y`
+   free, holds of every `Y`. A ground query binds `Y`; `∃Y. path(a, Y)` does
+   not, and is P2.
 
 A program without the evidence is **P2**: the same evaluator, with fuel
 (decided with the user, 2026-11-17). A measure or a reordering supplied later
@@ -114,9 +125,17 @@ Two lemmas connect it to the models the answers are about (S27):
   model of the completion realizing the signature exactly when it holds in
   every key fixpoint. A closed predicate holds only of values of constructor
   terms, and the free equality theory makes those values keys.
-- **Relevance.** The models of the completion, restricted to the relevant
-  program, are exactly the models of its completion, given that the rest of
-  the KB has a model (consistency, below).
+- **Relevance.** The relevant atoms are a splitting set: an interpretation is
+  a model of the completion exactly when its relevant atoms satisfy the
+  relevant program's completion, the other atoms the rest of the completion,
+  and the denials hold, which they do exactly at their passing instances
+  (S27). So the completion's models restricted to the relevant program are
+  models of its completion, and a model of its completion is such a
+  restriction when the rest of the KB extends it. Consistency is not enough
+  for that: an unreached rule `r(a) :- p(a), naf r(a)` forces `p(a)` false on
+  a consistent KB. S28 answers Unknown only when no rule outside the relevant
+  program reads a relevant atom under NAF on a cycle, and Undecided naming
+  that rule otherwise (decided with the user, 2026-11-18).
 
 ## The evaluator
 
@@ -312,8 +331,16 @@ means nothing there; only proofs come out, checked by S08.
 - **Rigid parameters.** A query's parameters range over their binders' ranges.
   Exactness over every value needs genericity (values outside the relevant
   data terms behave alike when no rule matches them against a constructor) or
-  a split by domain closure (S21). S27 settles which queries with parameters
-  are P1; the others are P2.
+  a split by domain closure (S21). Settled with the user, 2026-11-18: a
+  parameter that a finite guard among the query's conditions guards splits
+  into one ground query per member, and the query is P1 when every instance
+  is; every other parameter is P2 ([S27](ir-programs.md#rigid-parameters)).
+  The query is Yes exactly when every instance's truth holds, No exactly when
+  every instance's falsity holds, Unknown exactly when one instance is not No
+  and another not Yes. An instance whose conditions no model satisfies is
+  both Yes and No (vacuous contexts, below), so "Unknown when neither all
+  are Yes nor all are No" holds only when no instance is vacuous. Genericity
+  is not taken.
 - **Carrier-ranged binders** are outside the Herbrand reduction: P2, with
   S24's abstract value.
 - **Vacuous contexts.** A context that no model of the completion satisfies
@@ -326,9 +353,11 @@ means nothing there; only proofs come out, checked by S08.
   is sound under the condition reading (every model of the completion
   satisfying the context is a model of the extended one), but an Unknown is
   not. Which reading a context gets is S26's to settle with the user.
-- **Consistency.** Exactness is relative to the KB having a model. A KB-level
-  check (denials, NAF cycles) runs beside the queries, as S24's denial checks
-  do now; an inconsistent KB answers Undecided, naming it.
+- **Consistency.** Exactness is relative to the KB having a model, and, for
+  an Unknown, to the rest of the KB extending the relevant program's models
+  (relevance, above). A KB-level check (denials, NAF cycles) runs beside the
+  queries, as S24's denial checks do now; an inconsistent KB answers
+  Undecided, naming it.
 - **Answer sets.** The evaluator computes every answer of a call, so returning
   the answers of a query with answer names, the deferred finite-answer route,
   becomes a small step.
