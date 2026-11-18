@@ -3,9 +3,9 @@
 - id: WI-20261107-R9YMZ-s24-tabled-backtracking-on-the
 - created: 2026-11-07T14:54:18Z
 
-- status: Claimed
+- status: Delivered
 - status_agent: claude
-- status_at: 2026-11-08T09:56:57Z
+- status_at: 2026-11-18T06:04:11Z
 
 - acceptance: lake build
 
