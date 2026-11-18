@@ -210,18 +210,32 @@ deterministic when they are.
   many answers per call (`outputs_bounded`, `calls_decrease`). S24 runs a P1
   query bounded, and the run ends without fuel for every program
   (`Engine.runToEnd`, [tabled evaluation](tabled-evaluation.md)); that its
-  bounds never cut a P1 run short, by these theorems, is S15's.
+  bounds never cut a P1 run short, by these theorems, was S15's. It does not
+  hold: an assumption repeated along a recursion, or a body that grows a term
+  past the size limit, cuts a P1 run, which then answers Undecided (tabled
+  evaluation's boundaries). Under the [decision IR](decision-ir.md)
+  (2026-11-17) the obligation is dropped: S23's per-component bounds, composed
+  along the component order, become the IR's finiteness evidence (S27), and
+  P1 decisions run on S28's evaluator. A query that leaves an output free on
+  a recursive call of a component that does not decrease (`path(a, Y)` over a
+  cycle) is P1 here and P2 on the IR.
 - **Cycles are predicate-level.** NAF or a denial over a predicate on a cycle
   is P2 even when the recursion decreases, as in `naf reachable(x)`.
 - **Constructive negation reads rigid names unbound.** A NAF on a parameter at
   an operand input is a blocker, since the operand's answers are equations on
   that name. S21 runs constructive negation; S23 only admits it.
 - **Decided antecedents** are closed conjunctions of atoms. A rule or an
-  antecedent with data names is P2 and budgeted; contexts are S26's.
+  antecedent with data names is P2 and budgeted; contexts are S26's. S24's
+  engine uses no conjunctive assumption yet, so a conjunction of two or more
+  atoms as an antecedent answers Undecided there (tabled evaluation's
+  boundaries).
 - **Constructors are declared.** Data symbols must be free constructors: a
   defined operation is a blocker, and determinism compares only declared
   constructors and literals.
-- **Consistency.** P1 answers are Yes, No, or Unknown for a consistent KB. A
+- **Consistency.** P1 is meant to answer Yes, No, or Unknown for a consistent
+  KB. S24's engine can still answer Undecided, outside its witness classes and
+  where its bounds cut ([tabled evaluation](tabled-evaluation.md)); exact P1
+  answers are S28's, on the decision IR. A
   denial (`⊥ :- body` or `false :- body`) with an instance of its body proved,
   or its run unsettled, makes every answer Undecided; S24 checks it at run time
   (beside a P1 query, each denial body as its own profile says: bounded when

@@ -39,3 +39,7 @@ Design references: docs/decision-ir.md, docs/fast-admission.md, docs/guarded-ela
 
 From the user (2026-11-17), on statement normalization: "Our KB statement D_i - are special. I.e. if c is collection (but currently we have no collections defined), than transform is Ok. But for D_i: need think." The rule ∀x∈C. P(x) to P(x) :- x ∈ C is decided for collections only; a statement over a declared data domain D_i, and conjunction heads, keep today's reading (predicates opened, the statement a denial) until settled with the user.
 
+### 2026-11-18T05:47:03Z — feedback — user
+
+From S24's review (2026-11-18): read a concrete ho_apply as the direct call inside NAF operands too. S24 answers p :- naf ho_apply(q, b) with q(a) Undecided, an unsupported construct, where Yes is due: the completion closes no ho_apply atom, so the operand must be translated, not refuted as written.
+

@@ -84,7 +84,14 @@ program*, the ground rule instances its calls can use, is finite, both for the
 answers a call derives and for the answers it may have in some model.
 Admission establishes it from S23's analyses, on the IR:
 
-1. Every call in the dependency closure has data-term inputs (`calls_bounded`).
+1. Every call in the dependency closure has bounded inputs: within a
+   component, data terms of its entry's inputs (`calls_bounded`); across
+   components, those bounds composed along the component order, since a body
+   may construct the input of a lower component (`p(X) :- q(succ(X))`), and
+   many calls in one body can grow a term at each step. Contexts are sets: an
+   assumption repeated along a recursion adds nothing. S24's bounded run, with
+   a size limit and repeat-free contexts, cuts both cases (its
+   [boundaries](tabled-evaluation.md)).
 2. Every call has finitely many derivable answers: data-term outputs, or a
    decreasing component (`outputs_bounded`, `calls_decrease`).
 3. In a component that does not decrease, no recursive call leaves an output
@@ -309,6 +316,16 @@ means nothing there; only proofs come out, checked by S08.
   are P1; the others are P2.
 - **Carrier-ranged binders** are outside the Herbrand reduction: P2, with
   S24's abstract value.
+- **Vacuous contexts.** A context that no model of the completion satisfies
+  makes Yes and No both true, and a context fact on a closed predicate that
+  the KB does not derive is such a context. S24 already shows it: with
+  `q(X) :- r(X)` and no clause for `r`, `q(x)` under `r(x)`, `x` rigid, answers
+  No by the refutation, and `q(a)` under `r(a)` answers Yes by its run, both
+  vacuously sound. Read as additions to the program instead, as the
+  hereditary Harrop reading does, a Yes or a No over the extended completion
+  is sound under the condition reading (every model of the completion
+  satisfying the context is a model of the extended one), but an Unknown is
+  not. Which reading a context gets is S26's to settle with the user.
 - **Consistency.** Exactness is relative to the KB having a model. A KB-level
   check (denials, NAF cycles) runs beside the queries, as S24's denial checks
   do now; an inconsistent KB answers Undecided, naming it.

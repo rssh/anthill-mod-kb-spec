@@ -518,9 +518,12 @@ and the query's free names (its rigid parameters), with at most the most
 arguments an application has, and at most `(s + 1) ^ (p + 1)` nodes, for `s`
 the largest argument of the program and the query and `p` the symbols: each
 call made from a lower component's entry can grow its inputs by a body's
-terms. That this limit covers every call of a P1 run is S15's. Its contexts
-are drawn from the query's and every antecedent the program or the query
-assumes. -/
+terms. The limit is not proved to cover a P1 run, and it does not always: it
+grows with the symbols, not the bodies, so a body that grows a term through
+many calls exceeds it, and the call is cut, a gap. Under the decision IR
+(docs/decision-ir.md) P1 decisions move to S28's evaluator. Its contexts are
+drawn from the query's and every antecedent the program or the query assumes,
+without repeats. -/
 def bounds (context : ProofContext Variable Literal Symbol) (goal : Formula Variable Literal Symbol) :
     Bounds Variable Literal Symbol :=
   let terms := (setup.clauses ++ setup.generated).flatMap HornClause.terms ++ goal :: context
@@ -546,12 +549,20 @@ def decided (context : ProofContext Variable Literal Symbol) (goal : Formula Var
   (setup.boundedEngine context goal).runToEnd (bounds := setup.bounds context goal) rfl (Engine.start context goal)
 
 /-- What a denial's bounded run says about the KB, its body closed
-existentially: a proved body makes it inconsistent; a run that abandoned a
-path, its bounds among the reasons, leaves its consistency open, and so does
-one that met open atoms unless a checked model shows the KB consistent. -/
+existentially: a proved body makes it inconsistent. A run cut only by its
+bounds lacks a termination argument, named at its first cut: the bounds, not
+the KB, stopped it. A run that abandoned a path for another reason leaves the
+KB's consistency open, and so does one that met open atoms unless a checked
+model shows the KB consistent. -/
 def denialBounded (body : List (Term Variable Literal Symbol)) : Option (Blocker Variable Literal Symbol) :=
   match setup.decided [] (violation body) with
-  | .success _ _ | .finished (.abandoned _) => some ⟨.site .goal, [], .conjunction body, .consistency body⟩
+  | .success _ _ => some ⟨.site .goal, [], .conjunction body, .consistency body⟩
+  | .finished (.abandoned gaps) =>
+      match gaps with
+      | gap :: _ =>
+          if gaps.all (·.reason == .bounded) then some (Blocker.ofGap (fun _ => []) gap)
+          else some ⟨.site .goal, [], .conjunction body, .consistency body⟩
+      | [] => some ⟨.site .goal, [], .conjunction body, .consistency body⟩
   | .finished (.opened _) => if setup.modelShown then none else some ⟨.site .goal, [], .conjunction body, .consistency body⟩
   | _ => none
 

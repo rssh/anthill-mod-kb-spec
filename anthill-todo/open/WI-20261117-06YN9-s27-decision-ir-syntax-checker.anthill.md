@@ -33,3 +33,9 @@ Acceptance:
 Validation: lake build and focused Lean tests/examples appropriate to the changed definitions and proofs.
 Design references: docs/decision-ir.md, docs/fast-admission.md, docs/tabled-evaluation.md, docs/answers.md.
 
+## Changes
+
+### 2026-11-18T05:47:01Z — feedback — user
+
+From S24's review (2026-11-18), for the finiteness evidence: (1) compose S23's per-component bounds along the component order, since a body may construct a lower component's input: p(X) :- q(succ(X)). q(Y). is S23-P1 and S24 answers it Yes, but calls_bounded read per component would make it P2 (this composition was S15's in the 2026-11-08 S24 notes). (2) Bound term growth by the bodies, not the symbols: thirteen calls dup(X, Y) :- Y = pair(X, X) in a row reach 8191 nodes, past S24's (s+1)^(p+1) limit of 4096. (3) Contexts are sets: an assumption repeated along a recursion (p(succ(X)) :- (r → p(X))) makes no new call; S24's repeat-free contexts cut it. (4) S23-P1 queries that leave an output free on a recursive call of a component that does not decrease (path(a, Y) over a cycle) are P2 here; say so where the profiles move.
+

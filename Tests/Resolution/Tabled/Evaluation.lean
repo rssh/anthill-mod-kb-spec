@@ -234,7 +234,7 @@ def profileKind (clauses : List Clause) (goal : T) (answers : List Nat := []) (d
   | .p2 _ => "p2"
 
 -- A P1 query needs no fuel: its run is bounded and ends, the same answer with
--- no fuel and with plenty.
+-- no fuel and with plenty, since the KB's denials, none here, are P1 too.
 #guard profileKind (cyclic ++ rightRecursive) (atom .path [k .a, k .b]) == "p1"
 #guard kindOf (answerOf (cyclic ++ rightRecursive) (atom .path [k .a, k .b]) (fuel := 0)) == "yes"
 #guard kindOf (answerOf (cyclic ++ rightRecursive) (atom .path [k .a, k .b]) (fuel := 9000)) == "yes"
@@ -251,9 +251,10 @@ def loopNaf : List Clause := [rule (k .p) [naf (k .q)], rule (k .q) [naf (k .p)]
 
 /-! ## Bounded runs end without fuel -/
 
-/-- A query's bounded run with its data terms cut at `size` nodes: the setup's
-own limit is generous, so that a P1 run never meets it; a growing program
-reaches any limit, and these traces use a small one. -/
+/-- A query's bounded run with its data terms cut at `size` nodes. A growing
+program reaches any limit, and these traces use a small one. The setup's own
+limit is not proved to cover a P1 run, and a body growing a term through many
+calls can exceed it (tabled evaluation's boundaries). -/
 def smallRun (clauses : List Clause) (goal : T) (size : Nat) (declared : Modes Sym := modes) : Engine.Outcome Nat Nat Sym :=
   let setup := setupOf clauses goal declared
   let engine : Engine Nat Nat Sym := { setup.engine (setup.space [] goal) with bounds := some { setup.bounds [] goal with size } }
@@ -280,8 +281,9 @@ def decidedTables (clauses : List Clause) (goal : T) : Nat :=
 -- A bounded run ends for any program: the growing call `p(succ(…))` leaves the
 -- bounds and is abandoned, where the fuelled run is interrupted.
 #guard outcomeKind (smallRun grow (atom .p [k .zero]) 6) == "abandoned"
--- `∃Y. path(a, Y)` opens four tables, one per distinct call (the bounds'
--- calls, `Bounds.calls`, are for the proof, never computed).
+-- `∃Y. path(a, Y)` opens four tables, one per distinct call. The bounds'
+-- calls, `Bounds.calls`, are for the termination proof and never computed:
+-- they range over every term of the bounds, far more than these four.
 #guard decidedTables (cyclic ++ rightRecursive) (.existsVar 7 (atom .path [k .a, v 7])) == 4
 
 /-! ## Rigid parameters -/
@@ -454,5 +456,66 @@ def countModes : Modes Sym
 -- assignment with `unknown` false is a model in which the body fails: `r` is Yes.
 #guard kindOf (answerOf [rule (atom .q [k .a]) [k .unknown], .goal [atom .q [k .a]], fact (k .r)] (k .r)
   (declared := denialModes)) == "yes"
+
+/-! ## Known limits of a bounded run
+
+Each is sound: a cut or an unsupported construct is a gap, and the answer
+Undecided, never a wrong one. Under the decision IR these are decided by
+S28's evaluator (docs/decision-ir.md). -/
+
+open Mode in
+def repeatModes : Modes Sym
+  | .p => some [input]
+  | .r => some []
+  | _ => none
+
+-- A context that repeats an assumption is outside the bounds. In
+-- `p(zero) :- r. p(succ(X)) :- (r → p(X)).`, `p(succ(zero))` is Yes, but
+-- `p(succ(succ(zero)))`, also P1, reaches `p(zero)` in the context `[r, r]`:
+-- it is cut, a termination limit.
+def repeated : List Clause :=
+  [rule (atom .p [k .zero]) [k .r], rule (atom .p [succ (v 0)]) [.imp (k .r) (atom .p [v 0])]]
+#guard profileKind repeated (atom .p [succ (succ (k .zero))]) (declared := repeatModes) == "p1"
+#guard kindOf (answerOf repeated (atom .p [succ (k .zero)]) (declared := repeatModes)) == "yes"
+#guard missingKinds (answerOf repeated (atom .p [succ (succ (k .zero))]) (declared := repeatModes)) == ["termination"]
+
+open Mode in
+def nestModes : Modes Sym
+  | .p | .q | .r | .s | .t | .u => some []
+  | .mid => some [input]
+  | _ => none
+
+-- The same cut inside a P1 denial's bounded run names the bound, not the KB's
+-- consistency: `q :- (r → s). s :- (r → t). t :- r. ⊥ :- q, u.` reaches `t` in
+-- the context `[r, r]`. The P1 query `p` lacks a termination argument; the P2
+-- query `p ∨ mid(zero)`, whose denials run with the fuel, is Yes.
+def nested : List Clause :=
+  [rule (k .q) [.imp (k .r) (k .s)], rule (k .s) [.imp (k .r) (k .t)], rule (k .t) [k .r],
+    .goal [k .q, k .u], fact (k .p), rule (atom .mid [v 0]) [atom .mid [succ (v 0)]]]
+#guard profileKind nested (k .p) (declared := nestModes) == "p1"
+#guard missingKinds (answerOf nested (k .p) (declared := nestModes)) == ["termination"]
+#guard kindOf (answerOf nested (.disj (k .p) (atom .mid [k .zero])) (declared := nestModes)) == "yes"
+
+open Mode in
+def hoModes : Modes Sym
+  | .p => some []
+  | .q => some [input]
+  | _ => none
+
+-- NAF of a concrete `ho_apply` is not read as the direct call: with `q(a)`,
+-- `p :- naf ho_apply(q, b)` is P1 but Undecided, an unsupported construct,
+-- where Yes is due; `p :- naf q(b)` is Yes.
+#guard profileKind [fact (atom .q [k .a]), rule (k .p) [naf (atom .ha [k .q, k .b])]] (k .p) (declared := hoModes) == "p1"
+#guard missingKinds (answerOf [fact (atom .q [k .a]), rule (k .p) [naf (atom .ha [k .q, k .b])]] (k .p)
+  (declared := hoModes)) == ["construct"]
+#guard kindOf (answerOf [fact (atom .q [k .a]), rule (k .p) [naf (atom .q [k .b])]] (k .p) (declared := hoModes)) == "yes"
+
+-- A conjunctive antecedent is not used: `(r ∧ s) → q` with `q :- r, s` is P1
+-- but Undecided, an unsupported construct, where Yes is due; `r → q` with
+-- `q :- r` is Yes.
+#guard profileKind [rule (k .q) [k .r, k .s]] (.imp (.conj (k .r) (k .s)) (k .q)) (declared := nullary) == "p1"
+#guard missingKinds (answerOf [rule (k .q) [k .r, k .s]] (.imp (.conj (k .r) (k .s)) (k .q)) (declared := nullary)) ==
+  ["construct"]
+#guard kindOf (answerOf [rule (k .q) [k .r]] (.imp (k .r) (k .q)) (declared := nullary)) == "yes"
 
 end TabledEvaluationTests

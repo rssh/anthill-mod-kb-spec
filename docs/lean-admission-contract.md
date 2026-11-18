@@ -290,14 +290,16 @@ Unknown (with witnesses), or Undecided with blockers. Answers are monotone in
 the fuel: only Undecided can change with more fuel. A complete predicate,
 whose recursive calls take data terms and whose answers are data terms or
 whose recursion decreases, with no NAF or denial over a predicate on a cycle,
-is in P1: its run ends without needing fuel, and its Unknown is exact by the
-least and greatest fixpoints. S23 implements the admission
+is in P1: its run ends without needing fuel, and its Unknown is meant to be
+exact by the least and greatest fixpoints. S23 implements the admission
 ([fast admission](fast-admission.md)), S24 the tabled run and its answers
 ([tabled evaluation](tabled-evaluation.md)): a P1 query runs bounded by its
-data, and the run ends without fuel for every program (`Engine.runToEnd`);
-that its bounds never cut a P1 run short, and the completeness and exactness
-of P1 decisions, are S15's. Contexts and constraints are planned in S26 and
-S21.
+data, and the run ends without fuel for every program (`Engine.runToEnd`).
+Its bounds can cut a P1 run short, which then answers Undecided (tabled
+evaluation's boundaries). Under the [decision IR](decision-ir.md)
+(2026-11-17), the completeness and exactness of P1 decisions are S28's, on
+the IR's evaluator, and the obligation that the bounds never cut a P1 run,
+once S15's, is dropped. Contexts and constraints are planned in S26 and S21.
 
 ## P3: scoped proof strategies with Undecided
 

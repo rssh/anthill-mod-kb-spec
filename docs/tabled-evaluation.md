@@ -57,10 +57,11 @@ parameters included), with at most the most arguments an application has and
 at most `(s + 1) ^ (p + 1)` nodes, for `s` the largest argument and `p` the
 symbols (each call from a lower component's entry can grow its inputs by a
 body's terms); and the assumptions (the query's context and every antecedent
-the program or the query assumes). The size limit is generous: a P1 run never
-comes near it, while a growing program, run bounded, would take as long. Three
-runtime checks keep a run within the bounds (decided with the user,
-2026-11-08):
+the program or the query assumes). The size limit is not proved to cover a P1
+run, and it does not always: it grows with the symbols, not with the bodies,
+so a body that grows a term through many calls of a lower component exceeds it
+(below). Three runtime checks keep a run within the bounds (decided with the
+user, 2026-11-08):
 
 | Check | What a bounded run does |
 | --- | --- |
@@ -91,12 +92,13 @@ incomplete table get only answers within the bounds, so at most the
 answers of the bounds are ever scheduled. So the run is a total function with
 no fuel (`Engine.runToEnd`), never interrupted (`runToEnd_ended`), equal to the
 run with some fuel (`runToEnd_fuel`), and opens at most the calls of its
-bounds: the predicates, the input lists of at most `arity` data terms, and the
-contexts of at most `|assumptions|` assumptions (`Bounds.calls`), S23's count
-of distinct calls. The termination proof needs no invariant of the run and
-holds for every program: the checks, not the program, bound it. For a P1
-query, S23's theorems (`calls_bounded`, `outputs_bounded`, `calls_decrease`)
-say the checks never fire; that lifting is S15's, with completeness.
+bounds: the predicates, the input lists of at most `arity` terms of the
+bounds, and the contexts of at most `|assumptions|` assumptions
+(`Bounds.calls`). That is the bounds' own count, far larger than S23's count
+of distinct calls, which counts only data terms: S23's count bounds a P1 run
+only if its checks never fire, which is not proved, and they can fire
+(boundaries). The termination proof needs no invariant of the run and holds
+for every program: the checks, not the program, bound it.
 
 ## Invariants and reconstruction
 
@@ -140,8 +142,11 @@ KB's denials that are not P1. A denial run that met open atoms is unsettled,
 since denials checked one at a time miss a joint inconsistency, unless a
 checked model of the KB shows it consistent (`modelShown`: a ground program's
 assignment that is a fixpoint, or a positive program's closed least fixpoint,
-every denial body failing; decided with the user, 2026-11-09). Every answer's
-evidence is checked independently of the run, so soundness holds for both.
+every denial body failing; decided with the user, 2026-11-09). A bounded
+denial run cut only by its bounds is named at its first cut, a termination
+limit: the bounds, not the KB, left its consistency open (`denialBounded`).
+Every answer's evidence is checked independently of the run, so soundness
+holds for both.
 
 The Kripke–Kleene iteration and the two fixpoints stop once a round changes
 nothing (`untilStable`, at most `rounds`); every round is sound, so the round
@@ -235,27 +240,42 @@ realizes a separated admission signature (`realizes`).
 | `r(X) :- r(X). q(X) :- r(X). p(X). s :- q(Y), p(Y).`, goal `s` | Unknown: the fresh value supports `s` in the greatest fixpoint |
 | A denial `⊥ :- p` with the fact `p`; with no `p` | Every answer Undecided, the KB's consistency; the query answered |
 | A predicate without a mode | Undecided before anything runs |
+| `p(zero) :- r. p(succ(X)) :- (r → p(X)).`, P1: `p(succ(zero))`; `p(succ(succ(zero)))` | Yes; Undecided, a termination limit: the context `[r, r]` repeats an assumption |
+| `q :- (r → s). s :- (r → t). t :- r. ⊥ :- q, u.` with `p` and a growing `mid`: the P1 query `p`; the P2 query `p ∨ mid(zero)` | Undecided, the denial's bounded run cut, named as a termination limit, not the KB's consistency; Yes, its denial run with the fuel |
+| With `q(a)`: `p :- naf ho_apply(q, b)`; `p :- naf q(b)` | Undecided, an unsupported construct; Yes |
+| `(r ∧ s) → q` with `q :- r, s`; `r → q` with `q :- r` | Undecided, an unsupported construct; Yes |
 
 ## Boundaries
 
-- **The checks never fire for P1.** A bounded run ends for every program, but
+- **The checks can fire for P1.** A bounded run ends for every program, but
   a call, an answer, or a candidate outside the bounds is a gap, so the answer
-  may be Undecided. S23 bounds a complete predicate's calls
-  (`calls_bounded`) and answers (`outputs_bounded`, `calls_decrease`) per
-  component, an entry's calls by its own inputs; that every call and scheduled
-  answer of a P1 run is within the bounds' size, composing those bounds along
-  the component order, and every candidate fits (clause bodies weighed by
-  their connectives, goals without formula variables), is S15's, with the
-  completeness below (decided with the user, 2026-11-08; noted there). S15 may
-  need to raise the size limit.
+  may be Undecided, never a wrong one. That this never happens for a P1 query,
+  composing S23's per-component bounds (`calls_bounded`, `outputs_bounded`,
+  `calls_decrease`) along the component order, was S15's (decided with the
+  user, 2026-11-08). It does not hold. An assumption repeated along a
+  recursion makes a context the bounds leave out: in
+  `p(zero) :- r. p(succ(X)) :- (r → p(X)).`, `p(succ(succ(zero)))` reaches
+  `p(zero)` in the context `[r, r]`. A body that grows a term through many
+  calls of a lower component exceeds the size limit: thirteen calls
+  `dup(X, Y) :- Y = pair(X, X)` in a row reach 8191 nodes over a limit of
+  4096. Both queries are P1, and both answer Undecided, lacking a termination
+  argument. Under the [decision IR](decision-ir.md) (2026-11-17) the
+  obligation is dropped: S27's finiteness evidence bounds the relevant
+  program itself, contexts as sets and S23's bounds composed along the
+  component order, and S28's evaluator runs over it with no fuel and no gap.
 - **Completeness and exactness.** An atom in the least fixpoint of a P1
   program answering Yes (the engine's completeness), and the cases in which
-  the answer is never Undecided, are S15's ("P1 decisions are total, sound,
-  and complete"). The decision between No, Unknown, and Undecided is exact
-  where the abstract and the concrete greatest fixpoints agree on the goal,
-  and the abstract least fixpoint is exact on it. Abstraction can still leave
-  a goal between them: `s :- r(X), r(Y), g(X, Y)` with `g(f(Z), Z)` needs two
-  related fresh values. Then the answer is Undecided, never a wrong one.
+  the answer is never Undecided, were S15's ("P1 decisions are total, sound,
+  and complete"). Under the decision IR they are S28's, on the IR's
+  evaluator, with S27's relevance and Herbrand reduction, for the IR's P1: a
+  query that leaves an output free on a recursive call of a component that
+  does not decrease (`∃Y. path(a, Y)` over a cycle), P1 here, is P2 there, and
+  S27 settles which queries with rigid parameters are P1. On this engine the
+  decision between No, Unknown, and Undecided is exact where the abstract and
+  the concrete greatest fixpoints agree on the goal, and the abstract least
+  fixpoint is exact on it. Abstraction can still leave a goal between them:
+  `s :- r(X), r(Y), g(X, Y)` with `g(f(Z), Z)` needs two related fresh
+  values. Then the answer is Undecided, never a wrong one.
 - **Export.** A Yes is exported and checked; a run whose export does not
   check is Undecided. That every successful run's export checks is S15/S16's,
   as for S06 runs ([S08](proof-checking.md)).
@@ -272,4 +292,11 @@ realizes a separated admission signature (`realizes`).
   positive strategy, or are gaps in a bounded run: constructive negation is
   S21's, contexts S26's.
 - **Calls through `ho_apply`** are not tabled themselves: a concrete
-  `ho_apply(p, args)` is read as `p(args)`, which is.
+  `ho_apply(p, args)` is read as `p(args)`, which is. A NAF of a concrete
+  `ho_apply` is not read so: with `q(a)`, `p :- naf ho_apply(q, b)` is P1 but
+  answers Undecided, an unsupported construct, where Yes is due.
+- **Conjunctive antecedents.** S23 decides a closed conjunction of atoms as an
+  antecedent, but the positive strategy uses no conjunctive assumption:
+  `(r ∧ s) → q` with `q :- r, s` is P1 and answers Undecided, an unsupported
+  construct, where Yes is due. On the decision IR an implication goal is read
+  materially (S26).

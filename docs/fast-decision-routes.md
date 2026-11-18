@@ -82,7 +82,10 @@ execution and the answers ([tabled evaluation](tabled-evaluation.md)).
 Revised 2026-11-17: on the [decision IR](decision-ir.md), P1 is the IR's
 finiteness evidence (the query's relevant program is finite), and NAF or a
 denial through a cycle is P1 in the exponential cost class; P2 keeps what lacks
-the evidence, such as growing recursion and free outputs on a cycle.
+the evidence, such as growing recursion and free outputs on a cycle. S24's
+engine can still answer Undecided for queries P1 admits here: outside its
+witness classes, where its bounds cut, and for constructs it does not run
+([tabled evaluation](tabled-evaluation.md), boundaries).
 
 ## Answers
 
@@ -119,8 +122,9 @@ post-fixpoint of the data terms and one fresh value. Between them the answer is
 Undecided.
 
 Answers are **monotone in the fuel**: a Yes, a No, or an Unknown never changes
-with more fuel; only Undecided can. A P1 answer does not depend on the fuel at
-all.
+with more fuel; only Undecided can. A P1 answer does not depend on the fuel
+when the KB's denials are P1 too (`Setup.answer_p1`): a denial that is not P1
+is checked with the fuel.
 
 ## Contexts: case splits, implications, universals
 
