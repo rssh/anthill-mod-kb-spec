@@ -113,7 +113,7 @@ with its parameters bound (an instance reaches the same vertices), and is then
 classified through its split (`classify_split`, below), and `p1_parts` gives
 what P1 gives the theorems below. Derived rules are checked as rules, and stay outside the
 completion, the vertex graph, and the relevant program: a decision that
-derives with them (S28's certificates, S31) bounds them itself.
+derives with them (S31) bounds them itself.
 
 ## Semantics
 
@@ -172,8 +172,9 @@ their answers, reading each body left to right, within a fuel
 (`Program.saturate`, `Program.round`), and gives a closed query's relevant
 program once the table is stable (`Program.stable`), none otherwise: its
 calls, its rule instances, and its denial instances, each instance by its
-rule's or denial's index and the values of its names, without repeats. It
-lists every possible answer at its free calls (`stable_answers`) and every
+rule's or denial's index and the values of its names, without repeats. Its
+table lists every possible answer at its free calls (`stable_answers`), and it
+lists every
 relevant call, rule instance, and passing denial instance
 (`relevantProgram_complete`), so its size bounds the relevant program's. It
 can hold more: a call is made before the literals after it are read, and the
@@ -209,7 +210,9 @@ embedding (S26 settles the reading).
 
 Decided with the user, 2026-11-18. A rigid parameter ranges over the carrier
 unless the conditions restrict it. A finite guard among the conditions splits
-the query into one ground query per assignment of members
+the query into one ground query per assignment of members, each parameter
+taking the members every finite guard of it shares (`Program.splitChoices`;
+any other value fails a condition, so its instance would be vacuous)
 (`Program.splitValues`, `Query.instantiate`); the query is P1 when it has no
 note and every instance, classified as a closed query, is P0 or P1
 (`classify_split`), and its meaning is theirs over the instances the split

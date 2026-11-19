@@ -13,14 +13,15 @@ under NAF on a cycle (decided with the user, 2026-11-18), checked here in a
 form that makes the extension provable:
 
 - **The check** (`Program.stratifiedBy`): every rule that is not *computed*
-  (a rule with no name whose head is a relevant atom, its one instance in the
-  relevant program) respects a rank of the predicates: its calls no higher
-  than its head, its NAF literals strictly lower. The ranks are computed by
-  iteration (`Program.ranks`), and the check fails exactly at a rule on a
-  cycle through NAF among the rules outside: it names the first such rule
+  (a rule whose head has no name and is a relevant atom: its instances are
+  in the relevant program) respects a rank of the predicates: its calls no
+  higher than its head, its NAF literals strictly lower. The ranks are
+  computed by iteration (`Program.ranks`); when the check fails it names the
+  first rule outside on a cycle through NAF among the rules outside that the
+  ranks do not respect, else the first rule they do not respect
   (`Program.unstratified`). A NAF cycle outside the relevant program fails
   the check whether or not it reaches a relevant atom: its consistency is not
-  decided (the KB-level check, below).
+  decided here (the KB-level check, in `IR/Evaluate`).
 - **The construction** (`Strata.strata`): the relevant atoms take the model's
   values, and every other closed atom is decided stratum by stratum, rank 0
   first, each stratum's atoms by the least fixpoint of their rules given the
@@ -238,15 +239,19 @@ def nafEdgesOf (rules : List (Rule Variable Literal Symbol)) : List (Symbol × S
     | _ => none
 
 /-- The declared predicates on a cycle through NAF of some rules' predicate
-graph, the reachability of each predicate computed once. -/
+graph: for each NAF edge `u → v`, the predicates that reach `u` and that `v`
+reaches. Two reachability computations per NAF edge, none when there is no
+NAF. -/
 def nafCycleSymbols (rules : List (Rule Variable Literal Symbol)) : List Symbol :=
-  let symbols := program.predicates.map (·.symbol)
-  let edges := edgesOf rules
-  let naf := nafEdgesOf rules
-  let reaches := symbols.map fun symbol => (symbol, Tabled.reach edges symbols symbol)
-  let reachOf := fun symbol => ((reaches.find? (·.1 == symbol)).map (·.2)).getD []
-  symbols.filter fun symbol => naf.any fun edge =>
-    (edge.1 == symbol || (reachOf symbol).contains edge.1) && (edge.2 == symbol || (reachOf edge.2).contains symbol)
+  let naf := (nafEdgesOf rules).eraseDups
+  if naf.isEmpty then []
+  else
+    let symbols := program.predicates.map (·.symbol)
+    let edges := edgesOf rules
+    let backward := edges.map fun edge => (edge.2, edge.1)
+    (naf.flatMap fun edge =>
+      let fromTarget := edge.2 :: Tabled.reach edges symbols edge.2
+      (edge.1 :: Tabled.reach backward symbols edge.1).filter fromTarget.contains).eraseDups
 
 /-- The rule the check names, with its index: the first rule outside the
 relevant program whose head is on a cycle through NAF among the rules outside
@@ -468,7 +473,7 @@ theorem groundProgram_ground (wellFormed : program.WellFormed) {query : Query Va
       have ruleOk := wellFormed.rules rule (rulesOf_mem (mem_rulesAt.mp atVertex).1)
       exact groundBody_ground (Scans.goals ruleOk.scans) (fun name inside => groundRule name (List.mem_append_right _ inside))
         atom (.inr (.inr inside))
-    · simp only [groundProgram, List.mem_cons] at bodyMember
+    · simp only [groundProgram_denials, groundProgram_conditions, groundProgram_goals, List.mem_cons] at bodyMember
       rcases bodyMember with fromDenials | rfl | fromGoals
       · obtain ⟨denial, denialMember, σ, ground, _, rfl⟩ := (denialBodies_iff wellFormed queryOk evidence body).mp fromDenials
         exact groundBody_ground (Scans.goals (wellFormed.denials denial denialMember)) ground atom (.inr (.inr inside))

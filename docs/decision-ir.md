@@ -6,8 +6,9 @@ the relevant program finite under P1, and S07's ground programs as the P0
 case where the IR expresses them, is [implemented](ir-programs.md). S28's
 part is [implemented in part](ir-evaluator.md): exact P1 decisions with no
 fuel, the KB-level consistency check, certificates checked by recomputation
-and by two witnesses, and cost classes; P2 and the S08 export of a Yes
-derivation are pending. It revises the
+and by two witnesses, cost classes, and P2 within the fuel (S24's refutation
+and witnesses, derivations checked before a Yes, monotone in the fuel); the
+S08 export of a Yes derivation is pending. It revises the
 [S01 contract](lean-admission-contract.md)'s "one syntax and one
 interpreter/state machine": there is still one syntax and one meaning, but
 decisions run on an intermediate representation (IR) of their own, which
@@ -151,7 +152,7 @@ Two lemmas connect it to the models the answers are about (S27):
 | Profile | How it runs | What it answers |
 | --- | --- | --- |
 | P1 | Build the relevant program, which is finite. Compute the definitely and the possibly true atoms (the Kripke–Kleene iteration, S24's `kk`). Decide the atoms left undefined by enumerating the completion's models over them | Yes, No, or Unknown, exactly, with no fuel and no gap; Undecided only for the KB's inconsistency, or for an Unknown a rule outside the relevant program may rule out (relevance, above) |
-| P2 | The same over a relevant program that may be infinite, within the fuel. No by the Kripke–Kleene refutation over the data terms and one abstract value (S24's `refutes`), Unknown by S24's witnesses | Sound answers; Undecided naming the growing call; monotone in the fuel |
+| P2 | Over a relevant program that may be infinite, or names outside the Herbrand reduction, within the fuel. Unknown by S24's witnesses (the least and the greatest fixpoint, for positive programs); No by the Kripke–Kleene refutation over the data terms and one abstract value (S24's `refutes`), on the rules the goal reads; Yes by a derivation the search finds within the fuel, checked. Yes and No only once the KB-level check settled the KB (every answer assumes a model) | Sound answers; Undecided naming the growing call; monotone in the fuel; a P0 or P1 query its exact answer whatever the fuel |
 
 **Cost classes**, reported by admission before anything runs:
 
@@ -159,7 +160,7 @@ Two lemmas connect it to the models the answers are about (S27):
 | --- | --- | --- |
 | Polynomial, of degree k (S23) | No NAF or denial reads a predicate whose dependency closure reaches a cycle or a marker | Every model lies between two computable ones: the least fixpoint with the markers false and the greatest with them true |
 | Exponential | Otherwise | Deciding the completion's models is NP-hard (supported models); the enumeration is exact |
-| Budgeted | P2 | Bounded by the fuel |
+| Budgeted | P2 | The derivation search bounded by the fuel; S24's iteration on the rules the goal reads, and its witnesses, run once |
 
 So NAF through a cycle, or a split that depends on the data, is decidable but
 expensive: a cost class, not Undecided.
@@ -171,9 +172,9 @@ Yes means truth in every model of the completion, not a `Derives` proof
 
 | Answer | Meaning | Certificate | Check |
 | --- | --- | --- | --- |
-| Yes | Holds in every model of the completion realizing the signature | A derivation over the relevant program, its NAF nodes refutations; or the relevant program, the goal true in all its completion models | S08 for a derivation; recomputation otherwise |
-| No | Fails in every such model | A Kripke–Kleene refutation, or the relevant program, the goal false in all its models | Recomputation |
-| Unknown | Holds in one such model and fails in another | Two assignments of the relevant program's atoms, each a fixpoint | The fixpoint check (S24's `groundFixpoint`) |
+| Yes | Holds in every model of the completion realizing the signature | P0 and P1: the relevant programs of the query's instances, the goal true in all their models. P2: a derivation, rule instances in order with their NAF operands refuted | Recomputation; the derivation by its checker (its export as an S08 tree is pending) |
+| No | Fails in every such model | P0 and P1: the relevant programs, the goal false in all their models. P2: a Kripke–Kleene refutation, by its universe | Recomputation |
+| Unknown | Holds in one such model and fails in another | P0 and P1: two models of instances' relevant programs, each a fixpoint of its ground clauses with every denial body false. P2: S24's greatest and least fixpoint witnesses | The model check, S24's `groundFixpoint` on the ground program; S24's witnesses computed again |
 | Undecided | Nothing about the KB | Blockers | — |
 
 In `p :- q. p :- naf q. q :- q.`, `p` holds in every model, whichever value
@@ -247,8 +248,9 @@ principles, and dictionary laws. A proved `∀x∈C. P(x)` is the derived rule
 definition it would widen `P`'s completed definition and
 admit models that are not models of the KB's completion, so a witness of
 Unknown could be wrong. As a derived rule it is valid in every model and
-changes no exact answer; it gives a derivation where the definitions give only
-a model check, and a Yes within less fuel in P2.
+changes no exact answer; once a decision reads it (S31), it gives a derivation
+where the definitions give only a model check, and a Yes within less fuel in
+P2.
 
 ### Conditions and implications
 

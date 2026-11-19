@@ -93,10 +93,13 @@ def Enumerates : Prop :=
       ∀ term, program.guardHolds symbol term = true ↔ term ∈ members
 
 /-- The instances of a query's split: each rigid parameter a member of a
-finite guard among the conditions that guards it. -/
+finite guard among the conditions that guards it, and of every such guard. -/
 def Splits (query : Query Variable Literal Symbol) (values : Variable → Term Variable Literal Symbol) : Prop :=
-  ∀ name ∈ query.parameters, ∃ symbol members, Goal.guard symbol (.var name) ∈ query.conditions ∧
-    program.kindAt .guard symbol 1 = true ∧ program.members symbol = some members ∧ values name ∈ members
+  ∀ name ∈ query.parameters,
+    (∃ symbol members, Goal.guard symbol (.var name) ∈ query.conditions ∧
+      program.kindAt .guard symbol 1 = true ∧ program.members symbol = some members ∧ values name ∈ members) ∧
+    ∀ symbol members, Goal.guard symbol (.var name) ∈ query.conditions → program.kindAt .guard symbol 1 = true →
+      program.members symbol = some members → values name ∈ members
 
 variable {program} in
 attribute [local instance] Machine.termEq in
@@ -235,7 +238,7 @@ theorem instance_iff {query : Query Variable Literal Symbol} (queryOk : QueryOk 
     by_cases parameter : name ∈ query.parameters
     · refine .inr ?_
       simp only [Query.instanceSubst, parameter, ite_true]
-      obtain ⟨symbol, members, _, kind, found, member⟩ := splits name parameter
+      obtain ⟨symbol, members, _, kind, found, member⟩ := (splits name parameter).1
       exact (enumerates symbol members kind found).1 _ member
     · exact .inl (by simp [Query.instanceSubst, parameter])
   have conditionsData : ∀ goal ∈ query.conditions, ∀ arg ∈ goal.args, dataIn program.constructors arg = true :=
@@ -302,6 +305,17 @@ theorem splits_of_context {query : Query Variable Literal Symbol} (models : prog
     (split : ∀ name ∈ query.parameters, program.splits query name = true) {environment : Environment Variable Value}
     (holds : model.ContextHolds environment query.context) :
     ∃ values, program.Splits query values ∧ ∀ name ∈ query.parameters, den model (values name) = environment name := by
+  -- A finite guard of a name among the conditions holds of a ground member
+  -- with the name's value.
+  have guardTerm : ∀ name symbol members, Goal.guard symbol (.var name) ∈ query.conditions →
+      program.kindAt .guard symbol 1 = true → program.members symbol = some members →
+        ∃ term, groundIn program.constructors term = true ∧ term ∈ members ∧ den model term = environment name := by
+    intro name symbol members member kind membersEq
+    have atom := holds _ (List.mem_map.mpr ⟨_, member, rfl⟩)
+    obtain ⟨declared, declaredEq, declaredKind, _⟩ := kindAt_declared kind
+    simp only [Goal.toTerm, Model.Satisfies, Model.eval, List.map_cons, List.map_nil] at atom
+    obtain ⟨term, ground, holdsOf, same⟩ := (models.2.2.guards symbol ⟨declared, declaredEq, declaredKind⟩ _).mp atom
+    exact ⟨term, ground, ((enumerates symbol members kind membersEq).2 term).mp holdsOf, same⟩
   have each : ∀ name ∈ query.parameters, ∃ term symbol members, Goal.guard symbol (.var name) ∈ query.conditions ∧
       program.kindAt .guard symbol 1 = true ∧ program.members symbol = some members ∧ term ∈ members ∧
         den model term = environment name := by
@@ -317,18 +331,29 @@ theorem splits_of_context {query : Query Variable Literal Symbol} (models : prog
             obtain ⟨⟨kind, finite⟩, same⟩ := test
             subst same
             obtain ⟨members, membersEq⟩ := Option.isSome_iff_exists.mp finite
-            have atom := holds _ (List.mem_map.mpr ⟨_, member, rfl⟩)
-            obtain ⟨declared, declaredEq, declaredKind, _⟩ := kindAt_declared kind
-            simp only [Goal.toTerm, Model.Satisfies, Model.eval, List.map_cons, List.map_nil] at atom
-            obtain ⟨term, ground, holdsOf, same⟩ := (models.2.2.guards symbol ⟨declared, declaredEq, declaredKind⟩ _).mp atom
-            exact ⟨term, symbol, members, member, kind, membersEq, ((enumerates symbol members kind membersEq).2 term).mp holdsOf, same⟩
+            obtain ⟨term, _, inMembers, same⟩ := guardTerm _ symbol members member kind membersEq
+            exact ⟨term, symbol, members, member, kind, membersEq, inMembers, same⟩
         | _ => simp at test
     | _ => simp at test
   classical
   refine ⟨fun name => if parameter : name ∈ query.parameters then Classical.choose (each name parameter) else .truth, ?_, ?_⟩
   · intro name parameter
-    obtain ⟨symbol, members, member, kind, membersEq, inMembers, _⟩ := Classical.choose_spec (each name parameter)
-    exact ⟨symbol, members, member, kind, membersEq, by simpa [parameter] using inMembers⟩
+    obtain ⟨symbol, members, member, kind, membersEq, inMembers, same⟩ := Classical.choose_spec (each name parameter)
+    refine ⟨⟨symbol, members, member, kind, membersEq, by simpa [parameter] using inMembers⟩, ?_⟩
+    -- Every other finite guard of the name holds of a member with the same
+    -- value, the same term since the constructors are free.
+    intro other others otherMember otherKind othersEq
+    obtain ⟨term, ground, inOthers, otherSame⟩ := guardTerm name other others otherMember otherKind othersEq
+    have chosenGround := (enumerates symbol members kind membersEq).1 _ inMembers
+    have equal := den_injective (free_of_models models) _ _ ground chosenGround (otherSame.trans same.symm)
+    have valueEq : (if chosen : name ∈ query.parameters then Classical.choose (each name chosen) else Term.truth) =
+        Classical.choose (each name parameter) := by
+      split
+      · rfl
+      · contradiction
+    show (if chosen : name ∈ query.parameters then Classical.choose (each name chosen) else Term.truth) ∈ others
+    rw [valueEq, ← equal]
+    exact inOthers
   · intro name parameter
     obtain ⟨_, _, _, _, _, _, same⟩ := Classical.choose_spec (each name parameter)
     simpa [parameter] using same
@@ -343,7 +368,7 @@ theorem instance_environment {query : Query Variable Literal Symbol} {values : V
   funext name
   by_cases parameter : name ∈ query.parameters
   · simp only [Query.instanceSubst, parameter, ite_true]
-    obtain ⟨symbol, members, _, kind, found, member⟩ := splits name parameter
+    obtain ⟨symbol, members, _, kind, found, member⟩ := (splits name parameter).1
     rw [eval_ground _ _ ((enumerates symbol members kind found).1 _ member), same name parameter]
   · simp [Query.instanceSubst, parameter, Model.eval]
 
@@ -437,33 +462,74 @@ theorem assignments_complete {choices : Variable → List (Term Variable Literal
         · simp only [same, ite_false]
           exact agrees name ((List.mem_cons.mp inside).resolve_left same)
 
+omit [DecidableEq Literal] [FreshNames Variable] in
+theorem mem_guardMembers {name : Variable} {goal : Goal Variable Literal Symbol} {members : List (Term Variable Literal Symbol)} :
+    program.guardMembers name goal = some members ↔
+      ∃ symbol, goal = .guard symbol (.var name) ∧ program.kindAt .guard symbol 1 = true ∧ program.members symbol = some members := by
+  cases goal with
+  | guard symbol arg =>
+      cases arg with
+      | var other =>
+          simp only [guardMembers]
+          constructor
+          · intro found
+            split at found
+            · rename_i chosen
+              simp only [Bool.and_eq_true, beq_iff_eq] at chosen
+              obtain ⟨kind, rfl⟩ := chosen
+              exact ⟨symbol, rfl, kind, found⟩
+            · cases found
+          · rintro ⟨_, same, kind, found⟩
+            simp only [Goal.guard.injEq, Term.var.injEq] at same
+            obtain ⟨rfl, rfl⟩ := same
+            simp [kind, found]
+      | _ => simp [guardMembers]
+  | _ => simp [guardMembers]
+
 attribute [local instance] Machine.termEq in
 omit [FreshNames Variable] in
 theorem mem_splitChoices {query : Query Variable Literal Symbol} {name : Variable} {value : Term Variable Literal Symbol} :
-    value ∈ program.splitChoices query name ↔ ∃ symbol members, Goal.guard symbol (.var name) ∈ query.conditions ∧
-      program.kindAt .guard symbol 1 = true ∧ program.members symbol = some members ∧ value ∈ members := by
-  unfold splitChoices
-  rw [List.mem_eraseDups, List.mem_flatMap]
+    value ∈ program.splitChoices query name ↔
+      (∃ symbol members, Goal.guard symbol (.var name) ∈ query.conditions ∧
+        program.kindAt .guard symbol 1 = true ∧ program.members symbol = some members ∧ value ∈ members) ∧
+      ∀ symbol members, Goal.guard symbol (.var name) ∈ query.conditions → program.kindAt .guard symbol 1 = true →
+        program.members symbol = some members → value ∈ members := by
+  have listed : ∀ members, members ∈ query.conditions.filterMap (program.guardMembers name) ↔
+      ∃ symbol, Goal.guard symbol (.var name) ∈ query.conditions ∧ program.kindAt .guard symbol 1 = true ∧
+        program.members symbol = some members := by
+    intro members
+    rw [List.mem_filterMap]
+    constructor
+    · rintro ⟨goal, member, found⟩
+      obtain ⟨symbol, rfl, kind, membersEq⟩ := mem_guardMembers.mp found
+      exact ⟨symbol, member, kind, membersEq⟩
+    · rintro ⟨symbol, member, kind, membersEq⟩
+      exact ⟨_, member, mem_guardMembers.mpr ⟨symbol, rfl, kind, membersEq⟩⟩
+  have shape : value ∈ program.splitChoices query name ↔
+      (∃ members ∈ query.conditions.filterMap (program.guardMembers name), value ∈ members) ∧
+        ∀ members ∈ query.conditions.filterMap (program.guardMembers name), value ∈ members := by
+    unfold splitChoices
+    generalize query.conditions.filterMap (program.guardMembers name) = guards
+    cases guards with
+    | nil => simp
+    | cons first rest =>
+        simp only [List.mem_filter, List.mem_eraseDups, List.all_eq_true, List.contains_iff_mem, List.mem_cons,
+          exists_eq_or_imp, forall_eq_or_imp]
+        constructor
+        · rintro ⟨inFirst, inRest⟩
+          exact ⟨.inl inFirst, inFirst, inRest⟩
+        · rintro ⟨_, inFirst, inRest⟩
+          exact ⟨inFirst, inRest⟩
+  rw [shape]
   constructor
-  · rintro ⟨condition, conditionMember, inside⟩
-    cases condition with
-    | guard symbol arg =>
-        cases arg with
-        | var other =>
-            simp only at inside
-            split at inside
-            · rename_i chosen
-              simp only [Bool.and_eq_true, beq_iff_eq] at chosen
-              obtain ⟨⟨kind, finite⟩, rfl⟩ := chosen
-              cases found : program.members symbol with
-              | none => simp [Program.finite, found] at finite
-              | some members => exact ⟨symbol, members, conditionMember, kind, found, by simpa [found] using inside⟩
-            · cases inside
-        | _ => simp at inside
-    | _ => simp at inside
-  · rintro ⟨symbol, members, conditionMember, kind, found, inside⟩
-    refine ⟨.guard symbol (.var name), conditionMember, ?_⟩
-    simp [kind, Program.finite, found, inside]
+  · rintro ⟨⟨members, member, inside⟩, every⟩
+    obtain ⟨symbol, condition, kind, membersEq⟩ := (listed members).mp member
+    exact ⟨⟨symbol, members, condition, kind, membersEq, inside⟩, fun symbol' members' condition' kind' membersEq' =>
+      every members' ((listed members').mpr ⟨symbol', condition', kind', membersEq'⟩)⟩
+  · rintro ⟨⟨symbol, members, condition, kind, membersEq, inside⟩, every⟩
+    refine ⟨⟨members, (listed members).mpr ⟨symbol, condition, kind, membersEq⟩, inside⟩, fun members' member' => ?_⟩
+    obtain ⟨symbol', condition', kind', membersEq'⟩ := (listed members').mp member'
+    exact every symbol' members' condition' kind' membersEq'
 
 omit [FreshNames Variable] in
 /-- Every assignment the split computes is an instance of the split. -/

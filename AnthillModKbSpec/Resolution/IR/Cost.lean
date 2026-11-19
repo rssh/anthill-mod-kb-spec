@@ -9,12 +9,13 @@ Admission reports a query's cost class with its profile
 | --- | --- | --- |
 | Polynomial, of degree `k` | P0 or P1, and no NAF literal, denial, or condition reads a predicate whose dependency closure reaches a cycle or a marker | Every model then lies between two computable ones, the least fixpoint with the markers false and the greatest with them true |
 | Exponential | P0 or P1 otherwise | Deciding the completion's models is NP-hard (supported models); the enumeration is exact |
-| Budgeted | P2 | Bounded by the fuel |
+| Budgeted | P2 | The derivation search bounded by the fuel; S24's iteration and witnesses run once |
 | Blocked | Undecided before anything runs | Nothing runs |
 
 The degree is S23's: the most names a rule of the query's dependency closure
 joins, a denial (the denials join every query's relevant program), or the
-query's goals, and one more for each rigid parameter the query splits. The class is read on the predicate graph
+query's goals other than its rigid parameters, and one more for each rigid
+parameter the query splits. The class is read on the predicate graph
 (`Program.edgesOf`), from the predicates the query, its conditions, and
 the denials name. -/
 
@@ -82,14 +83,16 @@ def readers (query : Query Variable Literal Symbol) : List Symbol :=
   (program.rules.filter fun rule => closure.contains rule.head).flatMap (fun rule => nafPredicates rule.body) ++
     nafPredicates query.goals ++ bodyPredicates query.conditions ++ program.denials.flatMap bodyPredicates
 
-/-- The degree: the rigid parameters the query splits, and the most names a
-rule of the closure, a denial, or the query's goals join. -/
+/-- The degree: the rigid parameters the query splits, one per instance of
+the split, and the most names a rule of the closure, a denial, or an
+instance's goals join (the goals' names other than the parameters, which an
+instance binds). -/
 def degree (query : Query Variable Literal Symbol) : Nat :=
   let closure := program.queryClosure query
   query.parameters.length +
     (((program.rules.filter fun rule => closure.contains rule.head).map fun rule => rule.names.eraseDups.length) ++
       program.denials.map (fun body => (bodyNames body).eraseDups.length)).foldr max
-      (bodyNames query.goals).eraseDups.length
+      ((bodyNames query.goals).eraseDups.filter fun name => !query.parameters.contains name).length
 
 /-- **The cost class**, before anything runs. -/
 def cost (query : Query Variable Literal Symbol) : Cost :=

@@ -396,11 +396,6 @@ theorem rule_of_clause {symbol : Symbol} {args body : List (Term Variable Litera
     cases same
 
 omit [DecidableEq Literal] [DecidableEq Symbol] [FreshNames Variable] in
-theorem body_names_of_rule {rule : Rule Variable Literal Symbol} {goal : Goal Variable Literal Symbol}
-    (member : goal ∈ rule.body) {name : Variable} (occurs : name ∈ goal.names) : name ∈ rule.names :=
-  List.mem_append_right _ (List.mem_flatMap.mpr ⟨goal, member, occurs⟩)
-
-omit [DecidableEq Literal] [DecidableEq Symbol] [FreshNames Variable] in
 theorem head_names_of_rule {rule : Rule Variable Literal Symbol} {arg : Term Variable Literal Symbol}
     (member : arg ∈ rule.args) {name : Variable} (occurs : name ∈ arg.freeVars) : name ∈ rule.names :=
   List.mem_append_left _ (List.mem_flatMap.mpr ⟨arg, member, occurs⟩)

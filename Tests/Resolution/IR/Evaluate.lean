@@ -300,6 +300,16 @@ def splitProgram (order : List T) : Program Nat Nat Sym :=
 #guard kind ((splitProgram [k .a, k .b]).answer (query [call .p [v 7]] [] [guard .item 7])) == "unknown"
 #guard kind ((splitProgram [k .b, k .a]).answer (query [call .p [v 7]] [] [guard .item 7])) == "unknown"
 
+/-- The recomputed instances of a P0 or P1 query. -/
+def recomputed (program : Program Nat Nat Sym) (query : Query Nat Nat Sym) : List (GroundProgram Nat Nat Sym) :=
+  if decided : (program.classify query).decides = true then program.instances query decided else []
+
+/- Two finite guards on one parameter split it into the members they share:
+`node(x), item(x)` gives the instances `a` and `b`, not `c`, whose instance no
+model satisfies. -/
+#guard (recomputed chain (query [call .path [v 7, k .c]] [] [guard .node 7, guard .item 7])).length == 2
+#guard kind (chain.answer (query [call .path [v 7, k .c]] [] [guard .node 7, guard .item 7])) == "yes"
+
 /- A parameter no finite guard splits: P2, Undecided before anything runs. -/
 #guard missing (chain.answer (query [call .path [v 7, k .c]])) == ["termination"]
 
@@ -309,8 +319,9 @@ def splitProgram (order : List T) : Program Nat Nat Sym :=
 def checks (program : Program Nat Nat Sym) (query : Query Nat Nat Sym) : Bool :=
   program.checkAnswer query (program.answer query)
 
-/- Every certificate the evaluator gives checks: Yes and No by recomputing the
-relevant programs, Unknown by its two witnesses, each a model. -/
+/- The certificates the evaluator gives for these queries check: Yes and No
+by recomputing the relevant programs, Unknown by its two witnesses, each a
+model. -/
 #guard checks cycle (query [call .path [k .a, k .b]])
 #guard checks chain (query [call .path [k .c, k .a]])
 #guard checks cycle (query [call .path [k .a, k .c]])
@@ -327,10 +338,6 @@ rejected. -/
   | .unknown holds fails =>
       !cycle.checkUnknown (query [call .path [k .a, k .c]]) (holds.1, (holds.2.1.erase (.path, [k .b, k .c]), holds.2.2)) fails
   | _ => false)
-
-/-- The recomputed instances of a P0 or P1 query. -/
-def recomputed (program : Program Nat Nat Sym) (query : Query Nat Nat Sym) : List (GroundProgram Nat Nat Sym) :=
-  if decided : (program.classify query).decides = true then program.instances query decided else []
 
 /- On an inconsistent KB neither a Yes nor a No certifies, recomputed
 programs and all: `p :- ¬p.` -/

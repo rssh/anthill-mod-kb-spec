@@ -95,12 +95,35 @@ variable (program : Program Variable Literal Symbol)
 /-- The substitution of a closed query's conditions: they have no names. -/
 def noNames : Variable → Term Variable Literal Symbol := fun name => .var name
 
-/-- **The ground relevant program** of a closed query of P0 or P1. -/
+/-- **The ground relevant program** of a closed query of P0 or P1: the level
+table and the relevant calls computed once for every part. -/
 def groundProgram (query : Query Variable Literal Symbol)
     (closes_ : ∃ n, program.closedCalls (program.answersFor query) (program.callRounds (program.answersFor query) query n) = true) :
     GroundProgram Variable Literal Symbol :=
-  ⟨program.relevantAtoms query closes_, program.relevantInstances query closes_, program.denialBodies query,
-    program.goalBodies query, groundBody noNames query.conditions, query.conditions.all (program.fixedB noNames)⟩
+  let answers := program.answersWith (program.levelTable (program.vertices query))
+  let calls := program.roundsFrom answers query closes_ 0 (program.callRounds answers query 0) rfl
+    fun _ lt => absurd lt (Nat.not_lt_zero _)
+  ⟨(calls.flatMap (atomsAt answers)).eraseDups, (calls.flatMap (program.instancesOfCall answers)).eraseDups,
+    (program.denials.flatMap (program.groundBodies answers [])).eraseDups,
+    (program.groundBodies answers query.parameters query.goals).eraseDups, groundBody noNames query.conditions,
+    query.conditions.all (program.fixedB noNames)⟩
+
+section Parts
+
+variable {query : Query Variable Literal Symbol}
+  {closes_ : ∃ n, program.closedCalls (program.answersFor query) (program.callRounds (program.answersFor query) query n) = true}
+
+theorem groundProgram_atoms : (program.groundProgram query closes_).atoms = program.relevantAtoms query closes_ := rfl
+
+theorem groundProgram_rules : (program.groundProgram query closes_).rules = program.relevantInstances query closes_ := rfl
+
+theorem groundProgram_denials : (program.groundProgram query closes_).denials = program.denialBodies query := rfl
+
+theorem groundProgram_goals : (program.groundProgram query closes_).goals = program.goalBodies query := rfl
+
+theorem groundProgram_conditions : (program.groundProgram query closes_).conditions = groundBody noNames query.conditions := rfl
+
+end Parts
 
 /-- The interpretation of the closed atoms a key interpretation gives. -/
 def closedOf (interp : Interp Literal Symbol) : GAtom Variable Literal Symbol → Prop := fun atom => interp atom.1 (keyArgs atom)
@@ -336,7 +359,7 @@ theorem groundProgram_closed (wellFormed : program.WellFormed) {query : Query Va
       passes (fun call inCalls => ?_) other inside
     exact Relevant.rule entryAt.1 entryAt.2.1 entryAt.2.2.2.2 atVertex groundRule headEq passes inCalls
   · refine (atomsIff atom).mpr ?_
-    simp only [groundProgram, List.mem_append, List.mem_cons] at member
+    simp only [groundProgram_denials, groundProgram_conditions, groundProgram_goals, List.mem_append, List.mem_cons] at member
     rcases member with fromDenials | rfl | fromGoals
     · obtain ⟨denial, denialMember, σ, ground, passes, rfl⟩ := (denialBodies_iff wellFormed queryOk evidence body).mp fromDenials
       exact body_atoms_relevant (Scans.goals (wellFormed.denials denial denialMember)) ground passes
@@ -519,15 +542,24 @@ theorem filter_mem_subsets {α : Type} (keep : α → Bool) : ∀ items : List �
       · simp only [List.filter_cons, kept, ite_true, subsets, List.mem_append]
         exact .inr (List.mem_map.mpr ⟨_, filter_mem_subsets keep rest, rfl⟩)
 
-theorem mem_subsets_sub {α : Type} : ∀ {items chosen : List α}, chosen ∈ subsets items → ∀ item ∈ chosen, item ∈ items
-  | [], chosen, member, item, inside => by simp [subsets] at member; subst member; cases inside
-  | first :: rest, chosen, member, item, inside => by
-      simp only [subsets, List.mem_append, List.mem_map] at member
-      rcases member with old | ⟨smaller, smallerMember, rfl⟩
-      · exact List.mem_cons_of_mem _ (mem_subsets_sub old item inside)
-      · rcases List.mem_cons.mp inside with rfl | later
-        · exact List.mem_cons_self
-        · exact List.mem_cons_of_mem _ (mem_subsets_sub smallerMember item later)
+/-- Some sublist passes a test, tried one at a time, stopping at the first:
+the sublists are never built as a list. -/
+def anySubset {α : Type} (test : List α → Bool) : List α → Bool
+  | [] => test []
+  | item :: rest => anySubset test rest || anySubset (fun subset => test (item :: subset)) rest
+
+theorem anySubset_iff {α : Type} : ∀ (items : List α) (test : List α → Bool),
+    anySubset test items = true ↔ ∃ subset ∈ subsets items, test subset = true
+  | [], test => by simp [anySubset, subsets]
+  | item :: rest, test => by
+      simp only [anySubset, Bool.or_eq_true, anySubset_iff rest, subsets, List.mem_append, List.mem_map]
+      constructor
+      · rintro (⟨subset, member, holds⟩ | ⟨subset, member, holds⟩)
+        · exact ⟨subset, .inl member, holds⟩
+        · exact ⟨item :: subset, .inr ⟨subset, member, rfl⟩, holds⟩
+      · rintro ⟨subset, (member | ⟨smaller, member, rfl⟩), holds⟩
+        · exact .inl ⟨subset, member, holds⟩
+        · exact .inr ⟨smaller, member, holds⟩
 
 namespace GroundBody
 
@@ -646,17 +678,35 @@ theorem kk_sound {closed marked : GAtom Variable Literal Symbol → Prop} (model
         · exact refuted call false (bodyHolds.1 call inside)
         · exact bodyHolds.2.1 naf inside (definite naf true)
 
-/-- The atoms the iteration leaves undefined. -/
-def undefinedAtoms : List (GAtom Variable Literal Symbol) :=
-  let state := ground.kleene
+/-- The atoms an iteration's result leaves undefined. -/
+def undefinedWith (state : List (GAtom Variable Literal Symbol) × List (GAtom Variable Literal Symbol)) :
+    List (GAtom Variable Literal Symbol) :=
   ground.atoms.filter fun atom => !decide (atom ∈ state.1) && !decide (atom ∈ state.2)
 
+/-- The atoms the iteration leaves undefined. -/
+def undefinedAtoms : List (GAtom Variable Literal Symbol) := ground.undefinedWith ground.kleene
+
 /-- The candidate assignments: the definitely true atoms with each subset of
-the undefined ones, and each subset of the markers. -/
+the undefined ones, and each subset of the markers. The iteration runs once. -/
 def candidates : List (List (GAtom Variable Literal Symbol) × List (GAtom Variable Literal Symbol)) :=
-  let definite := ground.kleene.1
+  let state := ground.kleene
   let markerChoices := subsets ground.markerAtoms
-  (subsets ground.undefinedAtoms).flatMap fun chosen => markerChoices.map fun marks => (definite ++ chosen, marks)
+  (subsets (ground.undefinedWith state)).flatMap fun chosen => markerChoices.map fun marks => (state.1 ++ chosen, marks)
+
+/-- **A model exists**, decided with early exit: the candidates tried one at a
+time (`anySubset`), never built as a list. -/
+def hasModel : Bool :=
+  let state := ground.kleene
+  anySubset (fun chosen => anySubset (fun marks => ground.isModel (state.1 ++ chosen) marks) ground.markerAtoms)
+    (ground.undefinedWith state)
+
+theorem hasModel_iff : ground.hasModel = true ↔ ∃ candidate ∈ ground.candidates, ground.isModel candidate.1 candidate.2 = true := by
+  simp only [hasModel, candidates, anySubset_iff, List.mem_flatMap, List.mem_map]
+  constructor
+  · rintro ⟨chosen, chosenMember, marks, marksMember, isModel⟩
+    exact ⟨_, ⟨chosen, chosenMember, marks, marksMember, rfl⟩, isModel⟩
+  · rintro ⟨_, ⟨chosen, chosenMember, marks, marksMember, rfl⟩, isModel⟩
+    exact ⟨chosen, chosenMember, marks, marksMember, isModel⟩
 
 /-- **The models of the ground program**: the candidates that are models. -/
 def models : List (List (GAtom Variable Literal Symbol) × List (GAtom Variable Literal Symbol)) :=
@@ -688,7 +738,7 @@ theorem models_complete (closedProgram : ground.Closed) {closed marked : GAtom V
   let marks := ground.markerAtoms.filter fun atom => decide (marked atom)
   have atomsAgree : ∀ atom ∈ ground.atoms, atom ∈ ground.kleene.1 ++ chosen ↔ closed atom := by
     intro atom member
-    simp only [List.mem_append, chosen, List.mem_filter, undefinedAtoms, Bool.and_eq_true, Bool.not_eq_true',
+    simp only [List.mem_append, chosen, List.mem_filter, undefinedAtoms, undefinedWith, Bool.and_eq_true, Bool.not_eq_true',
       decide_eq_false_iff_not, decide_eq_true_eq]
     constructor
     · rintro (true | ⟨_, holds⟩)

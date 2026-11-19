@@ -146,11 +146,12 @@ def roundsFrom (answers : Vertex Symbol → List (Term Variable Literal Symbol) 
     (calls : List (Vertex Symbol × List (Term Variable Literal Symbol))) (current : calls = program.callRounds answers query n)
     (below : ∀ k < n, program.closedCalls answers (program.callRounds answers query k) = false) :
     List (Vertex Symbol × List (Term Variable Literal Symbol)) :=
-  if closed : program.closedCalls answers calls = true then calls
-  else roundsFrom answers query closes (n + 1) (program.grow answers calls) (by rw [current]; rfl) fun k lt => by
+  let made := calls.flatMap (program.callsOf answers)
+  if closed : made.all calls.contains = true then calls
+  else roundsFrom answers query closes (n + 1) (calls ++ made).eraseDups (by subst current; rfl) fun k lt => by
     rcases Nat.lt_succ_iff_lt_or_eq.mp lt with lower | same
     · exact below k lower
-    · subst same; rw [← current]; simpa using closed
+    · subst same; rw [← current]; exact Bool.eq_false_iff.mpr closed
 termination_by Classical.choose closes + 1 - n
 decreasing_by
   have witness := Classical.choose_spec closes
@@ -172,6 +173,7 @@ theorem roundsFrom_spec {answers : Vertex Symbol → List (Term Variable Literal
         program.closedCalls answers (program.callRounds answers query m) = true := by
   intro n calls current below
   unfold roundsFrom
+  dsimp only
   split
   · rename_i closed
     exact ⟨n, current, current ▸ closed⟩

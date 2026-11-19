@@ -12,9 +12,9 @@ It is read per call pattern (`IR/Evidence`):
   an instance of one of the vertex's rules has it as its head and *passes*
   (`Passes`): its fixed literals (equations, disequalities, guards,
   primitives) are true, and every call that leaves an output free has a
-  possible answer of its own vertex there. Calls with every argument bound,
-  NAF, and marker atoms are not pruned: their atoms are relevant, whatever
-  their truth.
+  possible answer of its own vertex there. Calls with every argument bound
+  and NAF literals are not pruned: their atoms are relevant, whatever their
+  truth. Marker literals are not pruned either; their atoms are the markers'.
 - **Relevant calls** (`Relevant`): the calls of the query's passing
   instances, and of every passing instance of a relevant atom.
 - **Relevant atoms and instances** (`Entry`, `Instance`): an atom is relevant

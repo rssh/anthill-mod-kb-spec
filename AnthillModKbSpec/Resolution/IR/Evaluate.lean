@@ -3,15 +3,18 @@ import AnthillModKbSpec.Resolution.IR.Extension
 /-! # The IR evaluator: exact P1 decisions (S28)
 
 `Program.answer` answers a query of P0 or P1 with S22's results, exactly, with
-no fuel ([decision IR](../../../docs/decision-ir.md)):
+no fuel ([decision IR](../../../docs/decision-ir.md)); `Program.decideWithin`
+(`IR/Budgeted`) adds P2 within the fuel:
 
 1. **The KB-level check** (`Program.kbCheck`, decided with the user,
-   2026-11-18): the ground heads of the rules on cycles through NAF, with the
-   denials, get a relevant program of their own, decided once per KB beside
-   the queries. It is split into pieces linked by its rules and denials, each
-   searched for one model (`hasModel`); when the joint query is not P1, each
-   root's query is checked instead. A piece with no model shows the KB has
-   none: every query is Undecided, naming the piece's atoms.
+   2026-11-18): the ground heads of the rules on cycles through NAF that read
+   an atom, with the denials, get a relevant program of their own, decided
+   once per KB beside the queries. It is split into pieces linked by its rules
+   and denials, each searched for one model with early exit
+   (`GroundProgram.hasModel`); when the joint query is not P1, the roots whose
+   own query is P1 are checked jointly, and each alone when that query is not
+   P1 either. A piece with no model shows the KB has none: every query is
+   Undecided, naming the piece's atoms.
 2. **The instances** (`Program.instances`): a closed query's relevant program,
    or one per instance of the split of its rigid parameters, exact and finite
    (`Program.groundProgram`).
@@ -178,9 +181,6 @@ structure Summary (Variable Literal Symbol : Type) where
 def GroundProgram.summary (ground : GroundProgram Variable Literal Symbol) : Summary Variable Literal Symbol :=
   let models := ground.models
   ⟨ground, !models.isEmpty, models.filter ground.conditionsIn⟩
-
-theorem GroundProgram.summary_conditioned (ground : GroundProgram Variable Literal Symbol) :
-    ground.summary.conditioned = ground.conditioned := rfl
 
 theorem GroundProgram.summary_hasModel (ground : GroundProgram Variable Literal Symbol) :
     ground.summary.hasModel = !ground.models.isEmpty := rfl
@@ -709,11 +709,15 @@ end Guarantees
 /-! ## The KB-level consistency check, beside the queries -/
 
 /-- The KB-level roots: the ground heads of the rules whose head is on a cycle
-through NAF (the rules' bodies may have names of their own). -/
+through NAF and whose body reads an atom (the rules' bodies may have names of
+their own). A fact, or a rule reading no atom, is on no cycle of atoms. -/
 def cycleRoots : List (Goal Variable Literal Symbol) :=
   let cyclic := program.nafCycleSymbols program.rules
   ((program.rules.filterMap fun rule =>
-    if (namesOf rule.args).isEmpty && cyclic.contains rule.head then some (rule.head, rule.args) else none).eraseDups).map
+    if (namesOf rule.args).isEmpty && cyclic.contains rule.head &&
+        rule.body.any (fun | .call _ _ | .naf _ _ => true | _ => false) then
+      some (rule.head, rule.args)
+    else none).eraseDups).map
     fun atom => .call atom.1 atom.2
 
 /-- The KB-level query: the cycle roots as goals, the denials joining as they
@@ -745,10 +749,6 @@ def pieceClosed (ground : GroundProgram Variable Literal Symbol) (piece : List (
   (sub.rules.all fun entry => sub.atoms.contains entry.1 && (entry.2.1 ++ entry.2.2.1).all sub.atoms.contains) &&
     sub.denials.all fun body => (body.1 ++ body.2.1).all sub.atoms.contains
 
-/-- A ground program has a model, decided with early exit. -/
-def _root_.AnthillModKbSpec.IR.GroundProgram.hasModel (ground : GroundProgram Variable Literal Symbol) : Bool :=
-  ground.candidates.any fun candidate => ground.isModel candidate.1 candidate.2
-
 /-- A denial with no atom and no marker: it holds in every assignment. -/
 def _root_.AnthillModKbSpec.IR.GroundProgram.emptyDenial (ground : GroundProgram Variable Literal Symbol) : Bool :=
   ground.denials.any fun body => body.1.isEmpty && body.2.1.isEmpty && body.2.2.isEmpty
@@ -771,18 +771,31 @@ def queryInconsistency (query : Query Variable Literal Symbol) : Option (Blocker
     inconsistencyOf query.formula (program.groundProgram query (program.closes_of_decides decided))
   else none
 
+/-- The KB-level roots whose own query is P1. -/
+def checkableRoots : List (Goal Variable Literal Symbol) :=
+  program.cycleRoots.filter fun root => (program.classifyClosed (rootQuery root)).decides
+
 /-- **The KB-level check** (decided with the user, 2026-11-18): the ground
 rules on NAF cycles, with the denials, decided once per KB beside the queries.
-Their joint relevant program is split into pieces, each searched for one model;
-when the joint query is not P1, each root's own query is checked instead. A
-piece with no model shows that the KB has none: a blocker naming its atoms. -/
+Their joint relevant program is split into pieces, each searched for one model.
+When the joint query is not P1, the roots whose own query is P1 are checked
+jointly, and each alone when that query is not P1 either. A piece with no
+model shows that the KB has none: a blocker naming its atoms. -/
 def kbCheck : Option (Blocker Variable Literal Symbol) :=
-  if (program.classifyClosed program.consistencyQuery).decides then program.queryInconsistency program.consistencyQuery
-  else program.cycleRoots.findSome? fun root => program.queryInconsistency (rootQuery root)
+  let joint := program.consistencyQuery
+  if decided : (program.classifyClosed joint).decides = true then
+    inconsistencyOf joint.formula (program.groundProgram joint (program.closes_of_decides decided))
+  else
+    let checkable := program.checkableRoots
+    let together : Query Variable Literal Symbol := ⟨[], checkable, []⟩
+    if decidedTogether : (program.classifyClosed together).decides = true then
+      inconsistencyOf together.formula (program.groundProgram together (program.closes_of_decides decidedTogether))
+    else checkable.findSome? fun root => program.queryInconsistency (rootQuery root)
 
-/-- **The IR evaluator's answer**: Undecided when the KB-level check finds the
-KB inconsistent; otherwise the query's own answer (`decideQuery`). A host
-computes the check once per KB snapshot. -/
+/-- **The exact evaluator's answer**: Undecided when the KB-level check finds
+the KB inconsistent; otherwise the query's own answer (`decideQuery`), a P2
+query's Undecided before anything runs. A host computes the check once per KB
+snapshot; `decideWithin` (`IR/Budgeted`) answers P2 within the fuel. -/
 def answer (query : Query Variable Literal Symbol) : IRAnswer Variable Literal Symbol :=
   match program.kbCheck with
   | some blocker => .undecided [blocker]
@@ -839,28 +852,37 @@ theorem inconsistencyOf_none {formula : Term Variable Literal Symbol} {ground : 
   obtain ⟨candidate, member, _, _⟩ := (restrict ground piece).models_complete (restrict_closed closedPiece)
     (restrict_model model)
   obtain ⟨inCandidates, isModel⟩ := List.mem_filter.mp member
-  exact List.any_eq_true.mpr ⟨candidate, inCandidates, isModel⟩
+  exact (restrict ground piece).hasModel_iff.mpr ⟨candidate, inCandidates, isModel⟩
 
 /-- A KB with a model passes the KB-level check. -/
 theorem kbCheck_of_consistent
     (consistent : ∃ (Value : Type) (model : Model Literal Symbol Value program.hoApply), program.Models model) :
     program.kbCheck = none := by
+  have decidedNone : ∀ (query : Query Variable Literal Symbol) (decided : (program.classifyClosed query).decides = true),
+      inconsistencyOf query.formula (program.groundProgram query (program.closes_of_decides decided)) = none := by
+    intro query decided
+    obtain ⟨wellFormed, guarded, queryOk, evidence, closed⟩ := instance_parts decided
+    obtain ⟨Value, model, models⟩ := consistent
+    exact inconsistencyOf_none (fixpoint_model wellFormed guarded queryOk evidence closed.parameters
+      (Closed.conditions_ground closed) _ (herbrand_fixpoint wellFormed guarded models))
   have queryNone : ∀ query : Query Variable Literal Symbol, program.queryInconsistency query = none := by
     intro query
     unfold queryInconsistency
     split
     · rename_i decided
-      obtain ⟨wellFormed, guarded, queryOk, evidence, closed⟩ := instance_parts decided
-      obtain ⟨Value, model, models⟩ := consistent
-      exact inconsistencyOf_none (fixpoint_model wellFormed guarded queryOk evidence closed.parameters
-        (Closed.conditions_ground closed) _ (herbrand_fixpoint wellFormed guarded models))
+      exact decidedNone _ decided
     · rfl
   unfold kbCheck
+  dsimp only
   split
-  · exact queryNone _
-  · rw [List.findSome?_eq_none_iff]
-    intro root _
-    exact queryNone _
+  · rename_i decided
+    exact decidedNone _ decided
+  · split
+    · rename_i decided
+      exact decidedNone _ decided
+    · rw [List.findSome?_eq_none_iff]
+      intro root _
+      exact queryNone _
 
 /-- **Every answer is sound.** -/
 theorem answer_sound (query : Query Variable Literal Symbol) : (program.answer query).Sound (program.meaning query) := by
@@ -927,7 +949,9 @@ def checkByPrograms (query : Query Variable Literal Symbol) (yes : Bool) (ground
     Bool :=
   if decided : (program.classify query).decides = true then
     decide (program.instances query decided = grounds) && program.kbCheck.isNone &&
-      grounds.all fun ground => ground.hasModel && ground.conditioned.all fun assignment => ground.goalIn assignment == yes
+      grounds.all fun ground =>
+        let summary := ground.summary
+        summary.hasModel && summary.conditioned.all fun assignment => ground.goalIn assignment == yes
   else false
 
 /-- The certificate of an answer, checked: Yes and No by recomputation,

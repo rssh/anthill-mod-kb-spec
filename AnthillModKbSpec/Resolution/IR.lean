@@ -6,7 +6,8 @@
 -- the P0 case. Its evaluator (S28): the exact relevant program without fuel,
 -- its models by the Kripke–Kleene iteration and enumeration, the extension of
 -- a model when the rules outside are stratified, exact P1 answers with
--- certificates and their checks, and cost classes before anything runs.
+-- certificates and their checks, cost classes before anything runs, and P2
+-- within the fuel: S24's refutation and witnesses, and checked derivations.
 import AnthillModKbSpec.Resolution.IR.Syntax
 import AnthillModKbSpec.Resolution.IR.Check
 import AnthillModKbSpec.Resolution.IR.Evidence
@@ -24,3 +25,4 @@ import AnthillModKbSpec.Resolution.IR.GroundModels
 import AnthillModKbSpec.Resolution.IR.Extension
 import AnthillModKbSpec.Resolution.IR.Evaluate
 import AnthillModKbSpec.Resolution.IR.Cost
+import AnthillModKbSpec.Resolution.IR.Budgeted

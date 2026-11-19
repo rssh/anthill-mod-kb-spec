@@ -724,26 +724,33 @@ ranked: S07's topological rank (`GroundSearch.topoRank`) lowers every call of
 every rule. It does exactly when some rank does (`topoRank_decreases`): S07
 ranks atoms, not predicates. -/
 def ground (query : Query Variable Literal Symbol) : Bool :=
-  let atoms := (program.rules.map fun rule => (rule.head, rule.args)) ++
-    program.rules.flatMap fun rule => rule.body.filterMap Goal.atom?
-  let edges := program.rules.flatMap fun rule => (rule.body.filterMap Goal.atom?).map ((rule.head, rule.args), ·)
-  let rank := GroundSearch.topoRank edges atoms
   program.rules.all (fun rule => rule.names.isEmpty && rule.body.all Goal.groundRun) &&
     program.denials.isEmpty && program.derived.isEmpty && query.conditions.isEmpty && query.answers.isEmpty &&
     (bodyNames query.goals).isEmpty && query.goals.all Goal.groundRun &&
     program.predicates.all (fun predicate => predicate.kind != .opened) &&
-    edges.all fun edge => decide (GroundSearch.rankOf rank edge.2 < GroundSearch.rankOf rank edge.1)
+    -- The rank last: only a program that passed the tests above pays for it.
+    (let atoms := (program.rules.map fun rule => (rule.head, rule.args)) ++
+        program.rules.flatMap fun rule => rule.body.filterMap Goal.atom?
+      let edges := program.rules.flatMap fun rule => (rule.body.filterMap Goal.atom?).map ((rule.head, rule.args), ·)
+      let rank := GroundSearch.topoRank edges atoms
+      edges.all fun edge => decide (GroundSearch.rankOf rank edge.2 < GroundSearch.rankOf rank edge.1))
 
 /-! ## Rigid parameters: the split -/
 
+/-- A condition's members for a name: those of a finite guard of the name. -/
+def guardMembers (name : Variable) : Goal Variable Literal Symbol → Option (List (Term Variable Literal Symbol))
+  | .guard symbol (.var other) => if program.kindAt .guard symbol 1 && other == name then program.members symbol else none
+  | _ => none
+
 attribute [local instance] Machine.termEq in
 /-- The members a parameter takes: those of every finite guard among the
-conditions that guards it. -/
+conditions that guards it, the members they all share; none when no finite
+guard guards it. Every other value fails a condition, so its instance would be
+vacuous. -/
 def splitChoices (query : Query Variable Literal Symbol) (name : Variable) : List (Term Variable Literal Symbol) :=
-  (query.conditions.flatMap fun
-    | .guard symbol (.var other) =>
-        if program.kindAt .guard symbol 1 && program.finite symbol && other == name then (program.members symbol).getD [] else []
-    | _ => []).eraseDups
+  match query.conditions.filterMap (program.guardMembers name) with
+  | [] => []
+  | first :: rest => first.eraseDups.filter fun value => rest.all (·.contains value)
 
 /-- Every assignment of members to the names. -/
 def assignments (choices : Variable → List (Term Variable Literal Symbol)) :
@@ -836,14 +843,6 @@ theorem classifyClosed_p0 {query : Query Variable Literal Symbol} (classified : 
 theorem classify_closed {query : Query Variable Literal Symbol} (none : query.parameters = []) :
     program.classify query = program.classifyClosed query := by
   simp [classify, none]
-
-theorem classify_undecided {query : Query Variable Literal Symbol} {blockers : List (Blocker Variable Literal Symbol)}
-    (none : query.parameters = []) (classified : program.classify query = .undecided blockers) :
-    blockers = program.check query ∧ blockers ≠ [] := by
-  rw [program.classify_closed none] at classified
-  unfold classifyClosed at classified
-  repeat' split at classified
-  all_goals simp_all
 
 /-- **What P1 or P0 gives a query with rigid parameters**: no note, each
 parameter split, and every instance of the split P0 or P1. -/
