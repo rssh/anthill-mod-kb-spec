@@ -3,9 +3,9 @@
 - id: WI-20261117-HYJ2C-s28-the-ir-evaluator-exact-p1
 - created: 2026-11-17T20:24:05Z
 
-- status: Open
-- status_agent: user
-- status_at: 2026-11-17T20:24:05Z
+- status: Claimed
+- status_agent: claude
+- status_at: 2026-11-18T17:16:34Z
 
 - acceptance: lake build
 
@@ -46,4 +46,12 @@ From S27 (2026-11-18): S27 proves the relevant program finite under P1 (relevant
 ### 2026-11-18T14:33:01Z — feedback — user
 
 Update from S27's review (2026-11-18): Program.relevantProgram now returns none unless the query is closed and the saturated table stable within the fuel; when computed it lists the calls, the rule instances, and the denials' passing instances (denials join the relevant program), each instance by its rule's or denial's index and the values of its names, without repeats (relevantProgram_complete); stable_answers gives the listed possible answers at free calls. The over-approximation and the missing soundness stay S28's.
+
+### 2026-11-18T18:13:56Z — feedback — user
+
+Progress (2026-11-18, in the working tree, not committed): P1 core done and proved. IR/Possible (possible answers by rank, checked; answersOf_sound/complete), IR/Exact (exact relevant program without fuel: callRounds closed via relevant_finite and a first-closed-round search; relevantCalls_iff, relevantAtoms_iff, relevantInstances_iff, denialBodies_iff, goalBodies_iff), IR/GroundModels (body lemma, closure, fixpoint_model, context_iff, formula_iff, KK and enumeration: kk_sound, models_complete), IR/Extension (outside rules stratified by ranks; extends_model via strata of least fixpoints), IR/Evaluate (answer with the KB-level check beside the queries, split instances; answer_sound, answer_decided, answer_exact; checkUnknown/checkByPrograms/checkAnswer_sound). Traces in Tests/Resolution/IR/Evaluate.lean. Decided with the user: KB-level check beside the queries (ground NAF-cycle rules' relevant program, once per KB); outside NAF cycles block Unknown. Remaining: cost classes (and the two-fixpoint route for the polynomial class), P2 with fuel, the S08 export of Yes derivations (theorem-of-the-KB mark), docs.
+
+### 2026-11-18T21:56:54Z — feedback — user
+
+/code-review of the S28 work in part (2026-11-18): 15 findings, no wrong answer. Fixed: KB-level check split into pieces with early exit and a per-root fallback when the joint query is not P1 (one P2 root no longer disables it); Unknown's witnesses chosen among instances whose outside is stratified (no dependence on member order); computedRule by head arguments only; the blamed rule restricted to NAF-cycle rules among the rules outside; certificate checks require a model per instance and the KB check (Yes/No) and witnesses within their instance (Unknown); blockers name the inconsistent piece's or instance's atoms and markers; models enumerated once per instance; kleene, marker subsets, ranks, and reachability hoisted; level table built once per definition (answersWith); rounds run incrementally (roundsFrom, no quadratic search); degree counts denials and parameters; docs and module docs corrected; traces added. Documented, not fixed: the check of a kept instance re-evaluates its free calls' answers ((1+k)^depth, S17), ground NAF between atoms of one predicate read as a predicate cycle.
 

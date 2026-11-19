@@ -281,7 +281,9 @@ two arities are not embedded.
 
 - **The computed relevant program** contains the relevant program when
   stable, and can hold more (calls a later literal of the body rules out);
-  its soundness, and the exact program a decision runs on, are S28's.
+  its soundness, and the exact program a decision runs on, are S28's. S28
+  computes the exact relevant program without fuel, checking each instance
+  ([S28](ir-evaluator.md#the-relevant-program-exact-and-without-fuel)).
 - **S07's inputs the embedding refuses**: compound NAF operands and
   `falsity` lower to auxiliary predicates (S30); unknown markers and a symbol
   at two arities are the translation's (S29).
@@ -290,8 +292,9 @@ two arities are not embedded.
   the KB allows it (an unreached `r(a) :- p(a), naf r(a)` forces `p(a)`
   false), and S28 answers Unknown only when no rule outside the relevant
   program reads a relevant atom under NAF on a cycle (decided with the user,
-  2026-11-18). The evaluator, cost classes, and certificates are S28's; the
-  translation from `Term` S29's.
+  2026-11-18). The evaluator, cost classes, and certificates are S28's
+  ([implemented in part](ir-evaluator.md)); the translation from `Term`
+  S29's.
 - **Cost of the classifier.** The graph, the levels, and the data-term outputs
   are computed once per query. The data-term check compares terms, so facts
   over long nested terms (`succ⁴⁰⁰(zero)`) cost more than the graph: a chain

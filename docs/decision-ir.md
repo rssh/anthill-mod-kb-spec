@@ -3,7 +3,11 @@
 Status: design, decided with the user on 2026-11-17. S27's part, the IR, its
 checker and evidence, its semantics, the Herbrand reduction, relevance with
 the relevant program finite under P1, and S07's ground programs as the P0
-case where the IR expresses them, is [implemented](ir-programs.md). It revises the
+case where the IR expresses them, is [implemented](ir-programs.md). S28's
+part is [implemented in part](ir-evaluator.md): exact P1 decisions with no
+fuel, the KB-level consistency check, certificates checked by recomputation
+and by two witnesses, and cost classes; P2 and the S08 export of a Yes
+derivation are pending. It revises the
 [S01 contract](lean-admission-contract.md)'s "one syntax and one
 interpreter/state machine": there is still one syntax and one meaning, but
 decisions run on an intermediate representation (IR) of their own, which
@@ -136,13 +140,17 @@ Two lemmas connect it to the models the answers are about (S27):
   for that: an unreached rule `r(a) :- p(a), naf r(a)` forces `p(a)` false on
   a consistent KB. S28 answers Unknown only when no rule outside the relevant
   program reads a relevant atom under NAF on a cycle, and Undecided naming
-  that rule otherwise (decided with the user, 2026-11-18).
+  that rule otherwise (decided with the user, 2026-11-18). S28 checks it on
+  the predicate graph: every rule outside respects ranks, its NAF literals
+  strictly lower than its head ([S28](ir-evaluator.md#the-rest-of-the-kb)),
+  which makes the extension of a model provable; a NAF cycle outside blocks
+  Unknown whether or not it reaches a relevant atom.
 
 ## The evaluator
 
 | Profile | How it runs | What it answers |
 | --- | --- | --- |
-| P1 | Build the relevant program, which is finite. Compute the definitely and the possibly true atoms (the Kripke–Kleene iteration, S24's `kk`). Decide the atoms left undefined by enumerating the completion's models over them | Yes, No, or Unknown, exactly, with no fuel and no gap; Undecided only for the KB's inconsistency |
+| P1 | Build the relevant program, which is finite. Compute the definitely and the possibly true atoms (the Kripke–Kleene iteration, S24's `kk`). Decide the atoms left undefined by enumerating the completion's models over them | Yes, No, or Unknown, exactly, with no fuel and no gap; Undecided only for the KB's inconsistency, or for an Unknown a rule outside the relevant program may rule out (relevance, above) |
 | P2 | The same over a relevant program that may be infinite, within the fuel. No by the Kripke–Kleene refutation over the data terms and one abstract value (S24's `refutes`), Unknown by S24's witnesses | Sound answers; Undecided naming the growing call; monotone in the fuel |
 
 **Cost classes**, reported by admission before anything runs:
@@ -357,8 +365,12 @@ means nothing there; only proofs come out, checked by S08.
 - **Consistency.** Exactness is relative to the KB having a model, and, for
   an Unknown, to the rest of the KB extending the relevant program's models
   (relevance, above). A KB-level check (denials, NAF cycles) runs beside the
-  queries, as S24's denial checks do now; an inconsistent KB answers
-  Undecided, naming it.
+  queries; an inconsistent KB answers Undecided, naming it. Decided with the
+  user, 2026-11-18: the ground rules on NAF cycles, with the denials, get a
+  relevant program of their own, decided once per KB; with no model every
+  query is Undecided ([S28](ir-evaluator.md#the-rest-of-the-kb)). Joining them
+  to every query's relevant program, exact but making every query in a KB
+  with a NAF cycle exponential, was not taken.
 - **Answer sets.** The evaluator computes every answer of a call, so returning
   the answers of a query with answer names, the deferred finite-answer route,
   becomes a small step.
